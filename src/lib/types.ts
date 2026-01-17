@@ -36,6 +36,7 @@ export interface TaskData {
   description?: string;
   date?: string;
   time?: string;
+  repeatRule?: string;          // RRULE para repeticiones (formato app móvil)
   points?: number;              // Default 2
   isCompleted?: boolean;
   accountId?: string;           // FK a bank_accounts

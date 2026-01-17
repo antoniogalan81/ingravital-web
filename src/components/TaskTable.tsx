@@ -39,10 +39,45 @@ const COLUMNS: Array<{ key: string; label: string; width: number; frozen?: boole
 const UI_TYPES: UITaskType[] = ["Actividad", "Fisico", "Conocimiento", "Ingreso", "Gasto"];
 const FREQUENCIES: Array<{ value: Frequency | "SIN_FECHA"; label: string }> = [
   { value: "PUNTUAL", label: "Puntual" },
-  { value: "SIN_FECHA", label: "Sin fecha" },
+  { value: "SIN_FECHA", label: "Sin programar" },
   { value: "SEMANAL", label: "Semanal" },
   { value: "MENSUAL", label: "Mensual" },
 ];
+
+// JERARQUÍA VISUAL: determina el nivel de importancia de cada columna
+// Nivel 1 (dominante): meta, title, date
+// Nivel 2 (medio): uiType, frequency
+// Nivel 3 (bajo): el resto
+type VisualLevel = 1 | 2 | 3;
+const COLUMN_VISUAL_LEVEL: Record<string, VisualLevel> = {
+  meta: 1,
+  title: 1,
+  date: 1,
+  uiType: 2,
+  frequency: 2,
+  status: 3,
+  parent: 3,
+  amount: 3,
+  account: 3,
+  forecast: 3,
+  time: 3,
+  points: 3,
+  description: 3,
+};
+
+// Clases CSS por nivel para HEADERS
+const HEADER_LEVEL_CLASSES: Record<VisualLevel, string> = {
+  1: "text-[10px] font-bold text-slate-700",
+  2: "text-[9px] font-semibold text-slate-500",
+  3: "text-[8px] font-medium text-slate-400",
+};
+
+// Clases CSS por nivel para CELDAS
+const CELL_LEVEL_CLASSES: Record<VisualLevel, string> = {
+  1: "text-sm font-medium text-slate-800",
+  2: "text-xs text-slate-600",
+  3: "text-[11px] text-slate-400",
+};
 
 function createDraftData(template?: TaskData): TaskData {
   if (template) {
@@ -69,6 +104,18 @@ function isColumnEnabled(col: string, type: TaskType, scope?: TaskScope): boolea
     return false;
   }
   return true;
+}
+
+// Regla canónica: una tarea es "Sin programar" si:
+// 1) extra.unscheduled === true (formato web)
+// 2) date == null && repeatRule == null (formato app móvil)
+function isTaskUnscheduled(data: TaskData): boolean {
+  // Si el flag existe, manda
+  if (data.extra?.unscheduled === true) return true;
+  if (data.extra?.unscheduled === false) return false;
+
+  // Compat móvil (solo si no existe el flag)
+  return !data.date && !data.repeatRule;
 }
 
 export default function TaskTable({ 
@@ -143,14 +190,14 @@ export default function TaskTable({
         return forecastLines.find(f => f.id === data.forecastId)?.name || "";
       case "frequency": {
         const freq = data.extra?.frequency;
-        if (data.extra?.unscheduled) return "Sin fecha";
+        if (isTaskUnscheduled(data)) return "Sin programar";
         if (freq === "SEMANAL") return "Semanal";
         if (freq === "MENSUAL") return "Mensual";
         return "Puntual";
       }
       case "date": {
         const freq = data.extra?.frequency;
-        if (data.extra?.unscheduled) return "-";
+        if (isTaskUnscheduled(data)) return "-";
         if (freq === "SEMANAL" && data.extra?.weeklyDays) {
           return data.extra.weeklyDays.map(d => WEEKDAYS[d]).join(",");
         }
@@ -162,7 +209,7 @@ export default function TaskTable({
       }
       case "time": {
         const freq = data.extra?.frequency;
-        if (data.extra?.unscheduled) return "-";
+        if (isTaskUnscheduled(data)) return "-";
         if (freq === "SEMANAL") return data.extra?.weeklyTime || "";
         if (freq === "MENSUAL") return data.extra?.monthlyTime || "";
         return data.time || "";
@@ -219,7 +266,7 @@ export default function TaskTable({
         value = data.forecastId || "";
         break;
       case "frequency":
-        if (data.extra?.unscheduled) value = "SIN_FECHA";
+        if (isTaskUnscheduled(data)) value = "SIN_FECHA";
         else value = data.extra?.frequency || "PUNTUAL";
         break;
       case "date":
@@ -528,7 +575,10 @@ export default function TaskTable({
 
   const renderEditCell = (row: { id: string; data: TaskData; isDraft: boolean }, col: string) => {
     const data = row.data;
-    const commonClass = "w-full h-full px-1 text-xs border-0 bg-blue-50 focus:outline-none focus:ring-1 focus:ring-blue-400";
+    const level = COLUMN_VISUAL_LEVEL[col] || 3;
+    // Tamaños según nivel visual
+    const sizeClass = level === 1 ? "text-sm" : level === 2 ? "text-xs" : "text-[11px]";
+    const commonClass = `w-full h-full px-1.5 ${sizeClass} border-0 bg-blue-50/80 focus:outline-none focus:ring-1 focus:ring-blue-400`;
 
     switch (col) {
       case "status":
@@ -759,7 +809,7 @@ export default function TaskTable({
 
       case "date": {
         const freq = data.extra?.frequency;
-        if (data.extra?.unscheduled) {
+        if (isTaskUnscheduled(data)) {
           return <span className="text-slate-400 text-xs">-</span>;
         }
         if (freq === "SEMANAL") {
@@ -817,7 +867,7 @@ export default function TaskTable({
       }
 
       case "time": {
-        if (data.extra?.unscheduled) {
+        if (isTaskUnscheduled(data)) {
           return <span className="text-slate-400 text-xs">-</span>;
         }
         // Input texto para HH:MM (sin selector de reloj)
@@ -918,8 +968,11 @@ export default function TaskTable({
 
     // Celda deshabilitada
     if (!enabled) {
+      const level = COLUMN_VISUAL_LEVEL[col] || 3;
       return (
-        <div className="w-full h-full px-1.5 flex items-center text-xs text-slate-300 bg-slate-100 cursor-not-allowed">
+        <div className={`w-full h-full px-1.5 flex items-center bg-slate-50/50 cursor-not-allowed ${
+          level === 3 ? "text-[11px]" : "text-xs"
+        } text-slate-300`}>
           —
         </div>
       );
@@ -934,18 +987,33 @@ export default function TaskTable({
     }
     
     // Formato especial para Fecha (dd/mm/aa)
-    if (col === "date" && displayValue && !data.extra?.unscheduled && data.extra?.frequency !== "SEMANAL" && data.extra?.frequency !== "MENSUAL") {
+    if (col === "date" && displayValue && !isTaskUnscheduled(data) && data.extra?.frequency !== "SEMANAL" && data.extra?.frequency !== "MENSUAL") {
       displayValue = formatDateSpanish(displayValue);
     }
 
     const placeholder = row.isDraft && col === "title" ? "Nueva tarea..." : "";
     const finalDisplay = displayValue || placeholder;
+    const level = COLUMN_VISUAL_LEVEL[col] || 3;
+    
+    // Estilos especiales para fecha según contexto
+    let dateClass = "";
+    if (col === "date" && displayValue && displayValue !== "-") {
+      const today = new Date().toISOString().split("T")[0];
+      const taskDate = data.date;
+      if (taskDate === today) {
+        dateClass = "text-blue-600 font-semibold"; // Hoy
+      } else if (taskDate && taskDate < today) {
+        dateClass = "text-red-500"; // Vencida
+      }
+    }
     
     return (
       <div
         onClick={() => startEdit(row.id, col)}
-        className={`w-full h-full px-1.5 flex items-center text-xs truncate cursor-text ${
-          !displayValue && row.isDraft ? "text-slate-400 italic" : ""
+        className={`w-full h-full px-1.5 flex items-center truncate cursor-text ${
+          CELL_LEVEL_CLASSES[level]
+        } ${dateClass} ${
+          !displayValue && row.isDraft ? "!text-slate-400 italic" : ""
         }`}
         title={finalDisplay}
       >
@@ -970,23 +1038,26 @@ export default function TaskTable({
     <div className="flex-1 overflow-auto">
       <table className="w-full border-collapse text-left" style={{ minWidth: COLUMNS.reduce((a, c) => a + c.width, 0) }}>
         <thead className="sticky top-0 z-20">
-          <tr className="bg-slate-100">
-            {COLUMNS.map((col, i) => (
-              <th
-                key={col.key}
-                className={`px-1 py-1.5 text-[9px] font-semibold text-slate-500 uppercase tracking-wider border-b border-r border-slate-200 ${
-                  col.frozen ? "sticky z-30 bg-slate-100" : ""
-                }`}
-                style={{
-                  width: col.width,
-                  minWidth: col.width,
-                  maxWidth: col.width,
-                  left: col.frozen ? getFrozenLeft(i) : undefined,
-                }}
-              >
-                {col.label}
-              </th>
-            ))}
+          <tr className="bg-slate-50 border-b-2 border-slate-200">
+            {COLUMNS.map((col, i) => {
+              const level = COLUMN_VISUAL_LEVEL[col.key] || 3;
+              return (
+                <th
+                  key={col.key}
+                  className={`px-1.5 py-2 uppercase tracking-wide border-r border-slate-200 ${
+                    HEADER_LEVEL_CLASSES[level]
+                  } ${col.frozen ? "sticky z-30 bg-slate-50" : ""}`}
+                  style={{
+                    width: col.width,
+                    minWidth: col.width,
+                    maxWidth: col.width,
+                    left: col.frozen ? getFrozenLeft(i) : undefined,
+                  }}
+                >
+                  {col.label}
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
