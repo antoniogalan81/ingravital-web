@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 type Props = {
   children: ReactNode;
-  active?: "home" | "servicios" | "legal";
+  active?: "home" | "servicios" | "legal" | "agenda";
 };
 
 const WHATSAPP_URL = "https://wa.me/34656195880";
@@ -27,6 +27,15 @@ export default function SiteShell({ children, active }: Props) {
               }`}
             >
               App
+            </a>
+
+            <a
+              href="/agenda"
+              className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+                active === "agenda" ? "bg-slate-900 text-white" : "border border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              Agenda
             </a>
 
             <a
