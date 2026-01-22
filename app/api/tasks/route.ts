@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { normalizeTaskForDb } from "@/src/sync/normalizeTask";
 
 export async function POST(req: Request) {
   try {
@@ -38,15 +39,20 @@ export async function POST(req: Request) {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     
+    // Normalizar task antes de guardar (mismas reglas que APP)
+    const normalizedData = normalizeTaskForDb({
+      id,
+      title,
+      kind: "NORMAL",
+      type: "ACTIVIDAD",
+      order: 0,
+      createdAt: now,
+    });
+    
     const payload = {
       id,
       user_id,
-      data: {
-        id,
-        title,
-        createdAt: now,
-        updatedAt: now,
-      },
+      data: normalizedData,
       client_updated_at: now,
       deleted_at: null,
     };
@@ -62,7 +68,8 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ ok: true, data }, { status: 200 });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Unknown error";
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }

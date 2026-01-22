@@ -1,18 +1,26 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/src/lib/supabaseClient";
 import type { TaskRow, TaskData, TaskFilters, FilterPreset, AgendaUIState, Meta, BankAccount, ForecastLine, Label } from "@/src/lib/types";
 import { DEFAULT_FILTERS, DEFAULT_UI_STATE } from "@/src/lib/types";
 import { 
   fetchTasks, fetchMetas, fetchBankAccounts, fetchForecastLines, fetchLabels,
-  createTask, updateTask, createMeta, updateMeta, 
-  filterTasks, sortTasksByHierarchy, createTaskFromTemplate 
+  createTask, updateTask, deleteTask, restoreTask, createMeta, updateMeta, deleteMetaAndTasks,
+  updateMetaOrder, updateMetaIsActive, filterTasks, sortTasksByHierarchy 
 } from "@/src/lib/tasks";
 import { loadUIState, saveUIState, savePreset, deletePreset } from "@/src/lib/localStorage";
 import AgendaSidebar from "@/src/components/AgendaSidebar";
-import TaskTable from "@/src/components/TaskTable";
+import TaskDiagramTree from "@/src/components/TaskDiagramTree";
 import MetaModal from "@/src/components/MetaModal";
+
+type SaveMetaInput = {
+  title: string;
+  description?: string;
+  targetDate: string;
+  metaType: "MOONSHOT" | "LARGO_PLAZO" | "CORTO_PLAZO";
+  horizon?: "1M" | "3M" | "6M" | "9M" | "1Y" | "3Y" | "5Y" | "10Y";
+};
 
 export default function AgendaPage() {
   // Auth
@@ -36,6 +44,9 @@ export default function AgendaPage() {
   // Meta Modal
   const [metaModalOpen, setMetaModalOpen] = useState(false);
   const [metaToEdit, setMetaToEdit] = useState<Meta | null>(null);
+
+  // Sidebar espera solo {id, title}
+  const metasForSidebar = useMemo(() => metas.map(m => ({ id: m.id, title: m.title })), [metas]);
 
   // Auth check
   useEffect(() => {
@@ -141,14 +152,27 @@ export default function AgendaPage() {
     return { success: true };
   }, []);
 
-  const handleDuplicateTask = useCallback(async (task: TaskRow) => {
-    const newTaskData = createTaskFromTemplate(task.data);
-    newTaskData.title = `${task.data.title} (copia)`;
-    
-    const result = await createTask(newTaskData);
-    if (result.data) {
-      setTasks(prev => [...prev, result.data!]);
+  const handleDeleteTask = useCallback(async (id: string): Promise<{ success: boolean; error?: string }> => {
+    const result = await deleteTask(id);
+    if (result.error) {
+      return { success: false, error: result.error };
     }
+    // Eliminar de UI tras éxito en Supabase
+    setTasks(prev => prev.filter(t => t.data.id !== id));
+    return { success: true };
+  }, []);
+
+  const handleRestoreTask = useCallback(async (id: string): Promise<{ success: boolean; error?: string }> => {
+    const result = await restoreTask(id);
+    if (result.error) {
+      return { success: false, error: result.error };
+    }
+    // Recargar tareas para obtener la restaurada
+    const tasksRes = await fetchTasks();
+    if (tasksRes.data) {
+      setTasks(tasksRes.data);
+    }
+    return { success: true };
   }, []);
 
   // ========== META MODAL ==========
@@ -163,10 +187,9 @@ export default function AgendaPage() {
     setMetaToEdit(null);
   }, []);
 
-  const handleSaveMeta = useCallback(async (title: string, description?: string): Promise<{ success: boolean; error?: string }> => {
+  const handleSaveMeta = useCallback(async (input: SaveMetaInput): Promise<{ success: boolean; error?: string }> => {
     if (metaToEdit) {
-      // Editar
-      const result = await updateMeta(metaToEdit.id, title, description);
+      const result = await updateMeta(metaToEdit.id, input);
       if (result.error) {
         return { success: false, error: result.error };
       }
@@ -174,8 +197,7 @@ export default function AgendaPage() {
         setMetas(prev => prev.map(m => m.id === metaToEdit.id ? result.data! : m));
       }
     } else {
-      // Crear
-      const result = await createMeta(title, description);
+      const result = await createMeta(input);
       if (result.error) {
         return { success: false, error: result.error };
       }
@@ -185,6 +207,72 @@ export default function AgendaPage() {
     }
     return { success: true };
   }, [metaToEdit]);
+
+  const handleDeleteMeta = useCallback(async (metaId: string): Promise<{ success: boolean; error?: string }> => {
+    const result = await deleteMetaAndTasks(metaId);
+    if (!result.success) {
+      return { success: false, error: result.error };
+    }
+    // Eliminar de UI tras éxito en Supabase
+    setMetas(prev => prev.filter(m => m.id !== metaId));
+    setTasks(prev => prev.filter(t => t.data.metaId !== metaId));
+    return { success: true };
+  }, []);
+
+  // ========== TOGGLE META ACTIVE ==========
+
+  const handleToggleMetaActive = useCallback(async (metaId: string, isActive: boolean): Promise<{ success: boolean; error?: string }> => {
+    // Guardar estado previo para rollback
+    const prevMetas = [...metas];
+
+    // Actualización optimista: actualizar UI inmediatamente
+    setMetas(prev => prev.map(m => m.id === metaId ? { ...m, isActive } : m));
+
+    // Persistir en Supabase
+    const result = await updateMetaIsActive(metaId, isActive);
+    
+    if (!result.success) {
+      // Rollback
+      setMetas(prevMetas);
+      setError(`Error al ${isActive ? "activar" : "pausar"} meta: ${result.error}`);
+      setTimeout(() => setError(null), 3000);
+      return { success: false, error: result.error };
+    }
+
+    return { success: true };
+  }, [metas]);
+
+  // ========== REORDER METAS (Drag & Drop) ==========
+
+  const handleReorderMetas = useCallback(async (reorderedMetas: Meta[]) => {
+    // Guardar estado previo para rollback
+    const prevMetas = [...metas];
+
+    // Actualización optimista: actualizar UI inmediatamente
+    setMetas(reorderedMetas);
+
+    // Persistir en Supabase
+    try {
+      const updatePromises = reorderedMetas.map(m => 
+        updateMetaOrder(m.id, m.order ?? 0)
+      );
+      const results = await Promise.all(updatePromises);
+      
+      // Verificar si hubo errores
+      const failedUpdate = results.find(r => !r.success);
+      if (failedUpdate) {
+        // Rollback
+        setMetas(prevMetas);
+        setError(`Error al reordenar metas: ${failedUpdate.error}`);
+        setTimeout(() => setError(null), 3000);
+      }
+    } catch (err) {
+      // Rollback en caso de error
+      setMetas(prevMetas);
+      setError("Error al reordenar metas");
+      setTimeout(() => setError(null), 3000);
+    }
+  }, [metas]);
 
   // ========== FILTER & SORT ==========
 
@@ -234,7 +322,7 @@ export default function AgendaPage() {
           onSavePreset={handleSavePreset}
           onDeletePreset={handleDeletePreset}
           onApplyPreset={handleApplyPreset}
-          metas={metas}
+          metas={metasForSidebar}
           collapsed={uiState.sidebarCollapsed}
           onToggleCollapse={handleToggleSidebar}
         />
@@ -277,7 +365,7 @@ export default function AgendaPage() {
               </div>
             </div>
           ) : (
-            <TaskTable
+            <TaskDiagramTree
               tasks={sortedTasks}
               metas={metas}
               bankAccounts={bankAccounts}
@@ -285,8 +373,11 @@ export default function AgendaPage() {
               labels={labels}
               onCreateTask={handleCreateTask}
               onUpdateTask={handleUpdateTask}
-              onDuplicateTask={handleDuplicateTask}
+              onDeleteTask={handleDeleteTask}
+              onRestoreTask={handleRestoreTask}
               onOpenMetaModal={handleOpenMetaModal}
+              onReorderMetas={handleReorderMetas}
+              onToggleMetaActive={handleToggleMetaActive}
             />
           )}
         </div>
@@ -298,6 +389,7 @@ export default function AgendaPage() {
         meta={metaToEdit}
         onClose={handleCloseMetaModal}
         onSave={handleSaveMeta}
+        onDelete={handleDeleteMeta}
       />
     </div>
   );

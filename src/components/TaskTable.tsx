@@ -95,7 +95,7 @@ function createDraftData(template?: TaskData): TaskData {
 }
 
 // Determina si una columna está habilitada según el tipo y scope
-function isColumnEnabled(col: string, type: TaskType, scope?: TaskScope): boolean {
+function isColumnEnabled(col: string, type: TaskType, scope?: TaskScope | null): boolean {
   if (["amount", "account", "forecast"].includes(col)) {
     return type === "INGRESO" || type === "GASTO";
   }
@@ -108,14 +108,89 @@ function isColumnEnabled(col: string, type: TaskType, scope?: TaskScope): boolea
 
 // Regla canónica: una tarea es "Sin programar" si:
 // 1) extra.unscheduled === true (formato web)
-// 2) date == null && repeatRule == null (formato app móvil)
+// 2) date == null && repeatRule == null && NO tiene frequency definida (formato app móvil)
+// IMPORTANTE: Si frequency existe (SEMANAL/MENSUAL/PUNTUAL), NO es unscheduled aunque falte date/repeatRule
 function isTaskUnscheduled(data: TaskData): boolean {
   // Si el flag existe, manda
   if (data.extra?.unscheduled === true) return true;
   if (data.extra?.unscheduled === false) return false;
 
-  // Compat móvil (solo si no existe el flag)
+  // Si tiene frequency definida (SEMANAL, MENSUAL, PUNTUAL), no es unscheduled
+  if (data.extra?.frequency) return false;
+
+  // Compat móvil (solo si no existe el flag NI frequency)
   return !data.date && !data.repeatRule;
+}
+
+// Códigos de días de la semana (formato móvil)
+type WeekdayCode = "L" | "M" | "X" | "J" | "V" | "S" | "D";
+const WEEKDAY_CODES: WeekdayCode[] = ["L", "M", "X", "J", "V", "S", "D"];
+
+// Convierte weeklyDays de number[] (formato antiguo) a string[] (formato móvil)
+function normalizeWeeklyDays(weeklyDays: unknown): WeekdayCode[] {
+  if (!Array.isArray(weeklyDays)) return [];
+  if (weeklyDays.length === 0) return [];
+  // Si ya son strings, validar y retornar
+  if (typeof weeklyDays[0] === "string") {
+    return weeklyDays.filter((d): d is WeekdayCode => WEEKDAY_CODES.includes(d as WeekdayCode));
+  }
+  // Si son números, convertir a códigos
+  if (typeof weeklyDays[0] === "number") {
+    return weeklyDays
+      .filter((i): i is number => typeof i === "number" && i >= 0 && i < 7)
+      .map(i => WEEKDAY_CODES[i]);
+  }
+  return [];
+}
+
+// Construye repeatRule para SEMANAL en formato móvil: "WEEKLY|days=L,X|time=HH:MM"
+function buildWeeklyRepeatRule(weeklyDays: WeekdayCode[], weeklyTime?: string): string {
+  return `WEEKLY|days=${weeklyDays.join(",")}|time=${weeklyTime || ""}`;
+}
+
+// Construye repeatRule para MENSUAL en formato móvil: "MONTHLY|day=15|time=HH:MM"
+function buildMonthlyRepeatRule(monthlyDay: number, monthlyTime?: string): string {
+  return `MONTHLY|day=${monthlyDay}|time=${monthlyTime || ""}`;
+}
+
+// Valida y normaliza TaskData antes de guardar, construyendo repeatRule si es necesario
+function normalizeTaskForSave(data: TaskData): { data: TaskData; error?: string } {
+  const normalized = { ...data };
+  const freq = normalized.extra?.frequency;
+  
+  if (freq === "SEMANAL") {
+    // Normalizar weeklyDays a formato string[]
+    const weeklyDays = normalizeWeeklyDays(normalized.extra?.weeklyDays);
+    if (weeklyDays.length === 0) {
+      return { data: normalized, error: "Semanal requiere al menos 1 día" };
+    }
+    // Actualizar extra con weeklyDays normalizado
+    normalized.extra = { 
+      ...normalized.extra, 
+      weeklyDays,
+      unscheduled: false 
+    };
+    // Construir repeatRule
+    normalized.repeatRule = buildWeeklyRepeatRule(weeklyDays, normalized.extra?.weeklyTime);
+    // Limpiar date (semanal no usa date fija)
+    normalized.date = undefined;
+  } else if (freq === "MENSUAL") {
+    const monthlyDay = normalized.extra?.monthlyDay || 1;
+    // Construir repeatRule
+    normalized.repeatRule = buildMonthlyRepeatRule(monthlyDay, normalized.extra?.monthlyTime);
+    // Limpiar date
+    normalized.date = undefined;
+    // Asegurar que no esté marcada como unscheduled
+    if (normalized.extra) {
+      normalized.extra = { ...normalized.extra, unscheduled: false };
+    }
+  } else if (freq === "PUNTUAL" && !normalized.extra?.unscheduled) {
+    // Puntual normal: limpiar repeatRule
+    normalized.repeatRule = undefined;
+  }
+  // SIN_FECHA: ya se maneja en parseEditToUpdates
+  
+  return { data: normalized };
 }
 
 export default function TaskTable({ 
@@ -124,7 +199,7 @@ export default function TaskTable({
 }: Props) {
   const [draftData, setDraftData] = useState<TaskData>(() => createDraftData());
   const [editCell, setEditCell] = useState<{ rowId: string; col: string } | null>(null);
-  const [editValue, setEditValue] = useState<string | number | boolean | number[]>("");
+  const [editValue, setEditValue] = useState<string | number | boolean | string[]>("");
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   
@@ -173,7 +248,7 @@ export default function TaskTable({
         const parent = tasks.find(t => t.data.id === data.parentId);
         return parent?.data.title || "";
       case "uiType":
-        return getUIType(data.type, data.scope);
+        return getUIType(data.type, data.scope, data.kind);
       case "title":
         // Para Fisico/Conocimiento usar label, sino title
         if (data.scope === "FISICO" || data.scope === "CRECIMIENTO") {
@@ -199,7 +274,9 @@ export default function TaskTable({
         const freq = data.extra?.frequency;
         if (isTaskUnscheduled(data)) return "-";
         if (freq === "SEMANAL" && data.extra?.weeklyDays) {
-          return data.extra.weeklyDays.map(d => WEEKDAYS[d]).join(",");
+          // weeklyDays ya es string[] ("L", "M", etc), mostrar directamente
+          const days = normalizeWeeklyDays(data.extra.weeklyDays);
+          return days.length > 0 ? days.join(", ") : "-";
         }
         if (freq === "MENSUAL" && data.extra?.monthlyDay) {
           return `Día ${data.extra.monthlyDay}`;
@@ -236,7 +313,7 @@ export default function TaskTable({
     if (!isColumnEnabled(col, row.data.type, row.data.scope)) return;
 
     const data = row.data;
-    let value: string | number | boolean | number[] = "";
+    let value: string | number | boolean | string[] = "";
 
     switch (col) {
       case "meta":
@@ -247,7 +324,7 @@ export default function TaskTable({
         setParentSelection(data.parentId ? [data.parentId] : []);
         break;
       case "uiType":
-        value = getUIType(data.type, data.scope);
+        value = getUIType(data.type, data.scope, data.kind);
         break;
       case "title":
         if (data.scope === "FISICO" || data.scope === "CRECIMIENTO") {
@@ -271,7 +348,8 @@ export default function TaskTable({
         break;
       case "date":
         if (data.extra?.frequency === "SEMANAL") {
-          value = data.extra?.weeklyDays || [];
+          // Normalizar weeklyDays a string[] para edición
+          value = normalizeWeeklyDays(data.extra?.weeklyDays);
         } else if (data.extra?.frequency === "MENSUAL") {
           value = data.extra?.monthlyDay || 1;
         } else {
@@ -364,7 +442,7 @@ export default function TaskTable({
           delete extra.weeklyTime;
           delete extra.monthlyDay;
           delete extra.monthlyTime;
-          return { date: undefined, time: undefined, extra };
+          return { date: undefined, time: undefined, repeatRule: undefined, extra };
         }
         
         extra.frequency = freq as Frequency;
@@ -375,14 +453,24 @@ export default function TaskTable({
           delete extra.weeklyTime;
           delete extra.monthlyDay;
           delete extra.monthlyTime;
+          return { repeatRule: undefined, extra };
         } else if (freq === "SEMANAL") {
           delete extra.monthlyDay;
           delete extra.monthlyTime;
-          if (!extra.weeklyDays) extra.weeklyDays = [];
+          // Normalizar weeklyDays existentes a string[]
+          const existingDays = normalizeWeeklyDays(extra.weeklyDays);
+          extra.weeklyDays = existingDays;
+          // Construir repeatRule (vacío si no hay días aún)
+          const repeatRule = existingDays.length > 0 
+            ? buildWeeklyRepeatRule(existingDays, extra.weeklyTime) 
+            : undefined;
+          return { date: undefined, repeatRule, extra };
         } else if (freq === "MENSUAL") {
           delete extra.weeklyDays;
           delete extra.weeklyTime;
           if (!extra.monthlyDay) extra.monthlyDay = 1;
+          const repeatRule = buildMonthlyRepeatRule(extra.monthlyDay, extra.monthlyTime);
+          return { date: undefined, repeatRule, extra };
         }
         
         return { extra };
@@ -390,18 +478,38 @@ export default function TaskTable({
       case "date": {
         const freq = data.extra?.frequency;
         if (freq === "SEMANAL") {
-          return { extra: { ...(data.extra || {}), weeklyDays: value as number[] } };
+          // value llega como WeekdayCode[] (string[])
+          const weeklyDays = value as WeekdayCode[];
+          const newExtra = { ...(data.extra || {}), weeklyDays };
+          // Reconstruir repeatRule con los nuevos días
+          const repeatRule = weeklyDays.length > 0 
+            ? buildWeeklyRepeatRule(weeklyDays, newExtra.weeklyTime) 
+            : undefined;
+          return { repeatRule, extra: newExtra };
         } else if (freq === "MENSUAL") {
-          return { extra: { ...(data.extra || {}), monthlyDay: value as number } };
+          const monthlyDay = value as number;
+          const newExtra = { ...(data.extra || {}), monthlyDay };
+          const repeatRule = buildMonthlyRepeatRule(monthlyDay, newExtra.monthlyTime);
+          return { repeatRule, extra: newExtra };
         }
-        return { date: value as string || undefined };
+        return { date: value as string || undefined, repeatRule: undefined };
       }
       case "time": {
         const freq = data.extra?.frequency;
         if (freq === "SEMANAL") {
-          return { extra: { ...(data.extra || {}), weeklyTime: value as string || undefined } };
+          const weeklyTime = value as string || undefined;
+          const newExtra = { ...(data.extra || {}), weeklyTime };
+          // Reconstruir repeatRule con la nueva hora
+          const weeklyDays = normalizeWeeklyDays(newExtra.weeklyDays);
+          const repeatRule = weeklyDays.length > 0 
+            ? buildWeeklyRepeatRule(weeklyDays, weeklyTime) 
+            : undefined;
+          return { repeatRule, extra: newExtra };
         } else if (freq === "MENSUAL") {
-          return { extra: { ...(data.extra || {}), monthlyTime: value as string || undefined } };
+          const monthlyTime = value as string || undefined;
+          const newExtra = { ...(data.extra || {}), monthlyTime };
+          const repeatRule = buildMonthlyRepeatRule(newExtra.monthlyDay || 1, monthlyTime);
+          return { repeatRule, extra: newExtra };
         }
         return { time: value as string || undefined };
       }
@@ -434,6 +542,15 @@ export default function TaskTable({
       const error = validateParentAssignment(tasks, row.data.id, value as string, row.data.metaId);
       if (error) {
         setRowErrors(prev => ({ ...prev, [rowId]: error }));
+        return;
+      }
+    }
+
+    // Validar SEMANAL: requiere al menos 1 día
+    if (col === "date" && row.data.extra?.frequency === "SEMANAL") {
+      const weeklyDays = value as WeekdayCode[];
+      if (!weeklyDays || weeklyDays.length === 0) {
+        setRowErrors(prev => ({ ...prev, [rowId]: "Semanal requiere al menos 1 día" }));
         return;
       }
     }
@@ -473,6 +590,13 @@ export default function TaskTable({
       return;
     }
 
+    // Normalizar y validar antes de guardar
+    const { data: normalizedData, error: validationError } = normalizeTaskForSave(draftData);
+    if (validationError) {
+      setRowErrors(prev => ({ ...prev, [DRAFT_ID]: validationError }));
+      return;
+    }
+
     setSaving(true);
     setRowErrors(prev => {
       const next = { ...prev };
@@ -480,7 +604,7 @@ export default function TaskTable({
       return next;
     });
 
-    const result = await onCreateTask(draftData);
+    const result = await onCreateTask(normalizedData);
     
     if (result.success) {
       const newDraft = createDraftData(draftData);
@@ -813,25 +937,34 @@ export default function TaskTable({
           return <span className="text-slate-400 text-xs">-</span>;
         }
         if (freq === "SEMANAL") {
-          // Multi-select días
-          const selected = (editValue as number[]) || [];
+          // Multi-select días (usando string[] - códigos de día)
+          const selected = (editValue as WeekdayCode[]) || [];
           return (
             <div className="flex gap-0.5">
-              {WEEKDAYS.map((d, i) => (
+              {WEEKDAY_CODES.map((dayCode) => (
                 <button
-                  key={i}
+                  key={dayCode}
                   type="button"
+                  onMouseDown={(e) => e.preventDefault()} // Evitar blur antes de guardar
                   onClick={() => {
-                    const newVal = selected.includes(i) 
-                      ? selected.filter(x => x !== i) 
-                      : [...selected, i].sort();
+                    const newVal: WeekdayCode[] = selected.includes(dayCode)
+                      ? selected.filter(x => x !== dayCode)
+                      : [...selected, dayCode].sort((a, b) => 
+                          WEEKDAY_CODES.indexOf(a) - WEEKDAY_CODES.indexOf(b)
+                        );
                     setEditValue(newVal);
+                    // Guardar inmediatamente al hacer click
+                    if (row.isDraft) {
+                      applyEdit(row.id, "date", newVal);
+                    } else {
+                      saveEdit(row.id, "date", newVal);
+                    }
                   }}
                   className={`w-5 h-5 text-[9px] rounded ${
-                    selected.includes(i) ? "bg-blue-500 text-white" : "bg-slate-100"
+                    selected.includes(dayCode) ? "bg-blue-500 text-white" : "bg-slate-100"
                   }`}
                 >
-                  {d}
+                  {dayCode}
                 </button>
               ))}
             </div>

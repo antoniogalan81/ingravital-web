@@ -10,13 +10,20 @@ export interface TaskExtra {
   movementIdsByDate?: Record<string, string>;
   // Frecuencia y repetición
   frequency?: Frequency;
-  weeklyDays?: number[];        // 0=Dom, 1=Lun, ..., 6=Sab
+  weeklyDays?: string[];        // "L", "M", "X", "J", "V", "S", "D" (formato móvil)
   weeklyTime?: string;          // HH:MM
   monthlyDay?: number;          // 1-31
   monthlyTime?: string;         // HH:MM
   unscheduled?: boolean;        // Sin fecha (frecuencia PUNTUAL sin date)
+  // Campos de aviso/recordatorio (configurados desde APP, solo display en WEB)
+  reminderEnabled?: boolean;           // true si hay aviso activo
+  reminderOffsetUnit?: "min" | "hor";  // unidad del offset (minutos u horas)
+  reminderOffsetValue?: number;        // valor del offset (ej: 5 para "5 min antes")
   // Campos financieros
   amountEUR?: number;           // Importe para INGRESO/GASTO
+  // Campos físicos/conocimiento
+  unit?: "min" | "h" | "km" | "kg" | "hor";
+  quantity?: number;
   // Campos adicionales
   notes?: string;
   // Permitir campos adicionales sin romper tipado
@@ -26,24 +33,27 @@ export interface TaskExtra {
 export interface TaskData {
   id: string;
   metaId?: string;
-  parentId?: string;
+  parentId?: string | null;  // null para root tasks (igual que APP)
   level: number;
   order: number;
+  kind?: "TITLE" | "NORMAL" | null;  // "TITLE" para encabezado, "NORMAL" para tareas normales
   type: TaskType;
-  scope?: TaskScope;
+  scope?: TaskScope | null;     // null para titulos (igual que app)
   title: string;
-  label?: string;               // Etiqueta para Fisico/Conocimiento
-  description?: string;
-  date?: string;
-  time?: string;
-  repeatRule?: string;          // RRULE para repeticiones (formato app móvil)
+  label?: string | null;        // Etiqueta para Fisico/Conocimiento
+  description?: string | null;
+  date?: string | null;
+  time?: string | null;
+  repeatRule?: string | null;   // RRULE para repeticiones (formato app móvil)
   points?: number;              // Default 2
   isCompleted?: boolean;
-  accountId?: string;           // FK a bank_accounts
-  forecastId?: string;          // FK a income_forecast_lines
+  accountId?: string | null;    // FK a bank_accounts
+  forecastId?: string | null;   // FK a income_forecast_lines
+  movementId?: string | null;   // FK a movements (igual que APP)
   extra?: TaskExtra;
   createdAt?: string;
   updatedAt?: string;
+  deletedAt?: string;           // Soft delete en cliente/web
 }
 
 export interface TaskRow {
@@ -56,11 +66,19 @@ export interface TaskRow {
 }
 
 // Meta desde Supabase (tabla metas)
+export type MetaType = "MOONSHOT" | "LARGO_PLAZO" | "CORTO_PLAZO";
+export type Horizon = "1M" | "3M" | "6M" | "9M" | "1Y" | "3Y" | "5Y" | "10Y";
+
 export interface MetaData {
   id: string;
   title?: string;
   name?: string;
   description?: string;
+  targetDate?: string;
+  metaType?: MetaType;
+  horizon?: Horizon;
+  order?: number;
+  isActive?: boolean; // true = activa (default), false = pausada
 }
 
 export interface MetaRow {
@@ -74,12 +92,19 @@ export interface Meta {
   id: string;
   title: string;
   description?: string;
+  targetDate?: string;
+  metaType?: MetaType;
+  horizon?: Horizon;
+  order?: number;
+  isActive?: boolean; // true = activa (default), false = pausada
 }
 
 // Bank Account desde Supabase
 export interface BankAccount {
   id: string;
   name: string;
+  type?: "PERSONAL" | "SOCIEDAD";
+  balance?: number;
 }
 
 // Income Forecast Line desde Supabase
@@ -87,6 +112,7 @@ export interface ForecastLine {
   id: string;
   name: string;
   type: "INGRESO" | "GASTO";
+  parentId?: string | null;
 }
 
 // Scoring Item desde app_settings.scoringSettings.items[]
@@ -138,19 +164,21 @@ export interface AgendaUIState {
 }
 
 // Tipos UI para columna Tipo
-export type UITaskType = "Actividad" | "Fisico" | "Conocimiento" | "Ingreso" | "Gasto";
+export type UITaskType = "Actividad" | "Fisico" | "Conocimiento" | "Ingreso" | "Gasto" | "Titulo";
 
-// Mapping UI Tipo -> TaskType + TaskScope
-export const UI_TYPE_MAPPING: Record<UITaskType, { type: TaskType; scope?: TaskScope }> = {
+// Mapping UI Tipo -> TaskType + TaskScope + kind
+export const UI_TYPE_MAPPING: Record<UITaskType, { type: TaskType; scope?: TaskScope | null; kind?: "TITLE" | null }> = {
   "Actividad": { type: "ACTIVIDAD", scope: "LABORAL" },
   "Fisico": { type: "ACTIVIDAD", scope: "FISICO" },
   "Conocimiento": { type: "ACTIVIDAD", scope: "CRECIMIENTO" },
   "Ingreso": { type: "INGRESO" },
   "Gasto": { type: "GASTO" },
+  "Titulo": { type: "ACTIVIDAD", scope: null, kind: "TITLE" },
 };
 
-// Reverse mapping
-export function getUIType(type: TaskType, scope?: TaskScope): UITaskType {
+// Reverse mapping - deteccion por kind="TITLE" (canon unico)
+export function getUIType(type: TaskType, scope?: TaskScope | null, kind?: "TITLE" | "NORMAL" | null): UITaskType {
+  if (kind === "TITLE") return "Titulo";
   if (type === "INGRESO") return "Ingreso";
   if (type === "GASTO") return "Gasto";
   if (type === "ACTIVIDAD") {

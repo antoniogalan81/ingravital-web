@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import type { TaskFilters, FilterPreset, TaskType, TaskStatus } from "@/src/lib/types";
 import { DEFAULT_FILTERS } from "@/src/lib/types";
 import { generatePresetId } from "@/src/lib/localStorage";
@@ -41,33 +41,53 @@ export default function AgendaSidebar({
 }: Props) {
   const [presetName, setPresetName] = useState("");
 
-  const toggleMeta = useCallback((metaId: string) => {
-    const newMetaIds = filters.metaIds.includes(metaId)
-      ? filters.metaIds.filter(id => id !== metaId)
-      : [...filters.metaIds, metaId];
-    onFiltersChange({ ...filters, metaIds: newMetaIds });
-  }, [filters, onFiltersChange]);
+  // ✅ DEFENSIVO: metaIds debe ser string[]; si por bug viene con objetos, los ignora para no crashear UI
+  const metaIds = useMemo(() => {
+    const raw = (filters as any)?.metaIds;
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((x: unknown): x is string => typeof x === "string");
+  }, [filters]);
 
-  const toggleType = useCallback((type: TaskType) => {
-    const newTypes = filters.types.includes(type)
-      ? filters.types.filter(t => t !== type)
-      : [...filters.types, type];
-    onFiltersChange({ ...filters, types: newTypes });
-  }, [filters, onFiltersChange]);
+  const toggleMeta = useCallback(
+    (metaId: string) => {
+      const newMetaIds = metaIds.includes(metaId)
+        ? metaIds.filter((id) => id !== metaId)
+        : [...metaIds, metaId];
+      onFiltersChange({ ...filters, metaIds: newMetaIds } as TaskFilters);
+    },
+    [filters, metaIds, onFiltersChange]
+  );
 
-  const toggleStatus = useCallback((status: TaskStatus) => {
-    const newStatuses = filters.statuses.includes(status)
-      ? filters.statuses.filter(s => s !== status)
-      : [...filters.statuses, status];
-    onFiltersChange({ ...filters, statuses: newStatuses });
-  }, [filters, onFiltersChange]);
+  const toggleType = useCallback(
+    (type: TaskType) => {
+      const newTypes = filters.types.includes(type)
+        ? filters.types.filter((t) => t !== type)
+        : [...filters.types, type];
+      onFiltersChange({ ...filters, types: newTypes });
+    },
+    [filters, onFiltersChange]
+  );
 
-  const setDate = useCallback((field: "dateFrom" | "dateTo", value: string) => {
-    onFiltersChange({ ...filters, [field]: value || undefined });
-  }, [filters, onFiltersChange]);
+  const toggleStatus = useCallback(
+    (status: TaskStatus) => {
+      const newStatuses = filters.statuses.includes(status)
+        ? filters.statuses.filter((s) => s !== status)
+        : [...filters.statuses, status];
+      onFiltersChange({ ...filters, statuses: newStatuses });
+    },
+    [filters, onFiltersChange]
+  );
+
+  const setDate = useCallback(
+    (field: "dateFrom" | "dateTo", value: string) => {
+      onFiltersChange({ ...filters, [field]: value || undefined });
+    },
+    [filters, onFiltersChange]
+  );
 
   const handleSavePreset = useCallback(() => {
     if (!presetName.trim()) return;
+    // ✅ guarda tal cual (si quieres arreglar la raiz, hay que normalizar aqui/metaIds en agenda/page.tsx)
     onSavePreset({
       id: generatePresetId(),
       name: presetName.trim(),
@@ -81,11 +101,11 @@ export default function AgendaSidebar({
   }, [onFiltersChange]);
 
   const hasActiveFilters =
-    filters.metaIds.length > 0 ||
+    metaIds.length > 0 ||
     filters.types.length > 0 ||
     filters.statuses.length > 0 ||
-    filters.dateFrom ||
-    filters.dateTo;
+    !!filters.dateFrom ||
+    !!filters.dateTo;
 
   // Colapsado
   if (collapsed) {
@@ -123,28 +143,53 @@ export default function AgendaSidebar({
         {/* Chips activos */}
         {hasActiveFilters && (
           <div className="flex flex-wrap gap-1">
-            {filters.metaIds.map(id => (
-              <span key={id} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px]">
-                {metas.find(m => m.id === id)?.title || id}
-                <button onClick={() => toggleMeta(id)} className="hover:text-blue-900 ml-0.5">×</button>
+            {metaIds.map((id) => (
+              <span
+                key={id}
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px]"
+              >
+                {metas.find((m) => m.id === id)?.title || id}
+                <button onClick={() => toggleMeta(id)} className="hover:text-blue-900 ml-0.5">
+                  ×
+                </button>
               </span>
             ))}
-            {filters.types.map(type => (
-              <span key={type} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-[10px]">
-                {TASK_TYPES.find(t => t.value === type)?.label}
-                <button onClick={() => toggleType(type)} className="hover:text-purple-900 ml-0.5">×</button>
+            {filters.types.map((type) => (
+              <span
+                key={type}
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-[10px]"
+              >
+                {TASK_TYPES.find((t) => t.value === type)?.label}
+                <button onClick={() => toggleType(type)} className="hover:text-purple-900 ml-0.5">
+                  ×
+                </button>
               </span>
             ))}
-            {filters.statuses.map(status => (
-              <span key={status} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px]">
-                {TASK_STATUSES.find(s => s.value === status)?.label}
-                <button onClick={() => toggleStatus(status)} className="hover:text-green-900 ml-0.5">×</button>
+            {filters.statuses.map((status) => (
+              <span
+                key={status}
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px]"
+              >
+                {TASK_STATUSES.find((s) => s.value === status)?.label}
+                <button onClick={() => toggleStatus(status)} className="hover:text-green-900 ml-0.5">
+                  ×
+                </button>
               </span>
             ))}
             {(filters.dateFrom || filters.dateTo) && (
               <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px]">
-                {filters.dateFrom && filters.dateTo ? `${filters.dateFrom} - ${filters.dateTo}` : filters.dateFrom || filters.dateTo}
-                <button onClick={() => { setDate("dateFrom", ""); setDate("dateTo", ""); }} className="hover:text-amber-900 ml-0.5">×</button>
+                {filters.dateFrom && filters.dateTo
+                  ? `${filters.dateFrom} - ${filters.dateTo}`
+                  : filters.dateFrom || filters.dateTo}
+                <button
+                  onClick={() => {
+                    setDate("dateFrom", "");
+                    setDate("dateTo", "");
+                  }}
+                  className="hover:text-amber-900 ml-0.5"
+                >
+                  ×
+                </button>
               </span>
             )}
           </div>
@@ -155,7 +200,7 @@ export default function AgendaSidebar({
           <section>
             <h3 className="text-[10px] font-semibold text-slate-400 uppercase mb-1">Presets</h3>
             <div className="space-y-0.5">
-              {presets.map(preset => (
+              {presets.map((preset) => (
                 <div key={preset.id} className="flex items-center gap-0.5">
                   <button
                     onClick={() => onApplyPreset(preset)}
@@ -182,11 +227,11 @@ export default function AgendaSidebar({
             <p className="text-slate-400 text-[10px]">Sin metas</p>
           ) : (
             <div className="space-y-0.5 max-h-24 overflow-y-auto">
-              {metas.map(meta => (
+              {metas.map((meta) => (
                 <label key={meta.id} className="flex items-center gap-1.5 cursor-pointer py-0.5">
                   <input
                     type="checkbox"
-                    checked={filters.metaIds.includes(meta.id)}
+                    checked={metaIds.includes(meta.id)}
                     onChange={() => toggleMeta(meta.id)}
                     className="w-3 h-3 rounded border-slate-300 text-blue-600"
                   />
@@ -201,7 +246,7 @@ export default function AgendaSidebar({
         <section>
           <h3 className="text-[10px] font-semibold text-slate-400 uppercase mb-1">Tipo</h3>
           <div className="grid grid-cols-2 gap-0.5">
-            {TASK_TYPES.map(type => (
+            {TASK_TYPES.map((type) => (
               <label key={type.value} className="flex items-center gap-1.5 cursor-pointer py-0.5">
                 <input
                   type="checkbox"
@@ -219,7 +264,7 @@ export default function AgendaSidebar({
         <section>
           <h3 className="text-[10px] font-semibold text-slate-400 uppercase mb-1">Estado</h3>
           <div className="flex gap-2">
-            {TASK_STATUSES.map(status => (
+            {TASK_STATUSES.map((status) => (
               <label key={status.value} className="flex items-center gap-1.5 cursor-pointer py-0.5">
                 <input
                   type="checkbox"
@@ -240,14 +285,14 @@ export default function AgendaSidebar({
             <input
               type="date"
               value={filters.dateFrom || ""}
-              onChange={e => setDate("dateFrom", e.target.value)}
+              onChange={(e) => setDate("dateFrom", e.target.value)}
               className="px-1.5 py-1 border border-slate-200 rounded text-[11px] focus:outline-none focus:ring-1 focus:ring-blue-400"
               placeholder="Desde"
             />
             <input
               type="date"
               value={filters.dateTo || ""}
-              onChange={e => setDate("dateTo", e.target.value)}
+              onChange={(e) => setDate("dateTo", e.target.value)}
               className="px-1.5 py-1 border border-slate-200 rounded text-[11px] focus:outline-none focus:ring-1 focus:ring-blue-400"
               placeholder="Hasta"
             />
@@ -261,10 +306,10 @@ export default function AgendaSidebar({
             <input
               type="text"
               value={presetName}
-              onChange={e => setPresetName(e.target.value)}
+              onChange={(e) => setPresetName(e.target.value)}
               placeholder="Nombre"
               className="flex-1 px-1.5 py-1 border border-slate-200 rounded text-[11px] focus:outline-none focus:ring-1 focus:ring-blue-400"
-              onKeyDown={e => e.key === "Enter" && handleSavePreset()}
+              onKeyDown={(e) => e.key === "Enter" && handleSavePreset()}
             />
             <button
               onClick={handleSavePreset}
