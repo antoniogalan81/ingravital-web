@@ -249,7 +249,7 @@ export async function fetchMetas(): Promise<{ data: Meta[] | null; error: string
 
   // Hidratar metas desde DB usando el normalizador
   const metas: Meta[] = (data || []).map((row: MetaRow) => {
-    const metaData = row.data as Record<string, unknown>;
+    const metaData = row.data as unknown as Record<string, unknown>;
     // Asegurar que el id del row se use (por si data no lo tiene)
     return hydrateMetaFromDb({ ...metaData, id: row.id });
   });
