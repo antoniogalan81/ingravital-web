@@ -116,7 +116,6 @@ async function upsertForecastLine(line: ForecastLineFull): Promise<{ error: stri
   const now = new Date().toISOString();
   const dataPayload = normalizeForecastSourceForDbWeb({
     ...line,
-    createdAt: line.createdAt,
     updatedAt: now,
   } as any);
 
