@@ -1,0 +1,6 @@
+{
+  "enabled": true,
+  "type": "apk",
+  "message": "TEST UPDATE ANDROID",
+  "apkUrl": "https://example.com/fake.apk"
+}
