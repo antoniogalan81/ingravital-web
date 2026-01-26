@@ -1,4 +1,8 @@
 import type { BankAccountFull, ForecastLineFull, ForecastMonths, ForecastTypeState } from "./financeData";
+type ForecastMonthState = {
+  INGRESO?: ForecastTypeState;
+  GASTO?: ForecastTypeState;
+};
 
 function cleanObject<T extends Record<string, unknown>>(obj: T, preserveKeys: string[] = []): Partial<T> {
   const keep = new Set(preserveKeys);
@@ -45,10 +49,10 @@ function normalizeTypeState(state?: ForecastTypeState): ForecastTypeState | unde
   const variable = state.variable === true ? true : undefined;
   const cutoffISO = typeof state.cutoffISO === "string" && state.cutoffISO ? state.cutoffISO : undefined;
 
-  const cleaned = cleanObject<ForecastTypeState>(
+  const cleaned = cleanObject(
     { base, expected, variable, cutoffISO },
     ["base", "expected"]
-  );
+  ) as Partial<ForecastTypeState>;
   return Object.keys(cleaned).length > 0 ? (cleaned as ForecastTypeState) : undefined;
 }
 
