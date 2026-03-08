@@ -23,6 +23,7 @@ export default function Home() {
           <div className="mt-8">
             <a
               href={ANDROID_URL}
+              download="ingravital.apk"
               className="inline-block rounded-full bg-slate-900 px-8 py-3.5 text-sm font-semibold text-white hover:bg-slate-800 transition-colors"
             >
               Descargar app para Android
