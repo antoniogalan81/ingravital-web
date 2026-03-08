@@ -3,8 +3,29 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { Meta } from "@/src/lib/types";
 
-type MetaType = "MOONSHOT" | "LARGO_PLAZO" | "CORTO_PLAZO";
 type Horizon = "1M" | "3M" | "6M" | "9M" | "1Y" | "3Y" | "5Y" | "10Y";
+
+// Constantes para icono y color
+const DEFAULT_META_ICON = "🎯";
+const ICON_SUGGESTIONS = [
+  "🎯", "🚀", "🏆", "💪", "📚", "💼", "🏃", "🧘", "💡", "🎨",
+  "🔥", "⭐", "💎", "🎓", "💰", "🏠", "✈️", "🎸", "📱", "🧠",
+  "❤️", "🔧", "📊", "🎮", "🏋️", "🍎"
+];
+const META_COLOR_SWATCHES = [
+  "#2563EB", // Azul
+  "#1E40AF", // Azul oscuro
+  "#22C55E", // Verde
+  "#84CC16", // Lima
+  "#EAB308", // Amarillo
+  "#F97316", // Naranja
+  "#EF4444", // Rojo
+  "#EC4899", // Rosa
+  "#8B5CF6", // Morado
+  "#06B6D4", // Turquesa
+  "#14B8A6", // Teal
+  "#64748B", // Gris
+];
 
 function todayISO(): string {
   const d = new Date();
@@ -19,6 +40,10 @@ function isValidISODate(dateISO: string): boolean {
   const [y, m, d] = dateISO.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
   return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
+}
+
+function isValidHex(color: string): boolean {
+  return /^#[0-9A-Fa-f]{6}$/.test(color);
 }
 
 function addMonthsISO(baseISO: string, months: number): string {
@@ -41,19 +66,6 @@ function addYearsISO(baseISO: string, years: number): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function diffMonthsApprox(fromISO: string, toISO: string): number {
-  const [fy, fm] = fromISO.split("-").map(Number);
-  const [ty, tm] = toISO.split("-").map(Number);
-  return (ty - fy) * 12 + (tm - fm);
-}
-
-function computeMetaTypeAuto(targetDateISO: string): MetaType {
-  const months = diffMonthsApprox(todayISO(), targetDateISO);
-  if (months >= 60) return "MOONSHOT";
-  if (months >= 12) return "LARGO_PLAZO";
-  return "CORTO_PLAZO";
-}
-
 function horizonToTargetDateISO(h: Horizon, base = todayISO()): string {
   switch (h) {
     case "1M": return addMonthsISO(base, 1);
@@ -66,12 +78,6 @@ function horizonToTargetDateISO(h: Horizon, base = todayISO()): string {
     case "10Y": return addYearsISO(base, 10);
     default: return addMonthsISO(base, 3);
   }
-}
-
-function metaTypeLabel(t: MetaType): string {
-  if (t === "MOONSHOT") return "Moonshot";
-  if (t === "LARGO_PLAZO") return "Largo plazo";
-  return "Corto plazo";
 }
 
 function horizonLabel(h: Horizon): string {
@@ -92,7 +98,8 @@ type SaveMetaInput = {
   title: string;
   description?: string;
   targetDate: string;
-  metaType: MetaType;
+  icon?: string | null;
+  color?: string | null;
   horizon?: Horizon;
 };
 
@@ -110,9 +117,9 @@ export default function MetaModal({ isOpen, meta, onClose, onSave, onDelete }: P
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [targetDate, setTargetDate] = useState<string>(todayISO());
-  const [metaType, setMetaType] = useState<MetaType>("CORTO_PLAZO");
-  const [metaTypeManual, setMetaTypeManual] = useState<boolean>(false);
   const [horizon, setHorizon] = useState<Horizon | "">("");
+  const [selectedIcon, setSelectedIcon] = useState<string>(DEFAULT_META_ICON);
+  const [selectedColor, setSelectedColor] = useState<string>(META_COLOR_SWATCHES[0]);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -129,15 +136,6 @@ export default function MetaModal({ isOpen, meta, onClose, onSave, onDelete }: P
     const initialTarget = existingTarget && isValidISODate(existingTarget) ? existingTarget : todayISO();
     setTargetDate(initialTarget);
 
-    const existingMetaTypeRaw = (metaAny?.metaType as string | undefined) || undefined;
-    const existingMetaType =
-      existingMetaTypeRaw === "MOONSHOT" || existingMetaTypeRaw === "LARGO_PLAZO" || existingMetaTypeRaw === "CORTO_PLAZO"
-        ? (existingMetaTypeRaw as MetaType)
-        : "CORTO_PLAZO";
-
-    setMetaTypeManual(isEdit);
-    setMetaType(isEdit ? existingMetaType : computeMetaTypeAuto(initialTarget));
-
     const existingHorizonRaw = (metaAny?.horizon as string | undefined) || undefined;
     const existingHorizon =
       existingHorizonRaw === "1M" || existingHorizonRaw === "3M" || existingHorizonRaw === "6M" ||
@@ -147,16 +145,16 @@ export default function MetaModal({ isOpen, meta, onClose, onSave, onDelete }: P
         : "";
     setHorizon(existingHorizon);
 
-    setError(null);
-  }, [isOpen, meta, isEdit]);
+    // Cargar icono
+    const existingIcon = (metaAny?.icon as string | null | undefined) || null;
+    setSelectedIcon(existingIcon && existingIcon.trim() ? existingIcon.trim() : DEFAULT_META_ICON);
 
-  // Auto metaType según targetDate si no es manual
-  useEffect(() => {
-    if (!isOpen) return;
-    if (metaTypeManual) return;
-    if (!isValidISODate(targetDate)) return;
-    setMetaType(computeMetaTypeAuto(targetDate));
-  }, [isOpen, targetDate, metaTypeManual]);
+    // Cargar color
+    const existingColor = (metaAny?.color as string | null | undefined) || null;
+    setSelectedColor(existingColor && isValidHex(existingColor) ? existingColor : META_COLOR_SWATCHES[0]);
+
+    setError(null);
+  }, [isOpen, meta]);
 
   const canSave = useMemo(() => {
     if (!title.trim()) return false;
@@ -177,11 +175,19 @@ export default function MetaModal({ isOpen, meta, onClose, onSave, onDelete }: P
     setSaving(true);
     setError(null);
 
+    // Procesar icono (max 4 chars, default si vacío)
+    const iconTrimmed = selectedIcon.trim();
+    const iconToSave = iconTrimmed.length > 0 ? iconTrimmed.slice(0, 4) : DEFAULT_META_ICON;
+
+    // Procesar color (validar hex)
+    const colorToSave = isValidHex(selectedColor) ? selectedColor : null;
+
     const payload: SaveMetaInput = {
       title: title.trim(),
       description: description.trim() || undefined,
       targetDate,
-      metaType,
+      icon: iconToSave,
+      color: colorToSave,
       horizon: horizon || undefined,
     };
 
@@ -194,7 +200,7 @@ export default function MetaModal({ isOpen, meta, onClose, onSave, onDelete }: P
     }
 
     setSaving(false);
-  }, [title, description, targetDate, metaType, horizon, onSave, onClose]);
+  }, [title, description, targetDate, selectedIcon, selectedColor, horizon, onSave, onClose]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -229,11 +235,6 @@ export default function MetaModal({ isOpen, meta, onClose, onSave, onDelete }: P
     setDeleting(false);
   }, [meta, onDelete, onClose]);
 
-  const onPickMetaType = (t: MetaType) => {
-    setMetaTypeManual(true);
-    setMetaType(t);
-  };
-
   const onPickHorizon = (h: Horizon | "") => {
     setHorizon(h);
     if (!h) return;
@@ -244,7 +245,6 @@ export default function MetaModal({ isOpen, meta, onClose, onSave, onDelete }: P
   if (!isOpen) return null;
 
   const HORIZONS: Horizon[] = ["1M", "3M", "6M", "9M", "1Y", "3Y", "5Y", "10Y"];
-  const META_TYPES: MetaType[] = ["CORTO_PLAZO", "LARGO_PLAZO", "MOONSHOT"];
 
   // Estilo base para chips
   const chipBase = "inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-medium transition-colors";
@@ -269,35 +269,68 @@ export default function MetaModal({ isOpen, meta, onClose, onSave, onDelete }: P
 
         {/* Body */}
         <div className="px-6 py-5 space-y-5">
-          {/* Tipo de meta - CHIPS */}
+          {/* Icono */}
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-2">Tipo de meta</label>
-            <div className="flex flex-wrap gap-2">
-              {META_TYPES.map((t) => {
-                const active = metaType === t;
-                return (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => onPickMetaType(t)}
-                    className={`${chipBase} ${active ? chipActive : chipInactive}`}
-                  >
-                    {metaTypeLabel(t)}
-                  </button>
-                );
-              })}
+            <label className="block text-xs font-medium text-slate-600 mb-2">Icono</label>
+            <div className="flex items-start gap-4">
+              {/* Preview */}
+              <div
+                className="w-12 h-12 flex items-center justify-center text-2xl rounded-lg border-2 border-slate-200"
+                style={{ backgroundColor: selectedColor + "20" }}
+              >
+                {selectedIcon}
+              </div>
+              {/* Input + Grid */}
+              <div className="flex-1">
+                <input
+                  type="text"
+                  value={selectedIcon}
+                  onChange={(e) => setSelectedIcon(e.target.value.slice(0, 4))}
+                  maxLength={4}
+                  placeholder="🎯"
+                  className="w-16 px-2 py-1 text-center text-lg border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400/50 mb-2"
+                />
+                <div className="flex flex-wrap gap-1">
+                  {ICON_SUGGESTIONS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => setSelectedIcon(emoji)}
+                      className={`w-8 h-8 flex items-center justify-center text-base rounded-md border transition-colors ${
+                        selectedIcon === emoji
+                          ? "border-blue-500 bg-blue-50"
+                          : "border-slate-200 hover:bg-slate-50"
+                      }`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-            <div className="mt-1.5 flex items-center gap-2 text-[11px] text-slate-400">
-              <span>{metaTypeManual ? "Manual" : "Auto"}</span>
-              {metaTypeManual && (
+          </div>
+
+          {/* Color */}
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-2">Color</label>
+            <div className="flex flex-wrap gap-2">
+              {META_COLOR_SWATCHES.map((color) => (
                 <button
+                  key={color}
                   type="button"
-                  className="text-blue-600 hover:text-blue-700 hover:underline"
-                  onClick={() => setMetaTypeManual(false)}
+                  onClick={() => setSelectedColor(color)}
+                  className={`w-9 h-9 rounded-full border-2 transition-all flex items-center justify-center ${
+                    selectedColor === color
+                      ? "border-slate-800 scale-110"
+                      : "border-transparent hover:scale-105"
+                  }`}
+                  style={{ backgroundColor: color }}
                 >
-                  Volver a auto
+                  {selectedColor === color && (
+                    <span className="text-white text-xs font-bold drop-shadow-md">✓</span>
+                  )}
                 </button>
-              )}
+              ))}
             </div>
           </div>
 
@@ -331,11 +364,9 @@ export default function MetaModal({ isOpen, meta, onClose, onSave, onDelete }: P
 
           {/* Horizonte temporal - CHIPS */}
           <div>
-            {/* Fila superior: label + chip (Opcional) clickable */}
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-medium text-slate-600">Horizonte temporal (opcional)</label>
             </div>
-            {/* Fila inferior: chips de horizonte */}
             <div className="flex flex-wrap gap-1.5">
               {HORIZONS.map((h) => {
                 const active = horizon === h;
@@ -364,9 +395,6 @@ export default function MetaModal({ isOpen, meta, onClose, onSave, onDelete }: P
               onChange={(e) => setTargetDate(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400/50"
             />
-            <div className="mt-1 text-[11px] text-slate-400">
-              {!metaTypeManual && "El tipo se calcula automáticamente según la fecha."}
-            </div>
           </div>
 
           {/* Error */}

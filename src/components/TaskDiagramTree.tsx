@@ -3,9 +3,25 @@
 import React from "react";
 import { useCallback, useRef, useEffect, useState, useMemo, useLayoutEffect } from "react";
 import ReactDOM from "react-dom";
-import type { TaskRow, TaskData, Meta, BankAccount, ForecastLine, Label, UITaskType, TaskExtra } from "@/src/lib/types";
-import { getUIType, UI_TYPE_MAPPING } from "@/src/lib/types";
-import { generateTaskId, createTaskFromTemplate, buildNewTaskData, getReminderDisplay } from "@/src/lib/tasks";
+import type { TaskRow, TaskData, Meta, BankAccount, ForecastLine, Label, MultiItem } from "@/src/lib/types";
+import { buildNewTaskData, getReminderDisplay } from "@/src/lib/tasks";
+import TaskEditPanel from "@/src/components/TaskEditPanel";
+import { createTaskActions } from "@/src/components/taskTaskActions";
+import MultiItemsInline from "@/src/components/MultiItemsInline";
+import { computeMultiProgress } from "@/src/lib/multiHelpers";
+import {
+  readUiState, writeUiState, getMetasKey,
+  DEFAULT_METAS_LOCAL, type MetasUILocalStateV1,
+} from "@/src/lib/uiLocalState";
+import {
+  type WeekdayCode,
+  WEEKDAY_CODES,
+  getTodayISO,
+  isTaskUnscheduled,
+  normalizeWeeklyDays,
+  isPhysLike,
+  coerceUnitFromLegacy,
+} from "@/src/components/taskDiagramTreeHelpers";
 
 // ==================== CONSTANTES DE LAYOUT ====================
 
@@ -13,6 +29,17 @@ const META_NODE_W = 420;
 const META_NODE_H = 44;
 const TASK_NODE_W = 820;
 const TASK_NODE_MIN_H = 36;   // Altura mínima compacta
+
+// Determina si un color hex es oscuro (para decidir si texto blanco o negro)
+function isDarkColor(hex: string | null | undefined): boolean {
+  if (!hex || !/^#[0-9A-Fa-f]{6}$/.test(hex)) return true; // default oscuro (texto blanco)
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  // Luminancia relativa (fórmula simplificada)
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance < 0.5;
+}
 const EDIT_PANEL_H = 340;
 const INDENT_X = 56;
 const GAP_Y = 6;              // Espacio vertical compacto entre nodos
@@ -26,6 +53,7 @@ interface Props {
   bankAccounts: BankAccount[];
   forecastLines: ForecastLine[];
   labels: Label[];
+  hidePoints?: boolean;
   onCreateTask: (taskData: TaskData) => Promise<{ success: boolean; error?: string }>;
   onUpdateTask: (id: string, taskData: Partial<TaskData>) => Promise<{ success: boolean; error?: string }>;
   onDeleteTask: (id: string) => Promise<{ success: boolean; error?: string }>;
@@ -33,10 +61,18 @@ interface Props {
   onOpenMetaModal: (meta: Meta | null) => void;
   onReorderMetas?: (reorderedMetas: Meta[]) => void;
   onToggleMetaActive?: (metaId: string, isActive: boolean) => Promise<{ success: boolean; error?: string }>;
+  hideCompletedTasks?: boolean;
+  onToggleHideCompleted?: () => void;
+  userId?: string | null;
+  onMetaChipSelect?: (metaId: string) => void;
+  initialSelectedMetaId?: string | null;
+  /** Añade una tarea al estado local como borrador sin persistirla en Supabase */
+  onAddLocalDraft?: (taskData: TaskData) => void;
+  /** Descarta un borrador eliminándolo del estado local */
+  onDiscardDraft?: (id: string) => void;
+  /** Indica si un task ID es borrador local */
+  isDraftTask?: (id: string) => boolean;
 }
-
-type WeekdayCode = "L" | "M" | "X" | "J" | "V" | "S" | "D";
-const WEEKDAY_CODES: WeekdayCode[] = ["L", "M", "X", "J", "V", "S", "D"];
 
 interface TreeNode {
   id: string;
@@ -63,78 +99,19 @@ interface EditPanelPortalProps {
   renderContent: (task: TaskRow) => React.ReactNode;
 }
 
-type SubUnit = "min" | "hor" | "pasos" | "pag" | "kg" | "km";
-
-type SubTagConfigEntry = {
-  units: SubUnit[];
-  defaultUnit: SubUnit;
-  defaults: Partial<Record<SubUnit, number>>;
-};
-
-type SubTagConfig = {
-  FISICO: Record<string, SubTagConfigEntry>;
-  CRECIMIENTO: Record<string, SubTagConfigEntry>;
-};
-
-const SUB_TAG_CONFIG: SubTagConfig = {
-  FISICO: {
-    gym:      { units: ["min", "hor"],         defaultUnit: "hor", defaults: { min: 60, hor: 1 } },
-    correr:   { units: ["min", "hor", "km"],   defaultUnit: "min", defaults: { min: 45, hor: 1, km: 5 } },
-    andar:    { units: ["min", "hor", "km"],   defaultUnit: "min", defaults: { min: 60, hor: 1, km: 5 } },
-    peso:     { units: ["kg"],                 defaultUnit: "kg",  defaults: { kg: 50 } },
-    descanso: { units: ["min", "hor"],         defaultUnit: "hor", defaults: { min: 30, hor: 8 } },
-  },
-  CRECIMIENTO: {
-    estudiar: { units: ["min", "hor", "pag"],  defaultUnit: "hor", defaults: { min: 60, hor: 1, pag: 40 } },
-    leer:     { units: ["min", "hor", "pag"],  defaultUnit: "hor", defaults: { min: 30, hor: 1, pag: 40 } },
-    idiomas:  { units: ["min", "hor", "pag"],  defaultUnit: "hor", defaults: { min: 30, hor: 1, pag: 40 } },
-    practica: { units: ["min", "hor"],         defaultUnit: "hor", defaults: { min: 30, hor: 1 } },
-  },
-};
-
-type LabelCfg = {
-  showQuantity: boolean;
-  allowedUnits: SubUnit[];
-  defaultUnit?: SubUnit;
-  defaultQuantity?: number;
-  defaultsByUnit?: Partial<Record<SubUnit, number>>;
-};
-
-const FALLBACK_LABEL_CFG: LabelCfg = {
-  showQuantity: true,
-  allowedUnits: ["min", "hor"],
-  defaultUnit: "min",
-  defaultQuantity: 30,
-  defaultsByUnit: { min: 30, hor: 1 },
-};
-
-const LABEL_DEFAULTS: Record<string, LabelCfg> = {
-  comida: { showQuantity: false, allowedUnits: [], defaultUnit: "min", defaultQuantity: 0 },
-  correr: { showQuantity: true, allowedUnits: ["min", "hor", "km"], defaultUnit: "min", defaultsByUnit: { min: 45, hor: 1, km: 5 } },
-  andar:  { showQuantity: true, allowedUnits: ["min", "hor", "km"], defaultUnit: "min", defaultsByUnit: { min: 60, hor: 1, km: 5 } },
-  gym:    { showQuantity: true, allowedUnits: ["min", "hor"],       defaultUnit: "hor", defaultsByUnit: { min: 60, hor: 1 } },
-  peso:   { showQuantity: true, allowedUnits: ["kg"],               defaultUnit: "kg",  defaultsByUnit: { kg: 50 } },
-  descanso: { showQuantity: true, allowedUnits: ["min", "hor"],     defaultUnit: "hor", defaultsByUnit: { min: 30, hor: 8 } },
-  estudiar: { showQuantity: true, allowedUnits: ["min", "hor"],     defaultUnit: "hor", defaultsByUnit: { min: 60, hor: 1 } },
-  leer:     { showQuantity: true, allowedUnits: ["min", "hor"],     defaultUnit: "hor", defaultsByUnit: { min: 30, hor: 1 } },
-  idiomas:  { showQuantity: true, allowedUnits: ["min", "hor"],     defaultUnit: "hor", defaultsByUnit: { min: 30, hor: 1 } },
-  practica: { showQuantity: true, allowedUnits: ["min", "hor"],     defaultUnit: "hor", defaultsByUnit: { min: 30, hor: 1 } },
-};
-
 // ==================== HELPERS ====================
 
-function getTodayISO(): string {
-  return new Date().toISOString().split("T")[0];
-}
+const _FMT_INT = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 0 });
+const _FMT_DEC = new Intl.NumberFormat("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 2 });
 
 function formatNumberES(n: number): string {
   if (n === undefined || n === null || Number.isNaN(n)) return "0";
   // Si es entero, sin decimales
   if (Number.isInteger(n)) {
-    return new Intl.NumberFormat("es-ES", { maximumFractionDigits: 0 }).format(n);
+    return _FMT_INT.format(n);
   }
   // Si tiene decimales, max 2, sin ceros finales
-  const formatted = new Intl.NumberFormat("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 2 }).format(n);
+  const formatted = _FMT_DEC.format(n);
   // Quitar cero final si termina en ",X0"
   return formatted.replace(/,(\d)0$/, ",$1");
 }
@@ -187,13 +164,6 @@ function formatTime(time: string | null | undefined): string {
   return time.slice(0, 5);
 }
 
-function isTaskUnscheduled(data: TaskData): boolean {
-  if (data.extra?.unscheduled === true) return true;
-  if (data.extra?.unscheduled === false) return false;
-  if (data.extra?.frequency) return false;
-  return !data.date && !data.repeatRule;
-}
-
 function getScheduleDisplay(data: TaskData): string {
   if (isTaskUnscheduled(data)) return "Sin programar";
   
@@ -215,53 +185,32 @@ function getScheduleDisplay(data: TaskData): string {
   return time ? `${dateStr} · ${formatTime(time)}` : dateStr || formatDateShort(getTodayISO());
 }
 
-function normalizeWeeklyDays(weeklyDays: unknown): WeekdayCode[] {
-  if (!Array.isArray(weeklyDays)) return [];
-  if (weeklyDays.length === 0) return [];
-  if (typeof weeklyDays[0] === "string") {
-    return weeklyDays.filter((d): d is WeekdayCode => WEEKDAY_CODES.includes(d as WeekdayCode));
-  }
-  if (typeof weeklyDays[0] === "number") {
-    return weeklyDays
-      .filter((i): i is number => typeof i === "number" && i >= 0 && i < 7)
-      .map(i => WEEKDAY_CODES[i]);
-  }
-  return [];
-}
-
-function buildWeeklyRepeatRule(weeklyDays: WeekdayCode[], weeklyTime?: string): string {
-  return `WEEKLY|days=${weeklyDays.join(",")}|time=${weeklyTime || ""}`;
-}
-
-function buildMonthlyRepeatRule(monthlyDay: number, monthlyTime?: string): string {
-  return `MONTHLY|day=${monthlyDay}|time=${monthlyTime || ""}`;
-}
-
 function EditPanelPortal({ task, anchorEl, renderContent }: EditPanelPortalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [style, setStyle] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const rafRef = useRef<number | null>(null);
 
   const computePosition = useCallback(() => {
     if (!anchorEl) return;
-  
+
     const rect = anchorEl.getBoundingClientRect();
     const panelRect = panelRef.current?.getBoundingClientRect();
     const panelWidth = panelRect?.width ?? TASK_NODE_W;
     const panelHeight = panelRect?.height ?? EDIT_PANEL_H;
-  
+
     const margin = 8;
-  
+
     // X clamp
     let left = rect.left;
     left = Math.min(left, window.innerWidth - panelWidth - margin);
     left = Math.max(margin, left);
-  
+
     // Preferir ABAJO
     const spaceBelow = window.innerHeight - rect.bottom - margin;
     const spaceAbove = rect.top - margin;
-  
+
     let top: number;
-  
+
     if (spaceBelow >= panelHeight) {
       top = rect.bottom + margin;
     } else if (spaceAbove >= panelHeight) {
@@ -272,20 +221,29 @@ function EditPanelPortal({ task, anchorEl, renderContent }: EditPanelPortalProps
       top = preferAbove ? rect.top - panelHeight - margin : rect.bottom + margin;
       top = Math.min(Math.max(margin, top), window.innerHeight - panelHeight - margin);
     }
-  
+
     setStyle({ top, left });
   }, [anchorEl]);
-  
+
+  // Throttle con RAF: como máximo un cálculo por frame
+  const schedulePosition = useCallback(() => {
+    if (rafRef.current !== null) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      computePosition();
+    });
+  }, [computePosition]);
 
   useLayoutEffect(() => {
     computePosition();
-    window.addEventListener("resize", computePosition);
-    window.addEventListener("scroll", computePosition, true);
+    window.addEventListener("resize", schedulePosition);
+    window.addEventListener("scroll", schedulePosition, true);
     return () => {
-      window.removeEventListener("resize", computePosition);
-      window.removeEventListener("scroll", computePosition, true);
+      window.removeEventListener("resize", schedulePosition);
+      window.removeEventListener("scroll", schedulePosition, true);
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
-  }, [computePosition]);
+  }, [computePosition, schedulePosition]);
 
   if (!anchorEl) return null;
 
@@ -294,10 +252,12 @@ function EditPanelPortal({ task, anchorEl, renderContent }: EditPanelPortalProps
       ref={panelRef}
       data-edit-panel
       data-no-drag
-      className="fixed bg-white rounded-lg border border-blue-400 shadow-lg p-4 z-[9999]"
-      style={{ top: style.top, left: style.left, maxWidth: TASK_NODE_W }}
+      className="fixed bg-white rounded-lg border border-blue-400 shadow-lg z-[9999] flex flex-col"
+      style={{ top: style.top, left: style.left, maxWidth: Math.min(TASK_NODE_W, (typeof window !== "undefined" ? window.innerWidth : TASK_NODE_W) - 16), maxHeight: `calc(100vh - ${style.top}px - 8px)` }}
     >
-      {renderContent(task)}
+      <div className="p-4 overflow-y-auto overscroll-contain flex-1 min-h-0">
+        {renderContent(task)}
+      </div>
     </div>,
     document.body
   );
@@ -312,6 +272,7 @@ interface InlineChipsPortalProps {
 function InlineChipsPortal({ anchorEl, children }: InlineChipsPortalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [style, setStyle] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 300 });
+  const rafRef = useRef<number | null>(null);
 
   const computePosition = useCallback(() => {
     if (!anchorEl) return;
@@ -320,7 +281,7 @@ function InlineChipsPortal({ anchorEl, children }: InlineChipsPortalProps) {
     let top = rect.bottom + margin;
     let left = rect.left;
     const width = Math.min(rect.width, 500);
-    
+
     // Clamp para no salir de pantalla
     if (left + width > window.innerWidth - 8) {
       left = window.innerWidth - width - 8;
@@ -329,19 +290,29 @@ function InlineChipsPortal({ anchorEl, children }: InlineChipsPortalProps) {
     if (top + 100 > window.innerHeight) {
       top = rect.top - 100 - margin;
     }
-    
+
     setStyle({ top, left, width });
   }, [anchorEl]);
 
+  // Throttle con RAF: como máximo un cálculo por frame
+  const schedulePosition = useCallback(() => {
+    if (rafRef.current !== null) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      computePosition();
+    });
+  }, [computePosition]);
+
   useLayoutEffect(() => {
     computePosition();
-    window.addEventListener("resize", computePosition);
-    window.addEventListener("scroll", computePosition, true);
+    window.addEventListener("resize", schedulePosition);
+    window.addEventListener("scroll", schedulePosition, true);
     return () => {
-      window.removeEventListener("resize", computePosition);
-      window.removeEventListener("scroll", computePosition, true);
+      window.removeEventListener("resize", schedulePosition);
+      window.removeEventListener("scroll", schedulePosition, true);
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
-  }, [computePosition]);
+  }, [computePosition, schedulePosition]);
 
   if (!anchorEl) return null;
 
@@ -357,80 +328,6 @@ function InlineChipsPortal({ anchorEl, children }: InlineChipsPortalProps) {
     </div>,
     document.body
   );
-}
-
-function ensureScoringItemExists(category: "phys" | "know", label: string, initialPoints?: number): Promise<{ points?: number } | void> {
-  // Placeholder/compatibilidad: en móvil existe; aquí evitamos romper compilación.
-  return Promise.resolve({ points: initialPoints });
-}
-
-function normalizeLabelKey(label?: string): string {
-  return (label || "").trim().toLowerCase();
-}
-
-function getSubTagCfg(scope: TaskData["scope"] | undefined, labelKey: string): SubTagConfigEntry | null {
-  if (!scope || !labelKey) return null;
-  const scopedCfg = SUB_TAG_CONFIG[scope as keyof SubTagConfig];
-  if (!scopedCfg) return null;
-  return scopedCfg[labelKey] || null;
-}
-
-function coerceUnitFromLegacy(unit?: string | null): SubUnit | undefined {
-  if (!unit) return undefined;
-  if (unit === "h") return "hor";
-  const known: SubUnit[] = ["min", "hor", "pasos", "pag", "kg", "km"];
-  return known.includes(unit as SubUnit) ? (unit as SubUnit) : undefined;
-}
-
-function applySubTagDefaults(params: {
-  scope?: TaskData["scope"];
-  labelName?: string;
-  currentUnit?: string | null;
-  currentQty?: number;
-}) {
-  const { scope, labelName, currentUnit, currentQty } = params;
-  const labelKey = normalizeLabelKey(labelName);
-  const cfg = getSubTagCfg(scope, labelKey);
-
-  const coercedUnit = coerceUnitFromLegacy(currentUnit);
-  const units = cfg?.units || [];
-
-  let unit: SubUnit | undefined = coercedUnit;
-  if (!unit || (cfg && !units.includes(unit))) {
-    unit = cfg?.defaultUnit ?? coercedUnit;
-  }
-
-  let quantity = currentQty;
-  if (cfg) {
-    if (!unit || !units.includes(unit)) {
-      unit = cfg.defaultUnit;
-    }
-    const defaultForUnit = cfg.defaults[unit];
-    if (quantity === undefined || quantity === null || Number.isNaN(quantity) || defaultForUnit === undefined) {
-      quantity = defaultForUnit ?? quantity;
-    }
-  }
-
-  const detailsField = scope === "CRECIMIENTO" ? "knowledgeDetails" : "physicalDetails";
-  const details =
-    scope === "FISICO" || scope === "CRECIMIENTO"
-      ? { kind: scope, label: labelKey, unit, value: quantity }
-      : undefined;
-
-  return { labelKey, unit, quantity, details, detailsField };
-}
-
-function isPhysLike(data: TaskData | Partial<TaskData> | undefined): boolean {
-  return !!data && data.type === "ACTIVIDAD" && (data.scope === "FISICO" || data.scope === "CRECIMIENTO");
-}
-
-function isFoodLabel(name?: string): boolean {
-  return normalizeLabelKey(name) === "comida";
-}
-
-function getLabelCfg(labelName?: string): LabelCfg {
-  const key = normalizeLabelKey(labelName);
-  return LABEL_DEFAULTS[key] || FALLBACK_LABEL_CFG;
 }
 
 // ==================== ALGORITMO DE LAYOUT ====================
@@ -479,12 +376,14 @@ function buildTreeStructure(tasks: TaskRow[], metaId: string): TreeNode {
 }
 
 function calculateLayout(
-  root: TreeNode, 
+  root: TreeNode,
   editingTaskId: string | null,
   collapsedById: Record<string, boolean>,
   measuredHeights: Record<string, number>,
   baseX: number = 32,
-  baseY: number = 32
+  baseY: number = 32,
+  taskNodeW: number = TASK_NODE_W,
+  metaNodeW: number = META_NODE_W,
 ): LayoutResult {
   const nodes = new Map<string, TreeNode>();
   const edges: Array<{ from: string; to: string }> = [];
@@ -501,7 +400,7 @@ function calculateLayout(
     // Posicionar este nodo
     node.x = baseX + level * INDENT_X;
     node.y = cursorY;
-    node.w = node.task ? TASK_NODE_W : META_NODE_W;
+    node.w = node.task ? taskNodeW : metaNodeW;
     // Usar altura medida si existe, sino mínimo
     node.h = node.task 
       ? (taskId && measuredHeights[taskId] ? measuredHeights[taskId] : TASK_NODE_MIN_H)
@@ -562,8 +461,10 @@ function calculateInsertOrder(siblings: TaskRow[], position: "before" | "after",
 // ==================== COMPONENTE PRINCIPAL ====================
 
 export default function TaskDiagramTree({
-  tasks, metas, bankAccounts, forecastLines, labels,
-  onCreateTask, onUpdateTask, onDeleteTask, onRestoreTask, onOpenMetaModal, onReorderMetas, onToggleMetaActive
+  tasks, metas, bankAccounts, forecastLines, labels, hidePoints,
+  onCreateTask, onUpdateTask, onDeleteTask, onRestoreTask, onOpenMetaModal, onReorderMetas, onToggleMetaActive,
+  hideCompletedTasks, onToggleHideCompleted, userId, onMetaChipSelect, initialSelectedMetaId,
+  onAddLocalDraft, onDiscardDraft, isDraftTask,
 }: Props) {
   type UndoEntry =
     | { kind: "update"; taskId: string; data: TaskData }
@@ -571,18 +472,17 @@ export default function TaskDiagramTree({
 
   const [selectedMetaId, setSelectedMetaId] = useState<string | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
-  const [editingData, setEditingData] = useState<Partial<TaskData>>({});
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
-  const [editError, setEditError] = useState<string | null>(null);
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
   const [undoToast, setUndoToast] = useState<{ entry: UndoEntry; expiresAt: number } | null>(null);
+  // Persistent UI state (localStorage) — keyed by stable userId prop
+  const metasStorageKey = useMemo(() => userId ? getMetasKey(userId) : null, [userId]);
   const [collapsedById, setCollapsedById] = useState<Record<string, boolean>>({});
+  const [hideDoneMultiByTaskId, setHideDoneMultiByTaskId] = useState<Record<string, boolean>>({});
+  const metasLocalHydrated = useRef(false);
   const [measuredHeights, setMeasuredHeights] = useState<Record<string, number>>({});
-  const [localLabels, setLocalLabels] = useState<Label[]>(labels);
-  const [addingLabel, setAddingLabel] = useState<boolean>(false);
-  const [newLabelName, setNewLabelName] = useState<string>("");
-
+  const [draggingMini, setDraggingMini] = useState<{ parentTaskId: string; itemId: string } | null>(null);
   // ==================== META DRAG STATE (Pointer Events) ====================
   const [metaDrag, setMetaDrag] = useState<{ id: string; startX: number; startY: number; pointerId: number; isDragActive: boolean } | null>(null);
   const [metaDragOverId, setMetaDragOverId] = useState<string | null>(null);
@@ -645,17 +545,69 @@ export default function TaskDiagramTree({
   // Legacy alias
   const hasForecastChildren = useCallback((id?: string) => !!(id && parentIdsWithChildren.has(id)), [parentIdsWithChildren]);
   
-  const debounceRef = useRef<NodeJS.Timeout | null>(null);
-  const nameInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const pendingScrollTaskIdRef = useRef<string | null>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  // Medir el ancho del contenedor para calcular anchos de nodo responsive
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    // Medir inmediatamente en el primer layout
+    const w = el.clientWidth;
+    if (w > 0) setContainerWidth(w);
+    const obs = new ResizeObserver((entries) => {
+      const rw = entries[0]?.contentRect.width ?? 0;
+      if (rw > 0) setContainerWidth(rw);
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
   const suppressClickRef = useRef(false);
   const nodeRefsMap = useRef<Map<string, HTMLDivElement>>(new Map());
   const autoScrollRef = useRef<number | null>(null);
 
   // Toggle colapsar/expandir subtareas
   const toggleCollapse = useCallback((taskId: string) => {
+    if (process.env.NODE_ENV === "development") {
+      console.log("[metas-ui] toggle collapse", { taskId, selectedMetaId });
+    }
     setCollapsedById(prev => ({ ...prev, [taskId]: !prev[taskId] }));
+  }, [selectedMetaId]);
+
+  // Toggle ocultar completadas de mini-tareas MULTI
+  const toggleHideDoneMulti = useCallback((taskId: string) => {
+    setHideDoneMultiByTaskId(prev => ({ ...prev, [taskId]: !prev[taskId] }));
   }, []);
+
+  // Hydrate collapsed/hideDone from localStorage — only once userId/key is available
+  useEffect(() => {
+    if (!metasStorageKey || metasLocalHydrated.current) return;
+    metasLocalHydrated.current = true;
+    const saved = readUiState<MetasUILocalStateV1>(metasStorageKey, DEFAULT_METAS_LOCAL);
+    if (process.env.NODE_ENV === "development") {
+      console.log("[metas-ui] hydrate", { key: metasStorageKey, collapsed: Object.keys(saved.collapsedById).length, hideDone: Object.keys(saved.hideDoneMultiByTaskId).length });
+    }
+    if (Object.keys(saved.collapsedById).length > 0) setCollapsedById(saved.collapsedById);
+    if (Object.keys(saved.hideDoneMultiByTaskId).length > 0) setHideDoneMultiByTaskId(saved.hideDoneMultiByTaskId);
+  }, [metasStorageKey]);
+
+  // Debounced persist of collapsedById + hideDoneMultiByTaskId
+  useEffect(() => {
+    if (!metasStorageKey) return;
+    const timer = setTimeout(() => {
+      const state: MetasUILocalStateV1 = { v: 1, collapsedById, hideDoneMultiByTaskId };
+      if (process.env.NODE_ENV === "development") {
+        console.log("[metas-ui] persist", { key: metasStorageKey, collapsed: Object.keys(collapsedById).length, hideDone: Object.keys(hideDoneMultiByTaskId).length });
+      }
+      writeUiState(metasStorageKey, state);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [collapsedById, hideDoneMultiByTaskId, metasStorageKey]);
+
+  // NOTE: Prune removed — `tasks` prop is filtered by metaIds so pruning here
+  // destroys collapsed/hideDone entries for tasks in other metas.
+  // UUIDs are globally unique, so stale entries from deleted tasks are harmless.
 
   // Callback para medir altura de nodos (evita re-renders infinitos)
   const measureNodeHeight = useCallback((taskId: string, height: number) => {
@@ -669,35 +621,64 @@ export default function TaskDiagramTree({
     });
   }, []);
 
-  // Seleccionar primera meta
+  // Seleccionar primera meta (o la indicada por initialSelectedMetaId si existe)
   useEffect(() => {
     if (!selectedMetaId && metas.length > 0) {
-      setSelectedMetaId(metas[0].id);
+      const target = initialSelectedMetaId && metas.some(m => m.id === initialSelectedMetaId)
+        ? initialSelectedMetaId
+        : metas[0].id;
+      setSelectedMetaId(target);
     }
-  }, [metas, selectedMetaId]);
+  }, [metas, selectedMetaId, initialSelectedMetaId]);
 
   const selectedMeta = useMemo(() => metas.find(m => m.id === selectedMetaId), [metas, selectedMetaId]);
 
-  useEffect(() => {
-    setLocalLabels(labels);
-  }, [labels]);
+  // Tasks visibles (filtra completadas si hideCompletedTasks está activo)
+  const visibleTasks = useMemo(
+    () => hideCompletedTasks ? tasks.filter(t => !t.data.isCompleted) : tasks,
+    [tasks, hideCompletedTasks]
+  );
 
-  // Construir árbol y calcular layout
-  const layout = useMemo(() => {
+  // Anchos de nodo responsive: escalan con el contenedor, mínimo usable en móvil
+  const taskNodeW = containerWidth > 0
+    ? Math.min(TASK_NODE_W, Math.max(260, containerWidth - 80))
+    : TASK_NODE_W;
+  const metaNodeW = containerWidth > 0
+    ? Math.min(META_NODE_W, Math.max(220, containerWidth - 80))
+    : META_NODE_W;
+
+  // Construir árbol (solo depende de datos, no de estado UI)
+  const treeStructure = useMemo(() => {
     if (!selectedMetaId) return null;
-    const tree = buildTreeStructure(tasks, selectedMetaId);
-    return calculateLayout(tree, editingTaskId, collapsedById, measuredHeights);
-  }, [tasks, selectedMetaId, editingTaskId, collapsedById, measuredHeights]);
+    return buildTreeStructure(visibleTasks, selectedMetaId);
+  }, [visibleTasks, selectedMetaId]);
 
-  // Auto-focus en nombre al editar
-  useEffect(() => {
-    if (editingTaskId) {
-      requestAnimationFrame(() => {
-        nameInputRef.current?.focus();
-        nameInputRef.current?.select();
-      });
-    }
-  }, [editingTaskId]);
+  // Calcular layout (depende del árbol + estado UI de edición/colapso)
+  const layout = useMemo(() => {
+    if (!treeStructure) return null;
+    return calculateLayout(treeStructure, editingTaskId, collapsedById, measuredHeights, 32, 32, taskNodeW, metaNodeW);
+  }, [treeStructure, editingTaskId, collapsedById, measuredHeights, taskNodeW, metaNodeW]);
+
+  const scrollMetasTaskIntoView = useCallback((id: string): boolean => {
+    const c = containerRef.current;
+    if (!c) return false;
+    const el = c.querySelector(`[data-task-id="${id}"]`) as HTMLElement | null;
+    if (!el) return false;
+    const cRect = c.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const scrollTop = elRect.top - cRect.top + c.scrollTop - 64;
+    c.scrollTo({ top: Math.max(0, scrollTop), behavior: "smooth" });
+    return true;
+  }, []);
+
+  useLayoutEffect(() => {
+    const id = pendingScrollTaskIdRef.current;
+    if (!id) return;
+    if (process.env.NODE_ENV === "development") console.log("[metas-scroll] layoutEffect try", id);
+    const ok = scrollMetasTaskIntoView(id);
+    if (process.env.NODE_ENV === "development") console.log("[metas-scroll] layoutEffect try", id, "found=", ok);
+    if (ok) pendingScrollTaskIdRef.current = null;
+  }, [visibleTasks, scrollMetasTaskIntoView]);
 
   // Auto-focus inline input - SOLO una vez al abrir (no en cada cambio de draft)
   useEffect(() => {
@@ -761,7 +742,6 @@ export default function TaskDiagramTree({
     // Cerrar panel de edición si está abierto
     if (editingTaskId) {
       setEditingTaskId(null);
-      setEditingData({});
     }
     if (field === "time") {
       setInlineTimeInvalid(false);
@@ -882,253 +862,44 @@ export default function TaskDiagramTree({
 
   const startEdit = useCallback((task: TaskRow) => {
     setEditingTaskId(task.data.id);
-    setEditingData({ ...task.data });
-    setEditError(null);
     setUndoStack(prev => [...prev.slice(-10), { kind: "update", taskId: task.data.id, data: { ...task.data } }]);
   }, []);
 
-  const saveChanges = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
-    if (!editingTaskId) return { success: true };
-    const task = tasks.find(t => t.data.id === editingTaskId);
-    if (!task) return { success: true };
-
-    const updates: Partial<TaskData> = {};
-    const original = task.data;
-    Object.keys(editingData).forEach(key => {
-      const k = key as keyof TaskData;
-      if (JSON.stringify(editingData[k]) !== JSON.stringify(original[k])) {
-        (updates as Record<string, unknown>)[k] = editingData[k];
-      }
-    });
-
-    if (Object.keys(updates).length === 0) return { success: true };
-    setSavingTaskId(editingTaskId);
-    const result = await onUpdateTask(editingTaskId, updates);
-    setSavingTaskId(null);
-    
-    if (!result.success) {
-      const errorMsg = result.error || "Error al guardar";
-      setEditError(errorMsg);
-      return { success: false, error: errorMsg };
-    }
-    setEditError(null);
-    return { success: true };
-  }, [editingTaskId, editingData, tasks, onUpdateTask]);
-
-  const closeEdit = useCallback(async () => {
-    if (editingTaskId && Object.keys(editingData).length > 0) {
-      const result = await saveChanges();
-      if (!result.success) {
-        // No cerrar si hay error
-        return;
+  const closeEdit = useCallback(() => {
+    // Si la tarea editada es un borrador sin nombre, descartarla
+    if (editingTaskId && isDraftTask?.(editingTaskId)) {
+      const task = tasks.find(t => t.data.id === editingTaskId);
+      const name = ((task?.data.label || task?.data.title || "") as string).trim();
+      if (!name) {
+        onDiscardDraft?.(editingTaskId);
       }
     }
     setEditingTaskId(null);
-    setEditingData({});
-    setEditError(null);
-  }, [editingTaskId, editingData, saveChanges]);
-
-  const cancelEdit = useCallback(() => {
-    setEditingTaskId(null);
-    setEditingData({});
-    setEditError(null);
-  }, []);
-
-  const handleSaveAndClose = useCallback(async () => {
-    const result = await saveChanges();
-    if (result.success) {
-      setEditingTaskId(null);
-      setEditingData({});
-      setEditError(null);
-    }
-  }, [saveChanges]);
-
-  const handleDeleteTask = useCallback(async () => {
-    if (!editingTaskId) return;
-    const confirmed = window.confirm("¿Eliminar esta tarea? Esta acción no se puede deshacer.");
-    if (!confirmed) return;
-
-    setSavingTaskId(editingTaskId);
-    const result = await onDeleteTask(editingTaskId);
-    setSavingTaskId(null);
-
-    if (!result.success) {
-      setEditError(result.error || "Error al eliminar");
-      return;
-    }
-
-    setEditingTaskId(null);
-    setEditingData({});
-    setEditError(null);
-  }, [editingTaskId, onDeleteTask]);
-
-  const debouncedSave = useCallback(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(saveChanges, 500);
-  }, [saveChanges]);
-
-  const updateField = useCallback(<K extends keyof TaskData>(field: K, value: TaskData[K]) => {
-    setEditingData(prev => ({ ...prev, [field]: value }));
-    debouncedSave();
-  }, [debouncedSave]);
-
-  const updateExtra = useCallback(<K extends keyof NonNullable<TaskData["extra"]>>(field: K, value: NonNullable<TaskData["extra"]>[K]) => {
-    setEditingData(prev => ({
-      ...prev,
-      extra: { ...(prev.extra || {}), [field]: value }
-    }));
-    debouncedSave();
-  }, [debouncedSave]);
+  }, [editingTaskId, isDraftTask, tasks, onDiscardDraft]);
 
   const toggleCompleted = useCallback(async (task: TaskRow) => {
     if (task.data.kind === "TITLE") return;
     await onUpdateTask(task.data.id, { isCompleted: !task.data.isCompleted });
   }, [onUpdateTask]);
 
-  useEffect(() => {
-    const data = editingData as TaskData;
-    if (!editingTaskId || !data || (data.type !== "INGRESO" && data.type !== "GASTO")) return;
-    if (!data.forecastId) return;
-    if (!hasForecastChildren(data.forecastId)) return;
-    const leafChild = onlyLeafForecasts.find(f => f.parentId === data.forecastId);
-    if (!leafChild) return;
-    updateField("forecastId", leafChild.id);
-  }, [editingTaskId, editingData, hasForecastChildren, onlyLeafForecasts, updateField]);
+  // ==================== TASK ACTIONS (creación/duplicado) ====================
+  const taskActions = useMemo(() => createTaskActions({
+    selectedMetaId,
+    tasks,
+    onCreateTask,
+    onAddLocalDraft: onAddLocalDraft ?? (() => {}),
+    calculateInsertOrder,
+    buildNewTaskData,
+    setEditingTaskId: (id) => {
+      setEditingTaskId(id);
+      if (id) {
+        pendingScrollTaskIdRef.current = id;
+        if (process.env.NODE_ENV === "development") console.log("[metas-scroll] pending set", id);
+      }
+    },
+  }), [selectedMetaId, tasks, onCreateTask, onAddLocalDraft]);
 
-  const createTask = useCallback(async (position: "before" | "after" | "child", referenceTask: TaskRow) => {
-    if (!selectedMetaId) return;
-
-    let parentId: string | null | undefined;
-    let level: number;
-    let siblings: TaskRow[];
-
-    if (position === "child") {
-      parentId = referenceTask.data.id;
-      level = (referenceTask.data.level || 0) + 1;
-      siblings = tasks.filter(t => t.data.parentId === referenceTask.data.id);
-    } else {
-      parentId = referenceTask.data.parentId;
-      level = referenceTask.data.level || 0;
-      siblings = tasks.filter(t => t.data.metaId === selectedMetaId && t.data.parentId === parentId);
-    }
-
-    const order = position === "child"
-      ? calculateInsertOrder(siblings, "after")
-      : calculateInsertOrder(siblings, position, referenceTask);
-
-    // Usar buildNewTaskData para garantizar objeto canónico igual que APP
-    const ref = referenceTask.data;
-    const isTitle = ref.kind === "TITLE";
-    const isUnscheduled = ref.extra?.unscheduled === true || !ref.date;
-
-    const newTaskData = buildNewTaskData({
-      metaId: selectedMetaId,
-      parentId: parentId ?? null,
-      level,
-      order,
-      type: ref.type,
-      scope: ref.scope,
-      title: "",
-      label: ref.label,
-      points: ref.points ?? 2,
-      date: ref.date,
-      isTitle,
-      unscheduled: isUnscheduled,
-      accountId: ref.accountId,
-      forecastId: ref.forecastId,
-      amountEUR: ref.extra?.amountEUR,
-    });
-
-    const result = await onCreateTask(newTaskData);
-    if (result.success) {
-      setEditingTaskId(newTaskData.id);
-      setEditingData(newTaskData);
-    }
-  }, [selectedMetaId, tasks, onCreateTask]);
-
-  const createRootTask = useCallback(async () => {
-    if (!selectedMetaId) return;
-    const rootTasks = tasks.filter(t => t.data.metaId === selectedMetaId && !t.data.parentId);
-    const order = calculateInsertOrder(rootTasks, "after");
-
-    // Usar buildNewTaskData para garantizar objeto canónico igual que APP
-    const newTaskData = buildNewTaskData({
-      metaId: selectedMetaId,
-      parentId: null,
-      level: 0,
-      order,
-      type: "ACTIVIDAD",
-      scope: "LABORAL",
-      title: "",
-      points: 2,
-    });
-
-    const result = await onCreateTask(newTaskData);
-    if (result.success) {
-      setEditingTaskId(newTaskData.id);
-      setEditingData(newTaskData);
-    }
-  }, [selectedMetaId, tasks, onCreateTask]);
-
-
-  const duplicateTask = useCallback(async (task: TaskRow) => {
-    if (!selectedMetaId) return;
-    const siblings = tasks.filter(t =>
-      t.data.metaId === selectedMetaId && t.data.parentId === task.data.parentId
-    );
-    const order = calculateInsertOrder(siblings, "after", task);
-
-    // Usar buildNewTaskData para garantizar objeto canónico igual que APP
-    const src = task.data;
-    const isTitle = src.kind === "TITLE";
-    const isUnscheduled = src.extra?.unscheduled === true || !src.date;
-
-    // Preservar campos extra relevantes del original
-    const extraOverrides: Partial<TaskExtra> = {};
-    if (src.extra) {
-      if (src.extra.frequency) extraOverrides.frequency = src.extra.frequency;
-      if (src.extra.unit) extraOverrides.unit = src.extra.unit;
-      if (src.extra.quantity !== undefined) extraOverrides.quantity = src.extra.quantity;
-      if (src.extra.weeklyDays) extraOverrides.weeklyDays = [...src.extra.weeklyDays];
-      if (src.extra.weeklyTime) extraOverrides.weeklyTime = src.extra.weeklyTime;
-      if (src.extra.monthlyDay) extraOverrides.monthlyDay = src.extra.monthlyDay;
-      if (src.extra.monthlyTime) extraOverrides.monthlyTime = src.extra.monthlyTime;
-      if (src.extra.notes) extraOverrides.notes = src.extra.notes;
-    }
-
-    const newTaskData = buildNewTaskData({
-      metaId: selectedMetaId,
-      parentId: src.parentId ?? null,
-      level: src.level,
-      order,
-      type: src.type,
-      scope: src.scope,
-      title: `${src.title || "Sin nombre"} (copia)`,
-      label: src.label,
-      description: src.description,
-      date: src.date,
-      points: src.points ?? 2,
-      isTitle,
-      unscheduled: isUnscheduled,
-      accountId: src.accountId,
-      forecastId: src.forecastId,
-      amountEUR: src.extra?.amountEUR,
-      extraOverrides,
-    });
-
-    const result = await onCreateTask(newTaskData);
-    if (result.success) {
-      setEditingTaskId(newTaskData.id);
-      setEditingData(newTaskData);
-      // Focus y select en el input de nombre después del render
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          nameInputRef.current?.focus();
-          nameInputRef.current?.select();
-        }, 50);
-      });
-    }
-  }, [selectedMetaId, tasks, onCreateTask]);
+  const { createTask, createRootTask, duplicateTask } = taskActions;
 
   const softDeleteTask = useCallback(async (task: TaskRow) => {
     // Guardar snapshot antes de borrar
@@ -1151,7 +922,6 @@ export default function TaskDiagramTree({
     // Cerrar edición si estaba editando esta tarea
     if (editingTaskId === task.data.id) {
       setEditingTaskId(null);
-      setEditingData({});
     }
     setHoveredNodeId(null);
   }, [onDeleteTask, editingTaskId]);
@@ -1240,9 +1010,9 @@ export default function TaskDiagramTree({
 
   // Iniciar drag potencial
   const handlePointerDown = useCallback((e: React.PointerEvent, task: TaskRow) => {
-    // No iniciar drag desde controles realmente interactivos (no incluir data-no-drag general)
+    if (draggingMini) return; // Bloquear drag de tareas principales durante drag de mini-tarea
     const target = e.target as HTMLElement;
-    if (target.closest("button, input, select, textarea, [data-edit-panel], [data-inline-editor]")) return;
+    if (target.closest("button, input, select, textarea, [data-edit-panel], [data-inline-editor], [data-mini-item]")) return;
     
     didDragRef.current = false;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -1257,7 +1027,7 @@ export default function TaskDiagramTree({
     });
     setDragPos({ x: e.clientX, y: e.clientY });
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  }, []);
+  }, [draggingMini]);
 
   // Mover durante drag
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
@@ -1470,11 +1240,72 @@ export default function TaskDiagramTree({
       points: labelItem.points,
       label: labelItem.name,
     };
-    if (editingTaskId === task.data.id) {
-      setEditingData(prev => ({ ...prev, ...updates }));
-    }
     await onUpdateTask(task.data.id, updates);
-  }, [editingTaskId, setEditingData, onUpdateTask]);
+  }, [onUpdateTask]);
+
+  // ==================== MULTI-ITEM HANDLERS ====================
+
+  const handleConvertMultiItem = useCallback(async (task: TaskRow, itemId: string) => {
+    const item = task.data.multiItems?.find(i => i.id === itemId);
+    if (!item) return;
+
+    // Crear tarea normal como sibling del MULTI
+    const siblings = tasks.filter(t =>
+      t.data.metaId === task.data.metaId && (t.data.parentId ?? null) === (task.data.parentId ?? null)
+    );
+    const order = calculateInsertOrder(siblings, "after", task);
+    const newTaskData = buildNewTaskData({
+      metaId: task.data.metaId || selectedMetaId || "",
+      parentId: task.data.parentId,
+      level: task.data.level ?? 0,
+      order,
+      title: item.title,
+    });
+
+    const result = await onCreateTask(newTaskData);
+    if (result.success) {
+      // Quitar item del array multiItems del padre
+      const newMultiItems = (task.data.multiItems || []).filter(i => i.id !== itemId);
+      await onUpdateTask(task.data.id, { multiItems: newMultiItems });
+    }
+  }, [tasks, selectedMetaId, onCreateTask, onUpdateTask]);
+
+  const handleDeleteMultiItem = useCallback(async (task: TaskRow, itemId: string) => {
+    const newMultiItems = (task.data.multiItems || []).filter(i => i.id !== itemId);
+    await onUpdateTask(task.data.id, { multiItems: newMultiItems });
+  }, [onUpdateTask]);
+
+  const handleAddMultiItem = useCallback(async (task: TaskRow, title: string) => {
+    const items = task.data.multiItems || [];
+    const newItem = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      title: title.trim(),
+      done: false,
+      order: items.length > 0 ? Math.max(...items.map(i => i.order)) + 1000 : 1000,
+    };
+    const newMultiItems = [...items, newItem];
+    await onUpdateTask(task.data.id, { multiItems: newMultiItems });
+  }, [onUpdateTask]);
+
+  const handleReorderMultiItems = useCallback(async (task: TaskRow, items: MultiItem[]) => {
+    const allItems = task.data.multiItems || [];
+    const hideDone = hideDoneMultiByTaskId[task.data.id];
+    let nextAll: MultiItem[];
+    if (hideDone) {
+      const doneItems = allItems.filter(i => i.done).sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+      nextAll = [...items, ...doneItems];
+    } else {
+      nextAll = items;
+    }
+    const withOrder = nextAll.map((it, i) => ({ ...it, order: (i + 1) * 1000 }));
+    await onUpdateTask(task.data.id, { multiItems: withOrder });
+  }, [onUpdateTask, hideDoneMultiByTaskId]);
+
+  const handleRenameMultiItem = useCallback(async (task: TaskRow, itemId: string, newTitle: string) => {
+    const allItems = task.data.multiItems ?? [];
+    const updatedAll = allItems.map(it => it.id === itemId ? { ...it, title: newTitle } : it);
+    await onUpdateTask(task.data.id, { multiItems: updatedAll });
+  }, [onUpdateTask]);
 
   // ==================== RENDER NODO TAREA ====================
 
@@ -1493,6 +1324,12 @@ export default function TaskDiagramTree({
     const dropPosition = isDropTarget ? dragOver.position : null;
     const primaryText = getInlinePrimaryText(data, bankAccounts, forecastLines);
     const isTitleTask = data.kind === "TITLE";
+    const isMulti = data.type === "MULTI" && Array.isArray(data.multiItems) && data.multiItems.length > 0;
+    const hasMultiItems = isMulti;
+    const multiProgress = isMulti ? computeMultiProgress(data.multiItems!) : null;
+    const showChevron = hasChildren || hasMultiItems;
+    const isChildTask = !!data.parentId;
+    const showPointsValue = (hidePoints && !isChildTask) ? "" : points;
 
     // Ref callback para medir altura y guardar referencia para hit-testing
     const cardRef = (el: HTMLDivElement | null) => {
@@ -1505,11 +1342,16 @@ export default function TaskDiagramTree({
       }
     };
 
+    const isDimmedByMiniDrag = draggingMini && data.id !== draggingMini.parentTaskId;
+
     return (
       <div
         key={node.id}
         data-node
-        className={`absolute ${isDraggingThis ? "opacity-30" : ""}`}
+        data-task-id={data.id}
+        className={`absolute transition-opacity ${
+          isDraggingThis ? "opacity-30" : isDimmedByMiniDrag ? "opacity-40" : ""
+        }`}
         style={{ left: node.x, top: node.y, width: node.w }}
         onMouseEnter={() => !dragging?.isDragActive && setHoveredNodeId(data.id)}
         onMouseLeave={() => !dragging?.isDragActive && setHoveredNodeId(null)}
@@ -1540,8 +1382,28 @@ export default function TaskDiagramTree({
             style={{ width: node.w, minHeight: TASK_NODE_MIN_H }}
           >
             {isTitleTask ? (
-              <div className="flex items-center justify-center px-3 py-2">
-                <div className="flex-1 flex items-center justify-center">
+              <div className="flex items-center px-3 py-2">
+                {/* Columna izquierda: botón colapsar si hay hijos */}
+                <div className="w-4 flex items-center justify-center">
+                  {hasChildren ? (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); toggleCollapse(data.id); }}
+                      className="flex-shrink-0 w-4 h-4 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors"
+                      title={isCollapsed ? "Expandir" : "Contraer"}
+                      data-no-drag
+                    >
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                        {isCollapsed 
+                          ? <path d="M3 1 L8 5 L3 9 Z" />
+                          : <path d="M1 3 L5 8 L9 3 Z" />
+                        }
+                      </svg>
+                    </button>
+                  ) : null}
+                </div>
+
+                {/* Columna centro: título centrado */}
+                <div className="flex-1 flex items-center justify-center min-w-0">
                   {inlineEdit?.taskId === data.id && inlineEdit.field === "title" ? (
                     <div data-inline-editor className="w-full">
                       <input
@@ -1573,11 +1435,14 @@ export default function TaskDiagramTree({
                     </span>
                   )}
                 </div>
+
+                {/* Columna derecha: espaciador fijo */}
+                <div className="w-4" />
               </div>
             ) : (
               <div className="flex items-center px-3 py-1 gap-3">
-                {/* Botón colapsar (solo si tiene hijos) */}
-                {hasChildren ? (
+                {/* Botón colapsar (si tiene hijos o mini-tareas MULTI) */}
+                {showChevron ? (
                   <button
                     onClick={(e) => { e.stopPropagation(); toggleCollapse(data.id); }}
                     className="flex-shrink-0 w-4 h-4 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors"
@@ -1610,7 +1475,7 @@ export default function TaskDiagramTree({
                   `}
                   data-no-drag
                 >
-                  {data.isCompleted ? "✓" : points}
+                  {data.isCompleted ? "✓" : showPointsValue}
                 </button>
 
                 {/* Contenido: título + extras + fecha con edición inline */}
@@ -1700,6 +1565,34 @@ export default function TaskDiagramTree({
                         </span>
                       );
                     })()}
+
+                    {/* Badge progreso MULTI: "X/Y" + ojo para toggle mini-tareas */}
+                    {multiProgress && (
+                      <div className="ml-1.5 flex items-center gap-1 flex-shrink-0">
+                        <span className="px-1.5 py-0 text-[10px] font-medium text-slate-500 bg-slate-100 rounded-full whitespace-nowrap">
+                          {multiProgress.label}
+                        </span>
+                        <button
+                          data-no-drag
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); toggleHideDoneMulti(data.id); }}
+                          className="w-4 h-4 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                          title={hideDoneMultiByTaskId[data.id] ? "Mostrar completadas" : "Ocultar completadas"}
+                        >
+                          {hideDoneMultiByTaskId[data.id] ? (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                              <line x1="1" y1="1" x2="23" y2="23" />
+                            </svg>
+                          ) : (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                              <circle cx="12" cy="12" r="3" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Bloque derecho: fecha/hora + extras inline */}
@@ -1925,6 +1818,24 @@ export default function TaskDiagramTree({
                 </div>
               </div>
             )}
+
+            {/* Lista expandida de mini-tareas MULTI (dentro del card para medición de altura) */}
+            {isMulti && !isCollapsed && (
+              <div className="border-t border-slate-100">
+                <MultiItemsInline
+                  items={hideDoneMultiByTaskId[data.id] ? (data.multiItems!).filter(i => !i.done) : data.multiItems!}
+                  allItems={data.multiItems!}
+                  parentTaskId={data.id}
+                  onAddItem={(title) => handleAddMultiItem(task, title)}
+                  onRename={(itemId, newTitle) => handleRenameMultiItem(task, itemId, newTitle)}
+                  onConvertItem={(itemId) => handleConvertMultiItem(task, itemId)}
+                  onDeleteItem={(itemId) => handleDeleteMultiItem(task, itemId)}
+                  onReorder={(items) => handleReorderMultiItems(task, items)}
+                  onDragStart={(itemId) => setDraggingMini({ parentTaskId: data.id, itemId })}
+                  onDragEnd={() => setDraggingMini(null)}
+                />
+              </div>
+            )}
           </div>
 
           {/* Barra de acciones (fuera de la card, horizontal) */}
@@ -1988,9 +1899,17 @@ export default function TaskDiagramTree({
 
         {/* Placeholder drop AFTER */}
         {isDropTarget && dropPosition === "after" && (
-          <div 
+          <div
             className="absolute left-0 right-0 border-2 border-dashed border-blue-400 bg-blue-50/50 rounded-lg z-30"
             style={{ bottom: -TASK_NODE_MIN_H / 2 - GAP_Y / 2, height: TASK_NODE_MIN_H }}
+          />
+        )}
+
+        {/* Placeholder drop INSIDE (as child) — indented to show nesting level */}
+        {isDropTarget && dropPosition === "inside" && (
+          <div
+            className="absolute right-0 border-2 border-dashed border-blue-400 bg-blue-50/50 rounded-lg z-30"
+            style={{ left: INDENT_X, bottom: -TASK_NODE_MIN_H / 2 - GAP_Y / 2, height: TASK_NODE_MIN_H }}
           />
         )}
 
@@ -1999,7 +1918,29 @@ export default function TaskDiagramTree({
           <EditPanelPortal
             task={task}
             anchorEl={nodeRefsMap.current.get(data.id) as HTMLDivElement | undefined}
-            renderContent={renderEditPanel}
+            renderContent={(t) => (
+              <TaskEditPanel
+                task={t}
+                bankAccounts={bankAccounts}
+                forecastLines={forecastLines}
+                labels={labels}
+                onUpdateTask={onUpdateTask}
+                onDeleteTask={onDeleteTask}
+                onClose={() => {
+                  // Si el panel se cierra con un borrador sin nombre (cancel explícito), descartarlo
+                  if (isDraftTask?.(t.data.id)) {
+                    onDiscardDraft?.(t.data.id);
+                  }
+                  setEditingTaskId(null);
+                }}
+                onRequestCreateAfter={() => createTask("after", t)}
+                onRequestCreateChild={() => createTask("child", t)}
+                metas={metas}
+                tasks={tasks}
+                isDraft={isDraftTask?.(t.data.id)}
+                onDiscardDraft={() => onDiscardDraft?.(t.data.id)}
+              />
+            )}
           />
         )}
       </div>
@@ -2012,6 +1953,18 @@ export default function TaskDiagramTree({
     if (!selectedMeta) return null;
     const isHovered = hoveredNodeId === node.id;
     const isMetaActive = selectedMeta.isActive !== false; // default true
+
+    // Color de fondo: usa meta.color si es válido, sino fallback a azul
+    const metaColor = selectedMeta.color && /^#[0-9A-Fa-f]{6}$/.test(selectedMeta.color) 
+      ? selectedMeta.color 
+      : null;
+    const bgColor = isMetaActive 
+      ? (metaColor || "#3B82F6") // azul por defecto
+      : "#64748B"; // slate para pausada
+    const textColor = isDarkColor(bgColor) ? "white" : "#1e293b"; // blanco o slate-800
+
+    // Icono: usa meta.icon si existe, sino fallback a 🎯
+    const metaIcon = selectedMeta.icon?.trim() || "🎯";
 
     const handleToggleActive = async (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -2029,16 +1982,15 @@ export default function TaskDiagramTree({
         onMouseLeave={() => setHoveredNodeId(null)}
       >
         <div 
-          className={`rounded-lg shadow-md px-4 py-2 flex items-center justify-between text-white cursor-pointer transition-all ${
-            isMetaActive 
-              ? "bg-gradient-to-r from-blue-500 to-blue-600" 
-              : "bg-gradient-to-r from-slate-400 to-slate-500 opacity-80"
+          className={`rounded-lg shadow-md px-4 py-2 flex items-center justify-between cursor-pointer transition-all ${
+            !isMetaActive ? "opacity-80" : ""
           }`}
-          style={{ minHeight: META_NODE_H }}
+          style={{ minHeight: META_NODE_H, backgroundColor: bgColor, color: textColor }}
           onClick={() => onOpenMetaModal(selectedMeta)}
           title="Editar meta"
         >
           <div className="flex items-center gap-2 flex-1 min-w-0">
+            <span className="text-lg">{metaIcon}</span>
             <span className={`text-lg font-semibold truncate ${!isMetaActive ? "opacity-70" : ""}`}>
               {selectedMeta.title}
             </span>
@@ -2082,758 +2034,6 @@ export default function TaskDiagramTree({
             </button>
           </div>
         </div>
-      </div>
-    );
-  };
-
-  // ==================== RENDER PANEL DE EDICIÓN ====================
-
-  const UI_TYPES: UITaskType[] = ["Actividad", "Fisico", "Conocimiento", "Ingreso", "Gasto", "Titulo"];
-
-  const renderEditPanel = (task: TaskRow) => {
-    const data = editingData as TaskData;
-    const currentUIType = getUIType(data.type, data.scope, data.kind);
-    const isFinance = data.type === "INGRESO" || data.type === "GASTO";
-    const isPhysicalKnowledge = data.scope === "FISICO" || data.scope === "CRECIMIENTO";
-    const isTitleTask = data.kind === "TITLE";
-
-    const schedType = isTaskUnscheduled(data) ? "sin_programar"
-      : data.extra?.frequency === "SEMANAL" ? "semanal"
-      : data.extra?.frequency === "MENSUAL" ? "mensual" : "puntual";
-
-    // Handler para cambiar tipo
-    const handleTypeChange = (newUIType: UITaskType) => {
-      const mapping = UI_TYPE_MAPPING[newUIType];
-      if (!mapping) return;
-
-      // Cambiar a Titulo: setear kind="TITLE", scope=null, points=0, limpiar campos
-      if (newUIType === "Titulo") {
-        const cleanExtra: TaskExtra = {};
-        if (data.extra?.completedDates) cleanExtra.completedDates = data.extra.completedDates;
-        if (data.extra?.notes) cleanExtra.notes = data.extra.notes;
-
-        const updates: Partial<TaskData> = {
-          kind: "TITLE",
-          type: "ACTIVIDAD",
-          scope: null,
-          title: data.title || "",
-          points: 0,
-          date: null,
-          time: null,
-          repeatRule: null,
-          accountId: null,
-          forecastId: null,
-          label: undefined,
-          description: undefined,
-          isCompleted: false,
-          extra: Object.keys(cleanExtra).length > 0 ? cleanExtra : undefined,
-        };
-
-        setEditingData(prev => ({ ...prev, ...updates }));
-        debouncedSave();
-        return;
-      }
-
-      // Cambiar desde Titulo a otro tipo: quitar kind
-      const nextExtra = { ...(data.extra || {}) };
-
-      const updates: Partial<TaskData> = { 
-        kind: null,
-        type: mapping.type, 
-        scope: mapping.scope ?? undefined,
-      };
-
-      // Limpiar campos incompatibles si cambia a no-financiero
-      if (mapping.type !== "INGRESO" && mapping.type !== "GASTO") {
-        updates.accountId = undefined;
-        updates.forecastId = undefined;
-        delete nextExtra.amountEUR;
-      }
-      
-      // Limpiar label si cambia desde/hacia Fisico/Conocimiento
-      if ((mapping.scope === "FISICO" || mapping.scope === "CRECIMIENTO") !== isPhysicalKnowledge) {
-        updates.label = undefined;
-      }
-
-      const sanitizedExtra = Object.keys(nextExtra).length > 0 ? nextExtra : undefined;
-      setEditingData(prev => ({ ...prev, ...updates, extra: sanitizedExtra }));
-      debouncedSave();
-    };
-
-    const renderTypeChips = () => (
-      <div className="flex flex-wrap gap-2">
-        {UI_TYPES.map(t => (
-          <button
-            key={t}
-            data-no-drag
-            onClick={() => handleTypeChange(t)}
-            className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${currentUIType === t ? "bg-blue-500 text-white border-blue-500" : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"}`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-    );
-
-    const renderPhysicalKnowledgeControls = () => {
-      const physLike = isPhysLike(data);
-      const currentLabelName = data.label || data.title || "";
-      const labelKey = normalizeLabelKey(currentLabelName);
-      const scopedCfg = getSubTagCfg(data.scope, labelKey);
-      const cfg = getLabelCfg(currentLabelName);
-      const isCustomTag = !!currentLabelName && !scopedCfg;
-      const allowedUnits = cfg.allowedUnits?.length ? cfg.allowedUnits : FALLBACK_LABEL_CFG.allowedUnits;
-      const coercedUnit = coerceUnitFromLegacy(data.extra?.unit as string | undefined);
-      const selectedUnit: SubUnit | undefined = allowedUnits.includes(coercedUnit as SubUnit) ? coercedUnit as SubUnit : (cfg.defaultUnit ?? allowedUnits[0]);
-      const showQuantity = physLike && !isFoodLabel(currentLabelName) && !isCustomTag && cfg.showQuantity !== false;
-      const quantityValue = showQuantity
-        ? (data.extra?.quantity ?? (selectedUnit ? cfg.defaultsByUnit?.[selectedUnit] : undefined) ?? cfg.defaultQuantity)
-        : undefined;
-      const detailsField = data.scope === "CRECIMIENTO" ? "knowledgeDetails" : "physicalDetails";
-
-      const setUnitAndQuantity = (unit: SubUnit | undefined, quantity: number | undefined, labelForDetails: string) => {
-        setEditingData(prev => {
-          const extra = { ...(prev.extra || {}) };
-          if (showQuantity && unit !== undefined && quantity !== undefined) {
-            extra.unit = unit as any;
-            extra.quantity = quantity;
-          } else {
-            delete extra.unit;
-            delete extra.quantity;
-          }
-          if (physLike && (data.scope === "FISICO" || data.scope === "CRECIMIENTO")) {
-            if (showQuantity && unit !== undefined && quantity !== undefined) {
-              (extra as any)[detailsField] = { kind: data.scope, label: normalizeLabelKey(labelForDetails), unit, value: quantity };
-            } else {
-              delete (extra as any)[detailsField];
-            }
-          }
-          return { ...prev, extra };
-        });
-        debouncedSave();
-      };
-
-      const handleLabelClick = async (labelItem: Label) => {
-        const cfgForLabel = getLabelCfg(labelItem.name);
-        const scopedCfgLabel = getSubTagCfg(data.scope, normalizeLabelKey(labelItem.name));
-        const isCustom = !scopedCfgLabel;
-        const nextUnit = cfgForLabel.showQuantity === false || isCustom ? undefined : (cfgForLabel.defaultUnit ?? cfgForLabel.allowedUnits[0]);
-        const nextQty = cfgForLabel.showQuantity === false || isCustom
-          ? undefined
-          : (nextUnit ? cfgForLabel.defaultsByUnit?.[nextUnit] : undefined) ?? cfgForLabel.defaultQuantity ?? 1;
-
-        setAddingLabel(false);
-        setNewLabelName("");
-
-        setEditingData(prev => {
-          const extra = { ...(prev.extra || {}) };
-          if (cfgForLabel.showQuantity === false || isCustom) {
-            delete extra.unit;
-            delete extra.quantity;
-            delete (extra as any)[detailsField];
-          } else {
-            extra.unit = nextUnit as any;
-            extra.quantity = nextQty;
-            if (physLike && (data.scope === "FISICO" || data.scope === "CRECIMIENTO")) {
-              (extra as any)[detailsField] = { kind: data.scope, label: normalizeLabelKey(labelItem.name), unit: nextUnit, value: nextQty };
-            }
-          }
-          return {
-            ...prev,
-            label: labelItem.name,
-            title: labelItem.name,
-            points: labelItem.points,
-            extra
-          };
-        });
-        debouncedSave();
-      };
-
-      const handleUnitClick = (u: SubUnit) => {
-        const cfgFor = getLabelCfg(currentLabelName);
-        const nextQty = cfgFor.showQuantity === false ? undefined : (cfgFor.defaultsByUnit?.[u] ?? cfgFor.defaultQuantity ?? quantityValue ?? 1);
-        setUnitAndQuantity(u, nextQty, currentLabelName);
-      };
-
-      const handleQuantityChange = (nextQty: number) => {
-        if (!showQuantity) return;
-        setUnitAndQuantity(selectedUnit || cfg.defaultUnit, nextQty, currentLabelName);
-      };
-
-      const handleAddLabelConfirm = async () => {
-        const raw = newLabelName.trim().replace(/#/g, "").replace(/\s+/g, " ");
-        if (!raw) return;
-        const normalized = normalizeLabelKey(raw);
-        const exists = localLabels.some(l => l.scope === data.scope && normalizeLabelKey(l.name) === normalized);
-        if (exists) { setAddingLabel(false); setNewLabelName(""); return; }
-        const category = data.scope === "FISICO" ? "phys" : "know";
-        const res = await ensureScoringItemExists(category as "phys" | "know", raw, data.points);
-        const newPoints = res && "points" in (res as any) && (res as any).points !== undefined ? (res as any).points : data.points;
-        const newLabel: Label = {
-          id: `new-${Date.now()}`,
-          name: raw,
-          points: newPoints || 2,
-          scope: data.scope || "FISICO",
-        };
-        setLocalLabels(prev => [...prev, newLabel]);
-        setAddingLabel(false);
-        setNewLabelName("");
-        await handleLabelClick(newLabel);
-      };
-
-      const handleAddLabelCancel = () => {
-        setAddingLabel(false);
-        setNewLabelName("");
-      };
-
-      if (!physLike) {
-        return (
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Nombre</label>
-            <input
-              data-no-drag
-              ref={nameInputRef}
-              type="text"
-              value={data.title || ""}
-              onChange={(e) => updateField("title", e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") { e.preventDefault(); createTask("after", task); }
-                else if (e.key === "Tab" && !e.shiftKey) { e.preventDefault(); createTask("child", task); }
-              }}
-              placeholder="Nombre de la tarea"
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
-            />
-          </div>
-        );
-      }
-
-      return (
-        <div className="space-y-2">
-          {/* Etiquetas (solo Fisico/Conocimiento) */}
-          <div className="flex flex-wrap gap-2 items-center">
-            {localLabels.filter(l => l.scope === data.scope).map(labelItem => {
-              const selected = data.label === labelItem.name;
-              return (
-                <button
-                  key={labelItem.id}
-                  data-no-drag
-                  onClick={() => handleLabelClick(labelItem)}
-                  className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${selected ? "bg-blue-500 text-white border-blue-500" : "bg-white text-slate-600 border-slate-200 hover:border-blue-300"}`}
-                >
-                  {labelItem.name}
-                </button>
-              );
-            })}
-            <button
-              data-no-drag
-              onClick={() => { setAddingLabel(true); setNewLabelName(""); }}
-              className="px-3 py-1.5 text-xs rounded-full border border-dashed border-slate-300 text-slate-500 hover:border-slate-400 transition-colors"
-            >
-              Añadir+
-            </button>
-          </div>
-
-          {addingLabel && (
-            <div className="flex gap-2 items-center">
-              <input
-                data-no-drag
-                type="text"
-                value={newLabelName}
-                onChange={(e) => setNewLabelName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddLabelConfirm(); } } }
-                className="px-2 py-1 text-xs border border-slate-200 rounded w-40"
-                placeholder="Nueva etiqueta"
-              />
-              <button data-no-drag onClick={handleAddLabelConfirm} className="px-2 py-1 text-xs rounded bg-blue-500 text-white">OK</button>
-              <button data-no-drag onClick={handleAddLabelCancel} className="px-2 py-1 text-xs rounded border border-slate-200">Cancelar</button>
-            </div>
-          )}
-
-          {/* Cantidad + Unidad */}
-          {showQuantity && (
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-1">
-                <button
-                  data-no-drag
-                  onClick={() => handleQuantityChange(Math.max(0, (quantityValue ?? 0) - 1))}
-                  className="w-7 h-7 text-sm rounded border border-slate-200 bg-white hover:border-slate-300"
-                >
-                  -
-                </button>
-                <input
-                  data-no-drag
-                  type="number"
-                  value={quantityValue ?? 0}
-                  onChange={(e) => handleQuantityChange(Number(e.target.value) || 0)}
-                  className="w-14 px-2 py-1 text-xs border border-slate-200 rounded"
-                />
-                <button
-                  data-no-drag
-                  onClick={() => handleQuantityChange((quantityValue ?? 0) + 1)}
-                  className="w-7 h-7 text-sm rounded border border-slate-200 bg-white hover:border-slate-300"
-                >
-                  +
-                </button>
-              </div>
-              <div className="flex items-center gap-1">
-                {allowedUnits.map(u => (
-                  <button
-                    key={u}
-                    data-no-drag
-                    onClick={() => handleUnitClick(u)}
-                    className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${selectedUnit === u ? "bg-blue-500 text-white border-blue-500" : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"}`}
-                  >
-                    {u}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Nombre */}
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Nombre</label>
-            <input
-              data-no-drag
-              ref={nameInputRef}
-              type="text"
-              value={data.title || ""}
-              onChange={(e) => updateField("title", e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") { e.preventDefault(); createTask("after", task); }
-                else if (e.key === "Tab" && !e.shiftKey) { e.preventDefault(); createTask("child", task); }
-              }}
-              placeholder="Nombre de la tarea"
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
-            />
-          </div>
-        </div>
-      );
-    };
-
-    const renderFinanceControls = () => {
-      // SOLO HOJAS (sin filtrar por type - INGRESO y GASTO usan las mismas fuentes)
-      const financeLeafs = onlyLeafForecasts;
-      return (
-        <div className="space-y-3">
-          {/* Nombre + Cantidad */}
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <label className="block text-xs font-medium text-slate-500 mb-1">Nombre</label>
-              <input
-                data-no-drag
-                ref={nameInputRef}
-                type="text"
-                value={data.title || ""}
-                onChange={(e) => updateField("title", e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") { e.preventDefault(); createTask("after", task); }
-                  else if (e.key === "Tab" && !e.shiftKey) { e.preventDefault(); createTask("child", task); }
-                }}
-                placeholder="Nombre de la tarea"
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
-              />
-            </div>
-            <div className="w-36">
-              <label className="block text-xs font-medium text-slate-500 mb-1">Cantidad</label>
-              <input
-                data-no-drag
-                type="number"
-                value={data.extra?.amountEUR ?? ""}
-                onChange={(e) => updateExtra("amountEUR", e.target.value === "" ? undefined : parseFloat(e.target.value))}
-                placeholder="0,00"
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
-              />
-            </div>
-          </div>
-
-          {/* Cuenta y Previsión en fila */}
-          <div className="grid grid-cols-2 gap-3 items-start">
-            <div className="min-w-0">
-              <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Cuenta</div>
-              <div className="flex flex-wrap gap-1">
-                {/* Opción "Sin asociar" */}
-                <button
-                  data-no-drag
-                  onClick={() => { updateField("accountId", undefined); }}
-                  className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${!data.accountId ? "bg-blue-500 text-white border-blue-500" : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"}`}
-                >
-                  Sin asociar
-                </button>
-                {bankAccounts.map(acc => (
-                  <button
-                    key={acc.id}
-                    data-no-drag
-                    onClick={() => { updateField("accountId", acc.id); }}
-                    className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${data.accountId === acc.id ? "bg-blue-500 text-white border-blue-500" : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"}`}
-                  >
-                    {acc.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="min-w-0">
-              <div className="text-[11px] uppercase tracking-wide text-slate-400 mb-1">Previsión</div>
-              <div className="flex flex-wrap gap-1">
-                {/* Opción "Sin asociar" */}
-                <button
-                  data-no-drag
-                  onClick={() => { updateField("forecastId", undefined); }}
-                  className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${!data.forecastId ? "bg-blue-500 text-white border-blue-500" : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"}`}
-                >
-                  Sin asociar
-                </button>
-                {financeLeafs.map(f => (
-                  <button
-                    key={f.id}
-                    data-no-drag
-                    onClick={() => { updateField("forecastId", f.id); }}
-                    className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${data.forecastId === f.id ? "bg-blue-500 text-white border-blue-500" : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"}`}
-                  >
-                    {f.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    };
-
-    return (
-      <div className="space-y-3 text-sm">
-        {/* Tipo como chips */}
-        {renderTypeChips()}
-
-        {/* Controles según tipo */}
-        {isFinance ? renderFinanceControls() : renderPhysicalKnowledgeControls()}
-
-        {/* Scheduling */}
-        {!isTitleTask && (
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">Programación</label>
-            <div className="flex flex-wrap gap-1 mb-2">
-              {(["puntual", "semanal", "mensual", "sin_programar"] as const).map(type => (
-                <button
-                  key={type}
-                  onClick={() => {
-                    const extra = { ...(data.extra || {}) };
-                    if (type === "sin_programar") {
-                      extra.frequency = "PUNTUAL"; extra.unscheduled = true;
-                      delete extra.weeklyDays; delete extra.monthlyDay;
-                      setEditingData(prev => ({ ...prev, date: undefined, time: undefined, repeatRule: undefined, extra }));
-                    } else if (type === "puntual") {
-                      extra.frequency = "PUNTUAL"; extra.unscheduled = false;
-                      delete extra.weeklyDays; delete extra.monthlyDay;
-                      setEditingData(prev => ({ ...prev, date: prev.date || getTodayISO(), repeatRule: undefined, extra }));
-                    } else if (type === "semanal") {
-                      extra.frequency = "SEMANAL"; extra.unscheduled = false;
-                      extra.weeklyDays = extra.weeklyDays || []; delete extra.monthlyDay;
-                      setEditingData(prev => ({ ...prev, date: undefined, extra }));
-                    } else if (type === "mensual") {
-                      extra.frequency = "MENSUAL"; extra.unscheduled = false;
-                      extra.monthlyDay = extra.monthlyDay || 1; delete extra.weeklyDays;
-                      setEditingData(prev => ({ ...prev, date: undefined, extra }));
-                    }
-                    debouncedSave();
-                  }}
-                  className={`px-2 py-1 text-xs rounded-full border transition-colors ${schedType === type ? "bg-blue-500 text-white border-blue-500" : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"}`}
-                >
-                  {type === "puntual" && "Puntual"}
-                  {type === "semanal" && "Semanal"}
-                  {type === "mensual" && "Mensual"}
-                  {type === "sin_programar" && "Sin programar"}
-                </button>
-              ))}
-            </div>
-
-            {/* ==================== BLOQUE REMINDER REUTILIZABLE ==================== */}
-            {(() => {
-              // Determinar la hora base según frecuencia
-              const getTimeForReminder = (): string | null => {
-                if (schedType === "puntual") return data.time || null;
-                if (schedType === "semanal") return data.extra?.weeklyTime as string || null;
-                if (schedType === "mensual") return data.extra?.monthlyTime as string || null;
-                return null;
-              };
-              const timeForReminder = getTimeForReminder();
-
-              // Normalización defensiva - DEFAULTS OBLIGATORIOS: false, "min", 30
-              const reminderEnabled = data.extra?.reminderEnabled === true;
-              const rawUnit = data.extra?.reminderOffsetUnit;
-              const reminderUnit: "min" | "hor" = (rawUnit === "min" || rawUnit === "hor") ? rawUnit : "min";
-              const rawValue = data.extra?.reminderOffsetValue;
-              const reminderValue = (typeof rawValue === "number" && rawValue >= 1) ? rawValue : 30;
-
-              // Handler para toggle de reminder (SWITCH)
-              const handleToggleReminder = () => {
-                const newEnabled = !reminderEnabled;
-                // SIEMPRE guardar los 3 campos
-                const newExtra = {
-                  ...(data.extra || {}),
-                  reminderEnabled: newEnabled,
-                  reminderOffsetUnit: reminderUnit,
-                  reminderOffsetValue: reminderValue,
-                };
-                setEditingData(prev => ({ ...prev, extra: newExtra }));
-                debouncedSave();
-              };
-
-              // Handler para cambio de valor
-              const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-                const parsed = parseInt(e.target.value, 10);
-                const finalValue = (parsed >= 1) ? parsed : 30;
-                // SIEMPRE guardar los 3 campos
-                const newExtra = {
-                  ...(data.extra || {}),
-                  reminderEnabled,
-                  reminderOffsetUnit: reminderUnit,
-                  reminderOffsetValue: finalValue,
-                };
-                setEditingData(prev => ({ ...prev, extra: newExtra }));
-                debouncedSave();
-              };
-
-              // Handler para cambio de unidad
-              const handleUnitChange = (newUnit: "min" | "hor") => {
-                if (newUnit === reminderUnit) return;
-                // SIEMPRE guardar los 3 campos
-                const newExtra = {
-                  ...(data.extra || {}),
-                  reminderEnabled,
-                  reminderOffsetUnit: newUnit,
-                  reminderOffsetValue: reminderValue,
-                };
-                setEditingData(prev => ({ ...prev, extra: newExtra }));
-                debouncedSave();
-              };
-
-              // Calcular texto de aviso usando la función pura
-              const reminderText = (reminderEnabled && timeForReminder)
-                ? getReminderDisplay({ time: timeForReminder, extra: { reminderEnabled: true, reminderOffsetUnit: reminderUnit, reminderOffsetValue: reminderValue } })
-                : null;
-
-              // Render del bloque reminder
-              const renderReminderBlock = () => {
-                if (!timeForReminder) return null;
-                return (
-                  <div className="flex flex-wrap items-center gap-2 text-xs mt-2">
-                    {/* SWITCH toggle */}
-                    <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={reminderEnabled}
-                        onClick={handleToggleReminder}
-                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-400/50 ${
-                          reminderEnabled ? "bg-blue-500" : "bg-slate-300"
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                            reminderEnabled ? "translate-x-4" : "translate-x-0.5"
-                          }`}
-                        />
-                      </button>
-                      <span className="text-slate-600 whitespace-nowrap">Activar aviso previo</span>
-                    </label>
-
-                    {/* Input numérico */}
-                    <input
-                      type="number"
-                      min="1"
-                      value={reminderValue}
-                      onChange={handleValueChange}
-                      disabled={!reminderEnabled}
-                      className={`w-14 px-2 py-1 text-xs border border-slate-200 rounded-lg text-center transition-opacity ${!reminderEnabled ? "opacity-50 bg-slate-50" : ""}`}
-                    />
-
-                    {/* Chips de unidad */}
-                    <div className="flex gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleUnitChange("min")}
-                        disabled={!reminderEnabled}
-                        className={`px-2 py-1 rounded-md border transition-colors ${
-                          reminderUnit === "min"
-                            ? "bg-blue-500 text-white border-blue-500"
-                            : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-                        } ${!reminderEnabled ? "opacity-50" : ""}`}
-                      >
-                        min
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleUnitChange("hor")}
-                        disabled={!reminderEnabled}
-                        className={`px-2 py-1 rounded-md border transition-colors ${
-                          reminderUnit === "hor"
-                            ? "bg-blue-500 text-white border-blue-500"
-                            : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-                        } ${!reminderEnabled ? "opacity-50" : ""}`}
-                      >
-                        hor
-                      </button>
-                    </div>
-
-                    {/* Texto de aviso calculado - SOLO si enabled */}
-                    {reminderText && (
-                      <span className="text-[11px] text-slate-400 whitespace-nowrap ml-1">
-                        {reminderText}
-                      </span>
-                    )}
-                  </div>
-                );
-              };
-
-              return (
-                <>
-                  {schedType === "puntual" && (
-                    <div className="space-y-0">
-                      <div className="flex gap-2">
-                        <input type="date" value={data.date || getTodayISO()} onChange={(e) => updateField("date", e.target.value)} className="flex-1 px-2 py-1 text-xs border border-slate-200 rounded-lg" />
-                        <input type="time" value={data.time || ""} onChange={(e) => updateField("time", e.target.value)} className="w-20 px-2 py-1 text-xs border border-slate-200 rounded-lg" />
-                      </div>
-                      {renderReminderBlock()}
-                    </div>
-                  )}
-
-                  {schedType === "semanal" && (
-                    <div className="space-y-2">
-                      <div className="flex gap-1">
-                        {WEEKDAY_CODES.map(day => {
-                          const selected = normalizeWeeklyDays(data.extra?.weeklyDays).includes(day);
-                          return (
-                            <button key={day} onClick={() => {
-                              const current = normalizeWeeklyDays(data.extra?.weeklyDays);
-                              const newDays = selected ? current.filter(d => d !== day) : [...current, day].sort((a, b) => WEEKDAY_CODES.indexOf(a) - WEEKDAY_CODES.indexOf(b));
-                              // MERGE profundo: conservar reminder fields
-                              const extra = { 
-                                ...(data.extra || {}), 
-                                weeklyDays: newDays,
-                                reminderEnabled,
-                                reminderOffsetUnit: reminderUnit,
-                                reminderOffsetValue: reminderValue,
-                              };
-                              const repeatRule = newDays.length > 0 ? buildWeeklyRepeatRule(newDays, extra.weeklyTime) : undefined;
-                              setEditingData(prev => ({ ...prev, repeatRule, extra }));
-                              debouncedSave();
-                            }} className={`w-7 h-7 text-xs rounded-lg border transition-colors ${selected ? "bg-blue-500 text-white border-blue-500" : "bg-white text-slate-600 border-slate-200"}`}>
-                              {day}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <input type="time" value={data.extra?.weeklyTime || ""} onChange={(e) => {
-                        const weeklyTime = e.target.value;
-                        const weeklyDays = normalizeWeeklyDays(data.extra?.weeklyDays);
-                        // MERGE profundo: conservar reminder fields
-                        const extra = { 
-                          ...(data.extra || {}), 
-                          weeklyTime,
-                          reminderEnabled,
-                          reminderOffsetUnit: reminderUnit,
-                          reminderOffsetValue: reminderValue,
-                        };
-                        const repeatRule = weeklyDays.length > 0 ? buildWeeklyRepeatRule(weeklyDays, weeklyTime) : undefined;
-                        setEditingData(prev => ({ ...prev, repeatRule, extra }));
-                        debouncedSave();
-                      }} className="w-20 px-2 py-1 text-xs border border-slate-200 rounded-lg" />
-                      {renderReminderBlock()}
-                    </div>
-                  )}
-
-                  {schedType === "mensual" && (
-                    <div className="space-y-2">
-                      <div className="flex gap-2 items-center">
-                        <span className="text-xs text-slate-500">Día</span>
-                        <input type="number" min="1" max="31" value={data.extra?.monthlyDay || 1} onChange={(e) => {
-                          const monthlyDay = parseInt(e.target.value) || 1;
-                          const repeatRule = buildMonthlyRepeatRule(monthlyDay, data.extra?.monthlyTime);
-                          // MERGE profundo: conservar reminder fields
-                          const extra = { 
-                            ...(data.extra || {}), 
-                            monthlyDay,
-                            reminderEnabled,
-                            reminderOffsetUnit: reminderUnit,
-                            reminderOffsetValue: reminderValue,
-                          };
-                          setEditingData(prev => ({ ...prev, repeatRule, extra }));
-                          debouncedSave();
-                        }} className="w-14 px-2 py-1 text-xs border border-slate-200 rounded-lg text-center" />
-                        <input type="time" value={data.extra?.monthlyTime || ""} onChange={(e) => {
-                          const monthlyTime = e.target.value;
-                          const repeatRule = buildMonthlyRepeatRule(data.extra?.monthlyDay || 1, monthlyTime);
-                          // MERGE profundo: conservar reminder fields
-                          const extra = { 
-                            ...(data.extra || {}), 
-                            monthlyTime,
-                            reminderEnabled,
-                            reminderOffsetUnit: reminderUnit,
-                            reminderOffsetValue: reminderValue,
-                          };
-                          setEditingData(prev => ({ ...prev, repeatRule, extra }));
-                          debouncedSave();
-                        }} className="w-20 px-2 py-1 text-xs border border-slate-200 rounded-lg" />
-                      </div>
-                      {renderReminderBlock()}
-                    </div>
-                  )}
-                </>
-              );
-            })()}
-          </div>
-        )}
-
-        {/* Puntos + Descripción */}
-        {!isTitleTask && (
-          <div className="flex gap-3">
-            <div className="w-20">
-              <label className="block text-xs font-medium text-slate-500 mb-1">Puntos</label>
-              <input type="number" min="1" max="10" value={data.points ?? 2} onChange={(e) => updateField("points", parseInt(e.target.value) || 2)} className="w-full px-2 py-1 text-xs border border-slate-200 rounded-lg" />
-            </div>
-            <div className="flex-1">
-              <label className="block text-xs font-medium text-slate-500 mb-1">Descripción</label>
-              <input type="text" value={data.description || ""} onChange={(e) => updateField("description", e.target.value)} placeholder="Descripción" className="w-full px-2 py-1 text-xs border border-slate-200 rounded-lg" />
-            </div>
-          </div>
-        )}
-
-        {/* Error */}
-        {editError && (
-          <div className="text-xs text-red-600 bg-red-50 px-2 py-1.5 rounded border border-red-200">
-            {editError}
-          </div>
-        )}
-
-        {/* Footer con botones */}
-        <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100 mt-2">
-          <button
-            data-no-drag
-            onClick={handleDeleteTask}
-            disabled={savingTaskId === editingTaskId}
-            className="px-3 py-1.5 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50 disabled:opacity-50 transition-colors"
-          >
-            Eliminar tarea
-          </button>
-          <button
-            data-no-drag
-            onClick={cancelEdit}
-            disabled={savingTaskId === editingTaskId}
-            className="px-3 py-1.5 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
-          >
-            Cancelar
-          </button>
-          <button
-            data-no-drag
-            onClick={handleSaveAndClose}
-            disabled={savingTaskId === editingTaskId}
-            className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-          >
-            {savingTaskId === editingTaskId ? "Guardando..." : "Guardar"}
-          </button>
-        </div>
-
       </div>
     );
   };
@@ -2979,6 +2179,7 @@ export default function TaskDiagramTree({
                 if (suppressMetaClickRef.current) return;
                 setSelectedMetaId(meta.id);
                 setEditingTaskId(null);
+                onMetaChipSelect?.(meta.id);
               }}
               className={`relative flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium transition-colors select-none touch-none ${
                 selectedMetaId === meta.id ? "bg-blue-500 text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
@@ -2998,6 +2199,30 @@ export default function TaskDiagramTree({
           <button onClick={() => onOpenMetaModal(null)} className="flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium text-blue-600 hover:bg-blue-50 border border-dashed border-blue-300">
             + Meta
           </button>
+          {/* Toggle ocultar completadas (global) */}
+          {onToggleHideCompleted && (
+          <button
+            onClick={onToggleHideCompleted}
+            className={`flex-shrink-0 ml-auto px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+              hideCompletedTasks
+                ? "bg-slate-200 text-slate-700"
+                : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+            }`}
+            title={hideCompletedTasks ? "Mostrar completadas" : "Ocultar completadas"}
+          >
+            {hideCompletedTasks ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            )}
+          </button>
+          )}
           {/* Ghost flotante */}
           {metaDrag?.isDragActive && metaDragPos && metaDragGhost && (
             <div
@@ -3018,6 +2243,25 @@ export default function TaskDiagramTree({
 
       {/* Área del diagrama */}
       <div className="flex-1 overflow-auto" ref={containerRef}>
+        {/* Sticky meta header */}
+        {selectedMeta && layout && (() => {
+          const sIcon = selectedMeta.icon?.trim() || "🎯";
+          const isActive = selectedMeta.isActive !== false;
+          const sBg = isActive
+            ? (selectedMeta.color && /^#[0-9A-Fa-f]{6}$/.test(selectedMeta.color) ? selectedMeta.color : "#3B82F6")
+            : "#64748B";
+          const sText = isDarkColor(sBg) ? "white" : "#1e293b";
+          return (
+            <div
+              className="sticky top-0 z-30 px-4 py-1.5 flex items-center gap-2 shadow-sm"
+              style={{ backgroundColor: sBg, color: sText }}
+            >
+              <span className="text-sm">{sIcon}</span>
+              <span className="text-sm font-semibold truncate">{selectedMeta.title}</span>
+              {!isActive && <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full">Pausada</span>}
+            </div>
+          );
+        })()}
         {layout ? (
           <div className="relative" style={{ width: layout.totalWidth, height: layout.totalHeight, minHeight: "100%" }}>
             {/* Capa SVG - Conectores */}
@@ -3067,6 +2311,8 @@ export default function TaskDiagramTree({
         if (!dragTask) return null;
         const data = dragTask.data;
         const points = data.points ?? 2;
+        const isChildTask = !!data.parentId;
+        const showPointsValue = (hidePoints && !isChildTask) ? "" : points;
         const scheduleDisplay = getScheduleDisplay(data);
         const isTitleTask = data.kind === "TITLE";
         
@@ -3076,7 +2322,7 @@ export default function TaskDiagramTree({
             style={{
               left: dragPos.x - dragging.offsetX,
               top: dragPos.y - dragging.offsetY,
-              width: TASK_NODE_W,
+              width: taskNodeW,
             }}
           >
             <div className="bg-white rounded-lg border-2 border-blue-400 shadow-xl opacity-90">
@@ -3090,7 +2336,7 @@ export default function TaskDiagramTree({
                 <div className="flex items-center px-3 py-1.5 gap-2">
                   <div className="w-4" />
                   <div className={`flex-shrink-0 w-5 h-5 rounded border flex items-center justify-center text-[10px] font-bold ${data.isCompleted ? "bg-emerald-500 border-emerald-500 text-white" : "border-slate-300 text-slate-500"}`}>
-                    {data.isCompleted ? "✓" : points}
+                    {data.isCompleted ? "✓" : showPointsValue}
                   </div>
                   <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
                     <span className={`text-sm leading-snug ${data.isCompleted ? "line-through text-slate-400" : "text-slate-700"}`}>
@@ -3205,4 +2451,3 @@ export default function TaskDiagramTree({
     </div>
   );
 }
-

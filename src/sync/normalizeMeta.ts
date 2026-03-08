@@ -4,7 +4,6 @@
  * REGLAS:
  * - NO guardar campos null/undefined/"" 
  * - title siempre requerido (trim)
- * - metaType: validar enum, default "CORTO_PLAZO"
  * - horizon: validar enum, si inválido NO guardar
  * - isActive: solo guardar si es false; si true/undefined NO guardar
  * - order: solo guardar si es number válido
@@ -12,11 +11,10 @@
  * - description: solo guardar si es string no vacío (trim)
  */
 
-import type { Meta, MetaType, Horizon } from "../lib/types";
+import type { Meta, Horizon } from "../lib/types";
 
 // ==================== CONSTANTES ====================
 
-const VALID_META_TYPES: MetaType[] = ["MOONSHOT", "LARGO_PLAZO", "CORTO_PLAZO"];
 const VALID_HORIZONS: Horizon[] = ["1M", "3M", "6M", "9M", "1Y", "3Y", "5Y", "10Y"];
 
 // ==================== HELPERS ====================
@@ -29,13 +27,6 @@ export function isValidDateYYYYMMDD(date: unknown): date is string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
   const d = new Date(date);
   return !isNaN(d.getTime());
-}
-
-/**
- * Valida que metaType sea un valor válido del enum
- */
-export function isValidMetaType(value: unknown): value is MetaType {
-  return typeof value === "string" && VALID_META_TYPES.includes(value as MetaType);
 }
 
 /**
@@ -109,13 +100,6 @@ export function normalizeMetaForDb(meta: Partial<Meta> & { id: string; createdAt
   const trimmedTitle = typeof meta.title === "string" ? meta.title.trim() : "";
   result.title = trimmedTitle || "Sin título";
   
-  // metaType: validar enum, default "CORTO_PLAZO"
-  if (isValidMetaType(meta.metaType)) {
-    result.metaType = meta.metaType;
-  } else {
-    result.metaType = "CORTO_PLAZO";
-  }
-  
   // horizon: solo guardar si es válido
   if (isValidHorizon(meta.horizon)) {
     result.horizon = meta.horizon;
@@ -145,6 +129,19 @@ export function normalizeMetaForDb(meta: Partial<Meta> & { id: string; createdAt
     result.isActive = false;
   }
   
+  // icon: solo guardar si es string no vacío (max 4 chars)
+  if (typeof meta.icon === "string") {
+    const trimmedIcon = meta.icon.trim().slice(0, 4);
+    if (trimmedIcon) {
+      result.icon = trimmedIcon;
+    }
+  }
+  
+  // color: solo guardar si es hex válido #RRGGBB
+  if (typeof meta.color === "string" && /^#[0-9A-Fa-f]{6}$/.test(meta.color)) {
+    result.color = meta.color;
+  }
+  
   // timestamps
   result.createdAt = meta.createdAt || now;
   result.updatedAt = now;
@@ -165,10 +162,6 @@ export function hydrateMetaFromDb(dbMeta: Record<string, unknown>): Meta {
   // title: usar title, o name (legacy), o id como fallback
   const title = (dbMeta.title as string) || (dbMeta.name as string) || (dbMeta.id as string) || "Sin título";
   
-  // metaType: validar o usar default
-  const rawMetaType = dbMeta.metaType;
-  const metaType: MetaType = isValidMetaType(rawMetaType) ? rawMetaType : "CORTO_PLAZO";
-  
   // horizon: validar o undefined
   const rawHorizon = dbMeta.horizon;
   const horizon: Horizon | undefined = isValidHorizon(rawHorizon) ? rawHorizon : undefined;
@@ -188,13 +181,21 @@ export function hydrateMetaFromDb(dbMeta: Record<string, unknown>): Meta {
   // isActive: si NO existe o es true -> true; solo false si explícitamente false
   const isActive = dbMeta.isActive !== false;
   
+  // icon: string o null
+  const icon = typeof dbMeta.icon === "string" && dbMeta.icon.trim() ? dbMeta.icon.trim() : null;
+  
+  // color: hex válido o null
+  const rawColor = dbMeta.color;
+  const color = typeof rawColor === "string" && /^#[0-9A-Fa-f]{6}$/.test(rawColor) ? rawColor : null;
+  
   return {
     id: dbMeta.id as string,
     title,
     description,
     targetDate,
-    metaType,
     horizon,
+    icon,
+    color,
     order,
     isActive,
   };
@@ -211,8 +212,7 @@ export function isMeta(item: unknown): item is Meta {
   return (
     typeof obj.id === "string" &&
     typeof obj.title === "string" &&
-    // Las metas tienen metaType, las tasks tienen type
-    (obj.metaType !== undefined || obj.type === undefined)
+    // Las metas tienen title pero no type (que es de tasks)
+    obj.type === undefined
   );
 }
-

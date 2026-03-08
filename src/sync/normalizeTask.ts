@@ -232,6 +232,11 @@ export function normalizeTaskForDb(task: TaskData | Partial<TaskData>): Record<s
     normalizedExtra.notes = task.extra.notes.trim();
   }
   
+  // extra.multiItems (legacy: string[] para compatibilidad con TaskEditorContent)
+  if (Array.isArray(task.extra?.multiItems) && task.extra.multiItems.length > 0) {
+    normalizedExtra.multiItems = task.extra.multiItems;
+  }
+  
   // completedDates (solo si tiene elementos)
   if (Array.isArray(task.extra?.completedDates) && task.extra.completedDates.length > 0) {
     normalizedExtra.completedDates = task.extra.completedDates;
@@ -337,6 +342,11 @@ export function normalizeTaskForDb(task: TaskData | Partial<TaskData>): Record<s
     result.isCompleted = true;
   }
   
+  // multiItems: solo si tipo MULTI y tiene items
+  if (task.type === "MULTI" && Array.isArray(task.multiItems) && task.multiItems.length > 0) {
+    result.multiItems = task.multiItems;
+  }
+  
   // timestamps
   result.createdAt = task.createdAt || now;
   result.updatedAt = now;
@@ -385,6 +395,10 @@ export function hydrateTaskFromDb(dbTask: Record<string, unknown>): TaskData {
   if (dbExtra.movementIdsByDate && typeof dbExtra.movementIdsByDate === "object") {
     extra.movementIdsByDate = dbExtra.movementIdsByDate as Record<string, string>;
   }
+  // extra.multiItems (legacy: string[] para compatibilidad con TaskEditorContent)
+  if (Array.isArray(dbExtra.multiItems) && dbExtra.multiItems.length > 0) {
+    extra.multiItems = dbExtra.multiItems as string[];
+  }
   
   // Calcular level si no existe (para compatibilidad)
   // En realidad, level no se persiste - se calcula en runtime
@@ -411,6 +425,9 @@ export function hydrateTaskFromDb(dbTask: Record<string, unknown>): TaskData {
     forecastId: (dbTask.forecastId as string | null) ?? null,
     movementId: (dbTask.movementId as string | null) ?? null,
     extra,
+    ...(Array.isArray(dbTask.multiItems) && dbTask.multiItems.length > 0
+      ? { multiItems: dbTask.multiItems as TaskData["multiItems"] }
+      : {}),
     createdAt: dbTask.createdAt as string | undefined,
     updatedAt: dbTask.updatedAt as string | undefined,
   };

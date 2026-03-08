@@ -36,13 +36,28 @@ export interface ForecastLineFull {
 
 export interface FinanceMovement {
   id: string;
-  date: string;
-  concept: string;
-  amount: number;
-  type: "INGRESO" | "GASTO";
-  accountId?: string;
-  forecastId?: string;
-  note?: string;
+  date: string;                 // ISO YYYY-MM-DD
+  concept: string;              // texto final
+  amount: number;               // SIEMPRE positivo
+  type: "GASTO" | "INGRESO";
+  accountId?: string | null;
+  tags?: string[];
+  label?: string | null;
+  note?: string | null;         // incluye frecuencia codificada
+  frequency?: "PUNTUAL" | "SEMANAL" | "MENSUAL";
+  linkedPredictionId?: string | null;
+  // backward compat alias – populated from linkedPredictionId on fetch
+  forecastId?: string | null;
+}
+
+// ==================== PARSE NUMBER INPUT ====================
+
+/** App-identical numeric parser: , → . ; strip non-numeric; NaN → 0 */
+export function parseNumberInput(input: string): number {
+  let clean = input.replace(/,/g, ".");
+  clean = clean.replace(/[^0-9.\-]/g, "");
+  const n = parseFloat(clean);
+  return Number.isNaN(n) ? 0 : n;
 }
 
 // ==================== FORMATTERS ====================

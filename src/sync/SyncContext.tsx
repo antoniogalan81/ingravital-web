@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { supabase } from "@/src/lib/supabaseClient";
 import {
   pullAll,
@@ -84,6 +84,11 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   // Flag para evitar marcar dirty durante merge
   const isApplyingRemote = useRef(false);
 
+  // Ref al store actual — permite que doPush lea datos frescos sin depender de `store`
+  // (evita que doPush cambie de referencia tras cada setStore, cortando el bucle infinito)
+  const storeRef = useRef(store);
+  storeRef.current = store;
+
   // Push debounce
   const pushTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -91,8 +96,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { data } = await supabase.auth.getUser();
-      setUserId(data?.user?.id || null);
+      const { data: { session } } = await supabase.auth.getSession();
+      setUserId(session?.user?.id || null);
     };
     checkAuth();
 
@@ -145,35 +150,35 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     const dirty = getDirtyIds();
     const entityKeys = Object.keys(dirty) as EntityKey[];
 
-    for (const entityKey of entityKeys) {
-      const ids = dirty[entityKey] || [];
+    await Promise.allSettled(
+      entityKeys.map(async (entityKey) => {
+        const ids = dirty[entityKey] || [];
+        const currentStore = storeRef.current;
 
-      for (const id of ids) {
-        let item: SyncableEntity | undefined;
-
-        if (entityKey === "bankAccounts") {
-          item = store.bankAccounts.find((x) => x.id === id);
-        } else if (entityKey === "incomeForecastLines") {
-          item = store.incomeForecastLines.find((x) => x.id === id);
-        } else if (entityKey === "financeMovements") {
-          item = store.financeMovements.find((x) => x.id === id);
-        }
-
-        if (item) {
-          if (item.deleted) {
-            await pushDelete(entityKey, userId, id);
-          } else {
-            await pushItem(entityKey, userId, item);
+        for (const id of ids) {
+          let item: SyncableEntity | undefined;
+          if (entityKey === "bankAccounts") {
+            item = currentStore.bankAccounts.find((x) => x.id === id);
+          } else if (entityKey === "incomeForecastLines") {
+            item = currentStore.incomeForecastLines.find((x) => x.id === id);
+          } else if (entityKey === "financeMovements") {
+            item = currentStore.financeMovements.find((x) => x.id === id);
           }
-          clearDirty(entityKey, id);
-        } else {
-          // Item was deleted locally, push delete
-          await pushDelete(entityKey, userId, id);
-          clearDirty(entityKey, id);
+
+          try {
+            if (item) {
+              item.deleted ? await pushDelete(entityKey, userId, id) : await pushItem(entityKey, userId, item);
+            } else {
+              await pushDelete(entityKey, userId, id);
+            }
+            clearDirty(entityKey, id);
+          } catch {
+            // item remains dirty for next push attempt
+          }
         }
-      }
-    }
-  }, [userId, store]);
+      })
+    );
+  }, [userId]); // store eliminado de deps: se lee via storeRef para no recrear doPush tras cada setStore
 
   const schedulePush = useCallback(() => {
     if (pushTimeoutRef.current) {
@@ -345,7 +350,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
   // ==================== CONTEXT VALUE ====================
 
-  const value: SyncContextValue = {
+  const value = useMemo<SyncContextValue>(() => ({
     bankAccounts: store.bankAccounts,
     incomeForecastLines: store.incomeForecastLines,
     financeMovements: store.financeMovements,
@@ -359,7 +364,12 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     lastSyncAt,
     lastError,
     triggerSync,
-  };
+  }), [
+    store.bankAccounts, store.incomeForecastLines, store.financeMovements,
+    setBankAccount, deleteBankAccount, setForecastLine, deleteForecastLine,
+    setFinanceMovement, deleteFinanceMovement,
+    isSyncing, lastSyncAt, lastError, triggerSync,
+  ]);
 
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>;
 }

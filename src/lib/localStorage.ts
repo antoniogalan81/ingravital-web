@@ -6,6 +6,8 @@ const STORAGE_KEY = "ingravital_agenda_ui";
 /**
  * Carga el estado de UI desde localStorage
  */
+const VALID_DATE_PRESETS = ["ALL", "DAY", "WEEK", "MONTH"];
+
 export function loadUIState(): AgendaUIState {
   if (typeof window === "undefined") return DEFAULT_UI_STATE;
   
@@ -14,13 +16,18 @@ export function loadUIState(): AgendaUIState {
     if (!stored) return DEFAULT_UI_STATE;
     
     const parsed = JSON.parse(stored);
+    const loadedFilters = {
+      ...DEFAULT_FILTERS,
+      ...parsed.activeFilters,
+    };
+    // Migración: si datePreset es inválido, usar "ALL"
+    if (!VALID_DATE_PRESETS.includes(loadedFilters.datePreset)) {
+      loadedFilters.datePreset = "ALL";
+    }
     return {
       ...DEFAULT_UI_STATE,
       ...parsed,
-      activeFilters: {
-        ...DEFAULT_FILTERS,
-        ...parsed.activeFilters,
-      },
+      activeFilters: loadedFilters,
     };
   } catch {
     return DEFAULT_UI_STATE;

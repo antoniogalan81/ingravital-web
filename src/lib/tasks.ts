@@ -1,22 +1,22 @@
 import { supabase } from "./supabaseClient";
 import type { TaskRow, TaskData, TaskFilters, TaskType, Meta, MetaRow, MetaData, BankAccount, ForecastLine, Label, TaskScope, TaskExtra } from "./types";
-import { SCORING_CATEGORY_TO_SCOPE } from "./types";
+import { SCORING_CATEGORY_TO_SCOPE, getUIType, SYSTEM_PUNTUAL_META_ID } from "./types";
 import { normalizeTaskForDb, hydrateTaskFromDb, recalculateTaskLevels } from "../sync/normalizeTask";
 import { normalizeMetaForDb, hydrateMetaFromDb } from "../sync/normalizeMeta";
 
 // ==================== TASKS ====================
 
 export async function fetchTasks(): Promise<{ data: TaskRow[] | null; error: string | null }> {
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  
-  if (userError || !userData?.user) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) {
     return { data: null, error: "No autenticado" };
   }
+  const userId = session.user.id;
 
   const { data, error } = await supabase
     .from("tasks")
     .select("id, user_id, data, client_updated_at, server_updated_at, deleted_at")
-    .eq("user_id", userData.user.id)
+    .eq("user_id", userId)
     .is("deleted_at", null)
     .order("client_updated_at", { ascending: false });
 
@@ -45,11 +45,11 @@ export async function fetchTasks(): Promise<{ data: TaskRow[] | null; error: str
 }
 
 export async function createTask(taskData: TaskData): Promise<{ data: TaskRow | null; error: string | null }> {
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  
-  if (userError || !userData?.user) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) {
     return { data: null, error: "No autenticado" };
   }
+  const userId = session.user.id;
 
   const now = new Date().toISOString();
   
@@ -61,7 +61,7 @@ export async function createTask(taskData: TaskData): Promise<{ data: TaskRow | 
 
   const payload = {
     id: taskData.id,
-    user_id: userData.user.id,
+    user_id: userId,
     data: normalizedData,
     client_updated_at: now,
     deleted_at: null,
@@ -89,17 +89,17 @@ export async function createTask(taskData: TaskData): Promise<{ data: TaskRow | 
 }
 
 export async function updateTask(id: string, taskData: Partial<TaskData>): Promise<{ data: TaskRow | null; error: string | null }> {
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  
-  if (userError || !userData?.user) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) {
     return { data: null, error: "No autenticado" };
   }
+  const userId = session.user.id;
 
   const { data: currentTask, error: fetchError } = await supabase
     .from("tasks")
     .select("data")
     .eq("id", id)
-    .eq("user_id", userData.user.id)
+    .eq("user_id", userId)
     .single();
 
   if (fetchError || !currentTask) {
@@ -156,7 +156,7 @@ export async function updateTask(id: string, taskData: Partial<TaskData>): Promi
       client_updated_at: now,
     })
     .eq("id", id)
-    .eq("user_id", userData.user.id)
+    .eq("user_id", userId)
     .select("id, user_id, data, client_updated_at, server_updated_at, deleted_at")
     .single();
 
@@ -166,21 +166,21 @@ export async function updateTask(id: string, taskData: Partial<TaskData>): Promi
 
   // Hidratar el resultado para devolverlo con todos los campos esperados por la UI
   const resultRow = data as { id: string; user_id: string; data: Record<string, unknown>; client_updated_at: string; server_updated_at?: string; deleted_at: string | null };
-  return { 
+  return {
     data: {
       ...resultRow,
       data: hydrateTaskFromDb(resultRow.data),
-    } as TaskRow, 
-    error: null 
+    } as TaskRow,
+    error: null
   };
 }
 
 export async function deleteTask(id: string): Promise<{ error: string | null }> {
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  
-  if (userError || !userData?.user) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) {
     return { error: "No autenticado" };
   }
+  const userId = session.user.id;
 
   const now = new Date().toISOString();
 
@@ -191,17 +191,17 @@ export async function deleteTask(id: string): Promise<{ error: string | null }> 
       client_updated_at: now,
     })
     .eq("id", id)
-    .eq("user_id", userData.user.id);
+    .eq("user_id", userId);
 
   return { error: error?.message || null };
 }
 
 export async function restoreTask(id: string): Promise<{ error: string | null }> {
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  
-  if (userError || !userData?.user) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) {
     return { error: "No autenticado" };
   }
+  const userId = session.user.id;
 
   const now = new Date().toISOString();
 
@@ -212,35 +212,35 @@ export async function restoreTask(id: string): Promise<{ error: string | null }>
       client_updated_at: now,
     })
     .eq("id", id)
-    .eq("user_id", userData.user.id);
+    .eq("user_id", userId);
 
   return { error: error?.message || null };
 }
 
 // ==================== METAS ====================
 
-type MetaType = "MOONSHOT" | "LARGO_PLAZO" | "CORTO_PLAZO";
 type Horizon = "1M" | "3M" | "6M" | "9M" | "1Y" | "3Y" | "5Y" | "10Y";
 
 type SaveMetaInput = {
   title: string;
   description?: string;
   targetDate: string;
-  metaType: MetaType;
+  icon?: string | null;
+  color?: string | null;
   horizon?: Horizon;
 };
 
 export async function fetchMetas(): Promise<{ data: Meta[] | null; error: string | null }> {
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  
-  if (userError || !userData?.user) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) {
     return { data: null, error: "No autenticado" };
   }
+  const userId = session.user.id;
 
   const { data, error } = await supabase
     .from("metas")
     .select("id, user_id, data, deleted_at")
-    .eq("user_id", userData.user.id)
+    .eq("user_id", userId)
     .is("deleted_at", null);
 
   if (error) {
@@ -254,6 +254,49 @@ export async function fetchMetas(): Promise<{ data: Meta[] | null; error: string
     return hydrateMetaFromDb({ ...metaData, id: row.id });
   });
 
+  // Seed meta puntual: solo si NO existe en absoluto en Supabase (ni activa ni soft-deleted).
+  // Si existe con deleted_at: el usuario la borró intencionalmente → no recrear.
+  const hasPuntual = metas.some((m) => m.id === SYSTEM_PUNTUAL_META_ID);
+  if (!hasPuntual) {
+    // Comprobar si la fila existe (incluye soft-deleted) antes de insertar
+    const { data: existingRow } = await supabase
+      .from("metas")
+      .select("id")
+      .eq("id", SYSTEM_PUNTUAL_META_ID)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (!existingRow) {
+      // No existe en absoluto → primer arranque / usuario nuevo → insertar
+      const now = new Date().toISOString();
+      const puntualData = normalizeMetaForDb({
+        id: SYSTEM_PUNTUAL_META_ID,
+        title: "Puntual",
+        description: "Tareas puntuales",
+        icon: "📌",
+        color: "#10B981",
+        order: 1,
+        isActive: true,
+        createdAt: now,
+      });
+      const { error: insertError } = await supabase
+        .from("metas")
+        .insert({
+          id: SYSTEM_PUNTUAL_META_ID,
+          user_id: userId,
+          data: puntualData,
+          client_updated_at: now,
+          deleted_at: null,
+        });
+      if (!insertError) {
+        metas.push(hydrateMetaFromDb({ ...puntualData, id: SYSTEM_PUNTUAL_META_ID }));
+      } else {
+        console.warn("[fetchMetas] insert puntual meta failed:", insertError.message);
+      }
+    }
+    // Si existingRow existe con deleted_at: usuario la borró → no recrear
+  }
+
   // Ordenar por order ascendente (metas sin order al final)
   metas.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity));
 
@@ -261,11 +304,11 @@ export async function fetchMetas(): Promise<{ data: Meta[] | null; error: string
 }
 
 export async function createMeta(input: SaveMetaInput): Promise<{ data: Meta | null; error: string | null }> {
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  
-  if (userError || !userData?.user) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) {
     return { data: null, error: "No autenticado" };
   }
+  const userId = session.user.id;
 
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
@@ -276,7 +319,8 @@ export async function createMeta(input: SaveMetaInput): Promise<{ data: Meta | n
     title: input.title,
     description: input.description,
     targetDate: input.targetDate,
-    metaType: input.metaType,
+    icon: input.icon,
+    color: input.color,
     horizon: input.horizon,
     isActive: true, // Nueva meta siempre activa (no se persiste porque es true)
     createdAt: now,
@@ -284,7 +328,7 @@ export async function createMeta(input: SaveMetaInput): Promise<{ data: Meta | n
 
   const payload = {
     id,
-    user_id: userData.user.id,
+    user_id: userId,
     data: normalizedData,
     client_updated_at: now,
     deleted_at: null,
@@ -307,27 +351,38 @@ export async function createMeta(input: SaveMetaInput): Promise<{ data: Meta | n
   };
 }
 
-export async function updateMeta(id: string, input: SaveMetaInput): Promise<{ data: Meta | null; error: string | null }> {
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  
-  if (userError || !userData?.user) {
+export async function updateMeta(id: string, input: SaveMetaInput, existingMeta?: Meta): Promise<{ data: Meta | null; error: string | null }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) {
     return { data: null, error: "No autenticado" };
   }
-
-  // Fetch current
-  const { data: current, error: fetchError } = await supabase
-    .from("metas")
-    .select("data")
-    .eq("id", id)
-    .eq("user_id", userData.user.id)
-    .single();
-
-  if (fetchError || !current) {
-    return { data: null, error: fetchError?.message || "Meta no encontrada" };
-  }
+  const userId = session.user.id;
 
   const now = new Date().toISOString();
-  const existing = current.data as Record<string, unknown>;
+
+  let order: number | undefined;
+  let isActive: boolean | undefined;
+  let createdAt: string | undefined;
+
+  if (existingMeta) {
+    order = existingMeta.order;
+    isActive = existingMeta.isActive;
+    createdAt = existingMeta.createdAt;
+  } else {
+    const { data: current, error: fetchError } = await supabase
+      .from("metas")
+      .select("data")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .single();
+    if (fetchError || !current) {
+      return { data: null, error: fetchError?.message || "Meta no encontrada" };
+    }
+    const existing = current.data as Record<string, unknown>;
+    order = existing.order as number | undefined;
+    isActive = existing.isActive as boolean | undefined;
+    createdAt = existing.createdAt as string | undefined;
+  }
 
   // Normalizar meta antes de guardar (mismas reglas que APP)
   // Preservar campos existentes como order, isActive, createdAt
@@ -336,12 +391,12 @@ export async function updateMeta(id: string, input: SaveMetaInput): Promise<{ da
     title: input.title,
     description: input.description,
     targetDate: input.targetDate,
-    metaType: input.metaType,
+    icon: input.icon,
+    color: input.color,
     horizon: input.horizon,
-    // Preservar campos que no vienen en input
-    order: existing.order as number | undefined,
-    isActive: existing.isActive as boolean | undefined,
-    createdAt: existing.createdAt as string | undefined,
+    order,
+    isActive,
+    createdAt,
   });
 
   const { data, error } = await supabase
@@ -351,7 +406,7 @@ export async function updateMeta(id: string, input: SaveMetaInput): Promise<{ da
       client_updated_at: now,
     })
     .eq("id", id)
-    .eq("user_id", userData.user.id)
+    .eq("user_id", userId)
     .select("id, data")
     .single();
 
@@ -367,37 +422,32 @@ export async function updateMeta(id: string, input: SaveMetaInput): Promise<{ da
 }
 
 // Actualiza solo el campo order de una meta (para drag & drop reorder)
-export async function updateMetaOrder(id: string, order: number): Promise<{ success: boolean; error?: string }> {
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  
-  if (userError || !userData?.user) {
+export async function updateMetaOrder(id: string, order: number, existingMeta?: Meta): Promise<{ success: boolean; error?: string }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) {
     return { success: false, error: "No autenticado" };
   }
-
-  // Fetch current data
-  const { data: current, error: fetchError } = await supabase
-    .from("metas")
-    .select("data")
-    .eq("id", id)
-    .eq("user_id", userData.user.id)
-    .single();
-
-  if (fetchError || !current) {
-    return { success: false, error: fetchError?.message || "Meta no encontrada" };
-  }
+  const userId = session.user.id;
 
   const now = new Date().toISOString();
-  const existing = current.data as Record<string, unknown>;
-  
-  // Hidratar la meta existente para tener todos los campos
-  const hydrated = hydrateMetaFromDb({ ...existing, id });
 
-  // Normalizar con el nuevo order
-  const normalizedData = normalizeMetaForDb({
-    ...hydrated,
-    order,
-    createdAt: existing.createdAt as string | undefined,
-  });
+  let normalizedData: Record<string, unknown>;
+  if (existingMeta) {
+    normalizedData = normalizeMetaForDb({ ...existingMeta, order });
+  } else {
+    const { data: current, error: fetchError } = await supabase
+      .from("metas")
+      .select("data")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .single();
+    if (fetchError || !current) {
+      return { success: false, error: fetchError?.message || "Meta no encontrada" };
+    }
+    const existing = current.data as Record<string, unknown>;
+    const hydrated = hydrateMetaFromDb({ ...existing, id });
+    normalizedData = normalizeMetaForDb({ ...hydrated, order, createdAt: existing.createdAt as string | undefined });
+  }
 
   const { error } = await supabase
     .from("metas")
@@ -406,7 +456,7 @@ export async function updateMetaOrder(id: string, order: number): Promise<{ succ
       client_updated_at: now,
     })
     .eq("id", id)
-    .eq("user_id", userData.user.id);
+    .eq("user_id", userId);
 
   if (error) {
     return { success: false, error: error.message };
@@ -416,38 +466,33 @@ export async function updateMetaOrder(id: string, order: number): Promise<{ succ
 }
 
 // Actualiza el estado activo/pausado de una meta
-export async function updateMetaIsActive(id: string, isActive: boolean): Promise<{ success: boolean; error?: string }> {
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  
-  if (userError || !userData?.user) {
+export async function updateMetaIsActive(id: string, isActive: boolean, existingMeta?: Meta): Promise<{ success: boolean; error?: string }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) {
     return { success: false, error: "No autenticado" };
   }
-
-  // Fetch current data
-  const { data: current, error: fetchError } = await supabase
-    .from("metas")
-    .select("data")
-    .eq("id", id)
-    .eq("user_id", userData.user.id)
-    .single();
-
-  if (fetchError || !current) {
-    return { success: false, error: fetchError?.message || "Meta no encontrada" };
-  }
+  const userId = session.user.id;
 
   const now = new Date().toISOString();
-  const existing = current.data as Record<string, unknown>;
 
-  // Hidratar la meta existente para tener todos los campos
-  const hydrated = hydrateMetaFromDb({ ...existing, id });
-
-  // Normalizar con el nuevo isActive
-  // IMPORTANTE: isActive solo se persiste si es false
-  const normalizedData = normalizeMetaForDb({
-    ...hydrated,
-    isActive,
-    createdAt: existing.createdAt as string | undefined,
-  });
+  let normalizedData: Record<string, unknown>;
+  if (existingMeta) {
+    normalizedData = normalizeMetaForDb({ ...existingMeta, isActive });
+  } else {
+    const { data: current, error: fetchError } = await supabase
+      .from("metas")
+      .select("data")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .single();
+    if (fetchError || !current) {
+      return { success: false, error: fetchError?.message || "Meta no encontrada" };
+    }
+    const existing = current.data as Record<string, unknown>;
+    const hydrated = hydrateMetaFromDb({ ...existing, id });
+    // IMPORTANTE: isActive solo se persiste si es false
+    normalizedData = normalizeMetaForDb({ ...hydrated, isActive, createdAt: existing.createdAt as string | undefined });
+  }
 
   const { error } = await supabase
     .from("metas")
@@ -456,7 +501,7 @@ export async function updateMetaIsActive(id: string, isActive: boolean): Promise
       client_updated_at: now,
     })
     .eq("id", id)
-    .eq("user_id", userData.user.id);
+    .eq("user_id", userId);
 
   if (error) {
     return { success: false, error: error.message };
@@ -466,14 +511,13 @@ export async function updateMetaIsActive(id: string, isActive: boolean): Promise
 }
 
 export async function deleteMetaAndTasks(metaId: string): Promise<{ success: boolean; error?: string }> {
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  
-  if (userError || !userData?.user) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) {
     return { success: false, error: "No autenticado" };
   }
+  const userId = session.user.id;
 
   const now = new Date().toISOString();
-  const userId = userData.user.id;
 
   // 1) Soft delete TODAS las tareas con ese metaId
   // Las tareas tienen metaId dentro de data (JSONB), usamos el operador ->>
@@ -510,16 +554,16 @@ export async function deleteMetaAndTasks(metaId: string): Promise<{ success: boo
 // ==================== BANK ACCOUNTS ====================
 
 export async function fetchBankAccounts(): Promise<{ data: BankAccount[] | null; error: string | null }> {
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  
-  if (userError || !userData?.user) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) {
     return { data: null, error: "No autenticado" };
   }
+  const userId = session.user.id;
 
   const { data, error } = await supabase
     .from("bank_accounts")
     .select("id, data, deleted_at, client_updated_at, server_updated_at")
-    .eq("user_id", userData.user.id)
+    .eq("user_id", userId)
     .is("deleted_at", null);
 
   if (error) {
@@ -528,17 +572,12 @@ export async function fetchBankAccounts(): Promise<{ data: BankAccount[] | null;
     return { data: [], error: null };
   }
 
-  const accounts: BankAccount[] = (data || []).map((row: { id: string; data: { name?: string; title?: string; type?: string; balance?: number } }) => {
-    if (process.env.NODE_ENV !== "production") {
-      console.debug("[bank_accounts] load row.type", row.id, row.data?.type);
-    }
-    return {
-      id: row.id,
-      name: row.data?.name || row.data?.title || row.id,
-      type: row.data?.type as "PERSONAL" | "SOCIEDAD" | undefined,
-      balance: typeof row.data?.balance === "number" ? row.data.balance : undefined,
-    };
-  });
+  const accounts: BankAccount[] = (data || []).map((row: { id: string; data: { name?: string; title?: string; type?: string; balance?: number } }) => ({
+    id: row.id,
+    name: row.data?.name || row.data?.title || row.id,
+    type: row.data?.type as "PERSONAL" | "SOCIEDAD" | undefined,
+    balance: typeof row.data?.balance === "number" ? row.data.balance : undefined,
+  }));
 
   return { data: accounts, error: null };
 }
@@ -546,16 +585,16 @@ export async function fetchBankAccounts(): Promise<{ data: BankAccount[] | null;
 // ==================== FORECAST LINES ====================
 
 export async function fetchForecastLines(): Promise<{ data: ForecastLine[] | null; error: string | null }> {
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  
-  if (userError || !userData?.user) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) {
     return { data: null, error: "No autenticado" };
   }
+  const userId = session.user.id;
 
   const { data, error } = await supabase
     .from("income_forecast_lines")
     .select("id, data")
-    .eq("user_id", userData.user.id)
+    .eq("user_id", userId)
     .is("deleted_at", null);
 
   if (error) {
@@ -583,17 +622,17 @@ export async function fetchForecastLines(): Promise<{ data: ForecastLine[] | nul
  * Extrae: data.scoringSettings.items[]
  */
 export async function fetchScoringSettings(): Promise<{ data: Label[] | null; error: string | null }> {
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  
-  if (userError || !userData?.user) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) {
     return { data: null, error: "No autenticado" };
   }
+  const userId = session.user.id;
 
   const { data, error } = await supabase
     .from("app_settings")
     .select("data")
     .eq("id", "__APP_SETTINGS__")
-    .eq("user_id", userData.user.id)
+    .eq("user_id", userId)
     .single();
 
   if (error) {
@@ -794,7 +833,48 @@ export function getReminderDisplay(task: TaskData | { time?: string | null; extr
 
 // ==================== HELPERS ====================
 
+/**
+ * Calcula el rango de fechas según el preset.
+ * DAY = hoy, WEEK = lunes-domingo actual, MONTH = mes actual, ALL = sin filtro
+ */
+function getDateRangeForPreset(preset: string): { from: string; to: string } | null {
+  if (preset === "ALL") return null;
+  
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const day = now.getDate();
+  const dayOfWeek = now.getDay(); // 0=domingo
+  
+  const toIso = (d: Date) => d.toISOString().slice(0, 10);
+  
+  if (preset === "DAY") {
+    const today = toIso(now);
+    return { from: today, to: today };
+  }
+  
+  if (preset === "WEEK") {
+    // Lunes a domingo (lunes = día 1)
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(year, month, day + mondayOffset);
+    const sunday = new Date(year, month, day + mondayOffset + 6);
+    return { from: toIso(monday), to: toIso(sunday) };
+  }
+  
+  if (preset === "MONTH") {
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    return { from: toIso(firstDay), to: toIso(lastDay) };
+  }
+  
+  return null;
+}
+
 export function filterTasks(tasks: TaskRow[], filters: TaskFilters): TaskRow[] {
+  const preset = filters.datePreset ?? "ALL";
+  const presetRange = getDateRangeForPreset(preset);
+  const hasUITypes = filters.uiTypes && filters.uiTypes.length > 0;
+  
   return tasks.filter((task) => {
     const data = task.data;
     const isTitle = data.kind === "TITLE";
@@ -803,7 +883,14 @@ export function filterTasks(tasks: TaskRow[], filters: TaskFilters): TaskRow[] {
       return false;
     }
 
-    if (filters.types.length > 0 && !filters.types.includes(data.type)) {
+    // Filtro por uiTypes (Actividad/Físico/Conocimiento/Ingreso/Gasto/Título/Multi/Nota)
+    if (hasUITypes) {
+      const taskUIType = getUIType(data.type, data.scope, data.kind);
+      if (!filters.uiTypes!.includes(taskUIType)) {
+        return false;
+      }
+    } else if (filters.types.length > 0 && !filters.types.includes(data.type)) {
+      // Fallback a filtro por TaskType si no hay uiTypes (compatibilidad)
       return false;
     }
 
@@ -815,11 +902,29 @@ export function filterTasks(tasks: TaskRow[], filters: TaskFilters): TaskRow[] {
       }
     }
 
-    if (filters.dateFrom && data.date && data.date < filters.dateFrom) {
-      return false;
-    }
-    if (filters.dateTo && data.date && data.date > filters.dateTo) {
-      return false;
+    // Filtro por fecha
+    const taskDate = data.date;
+    const isUnscheduled = !taskDate;
+    
+    // Si includeUnscheduled está activo, las tareas sin fecha siempre pasan el filtro de fecha
+    if (filters.includeUnscheduled && isUnscheduled) {
+      // Tarea sin fecha pasa si includeUnscheduled está activo
+    } else if (presetRange) {
+      // Filtro por datePreset (DAY/WEEK/MONTH excluyen tareas sin fecha)
+      if (!taskDate) return false;
+      if (taskDate < presetRange.from || taskDate > presetRange.to) return false;
+    } else {
+      // Filtro manual dateFrom/dateTo solo si preset=ALL
+      if (filters.dateFrom && taskDate && taskDate < filters.dateFrom) {
+        return false;
+      }
+      if (filters.dateTo && taskDate && taskDate > filters.dateTo) {
+        return false;
+      }
+      // Si hay filtro de fechas pero la tarea no tiene fecha
+      if ((filters.dateFrom || filters.dateTo) && isUnscheduled && !filters.includeUnscheduled) {
+        return false;
+      }
     }
 
     if (!filters.showChildren && data.parentId) {
