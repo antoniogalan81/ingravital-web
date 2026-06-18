@@ -35,7 +35,7 @@ export default function SiteShell({ children, active }: Props) {
                     : "text-slate-600 hover:bg-slate-100"
                 }`}
               >
-                Servicios
+                Colaborar
               </Link>
               <Link
                 href="/finanzas"
@@ -71,7 +71,7 @@ export default function SiteShell({ children, active }: Props) {
                   : "text-slate-600 bg-slate-100"
               }`}
             >
-              Servicios
+              Colaborar
             </Link>
             <Link
               href="/finanzas"

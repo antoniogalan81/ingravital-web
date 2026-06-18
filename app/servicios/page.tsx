@@ -129,24 +129,78 @@ export default function Servicios() {
         </div>
       </section>
 
-      {/* ── Operaciones que estudiamos contigo ───────────────────────────── */}
+      {/* ── Comparte una operación bien preparada ────────────────────────── */}
       <section className="mt-20 sm:mt-28">
-        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-          ¿Tienes una operación interesante?
-        </h2>
-        <p className="mt-3 max-w-2xl text-slate-600">
-          Si encaja con nuestros criterios de inversión, podemos estudiarla contigo.
-        </p>
-        <div className="mt-6 flex flex-wrap gap-2.5">
-          {INTEREST_CHIPS.map((chip) => (
-            <span
-              key={chip}
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm"
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              {chip}
-            </span>
-          ))}
+        <div className="grid gap-8 lg:grid-cols-2 lg:gap-12 lg:items-center">
+          {/* Texto + criterios */}
+          <div>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+              Comparte una operación bien preparada
+            </h2>
+            <p className="mt-3 max-w-xl text-slate-600">
+              Si la operación encaja sobre el papel, compártela con una ficha clara:
+              costes, margen, escenarios y riesgos principales.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-2.5">
+              {INTEREST_CHIPS.map((chip) => (
+                <span
+                  key={chip}
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  {chip}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Mini ficha de operación — mock visual */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-lg shadow-slate-200/60">
+            <div className="flex items-center justify-between">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-slate-900 truncate">Local · Cambio de uso</div>
+                <div className="text-xs text-slate-400">Reforma y alquiler</div>
+              </div>
+              <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                Lista para revisar
+              </span>
+            </div>
+
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              {[
+                ["Inversión", "148.000 €", "text-slate-900"],
+                ["Rentabilidad", "9,1 %", "text-emerald-700"],
+                ["Margen", "27,5 %", "text-blue-700"],
+              ].map(([k, v, cls]) => (
+                <div key={k} className="rounded-lg bg-slate-50 p-2.5">
+                  <div className="text-[9px] font-medium uppercase tracking-wide text-slate-400">{k}</div>
+                  <div className={`text-sm font-bold tabular-nums ${cls}`}>{v}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Gráfico simple simulado — escenarios */}
+            <div className="mt-4">
+              <div className="text-[11px] font-medium text-slate-400">Escenarios de salida</div>
+              <div className="mt-2 flex items-end justify-between gap-1.5 h-16">
+                {[42, 58, 71, 64, 88, 100].map((h, i) => (
+                  <div
+                    key={i}
+                    className={`flex-1 rounded-t-md ${i === 5 ? "bg-emerald-500" : "bg-slate-200"}`}
+                    style={{ height: `${h}%` }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-1.5">
+              {["Costes", "Margen", "Riesgos", "Plazos"].map((t) => (
+                <span key={t} className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                  {t}
+                </span>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 

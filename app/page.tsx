@@ -40,15 +40,53 @@ const WE_OFFER = [
   "Estudio de oportunidades con sentido inversor.",
 ];
 
-const ANALYZE_CHIPS = [
-  "Viviendas para alquiler",
-  "Compra, reforma y venta",
-  "Locales convertibles",
-  "Suelos y terrenos",
-  "Edificios completos",
-  "Alquiler por habitaciones",
-  "Promociones pequeñas",
-  "Operaciones con financiación",
+// Activos y escenarios — tarjetas premium con icono + microtexto.
+const ANALYZE_CARDS = [
+  {
+    title: "Vivienda",
+    desc: "Compra, alquiler o venta.",
+    icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h3v-6h4v6h3a1 1 0 001-1V10" />,
+  },
+  {
+    title: "Local comercial",
+    desc: "Cambio de uso o rentabilidad.",
+    icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M3 9l1.2-4h15.6L21 9M4 9v11a1 1 0 001 1h14a1 1 0 001-1V9M4 9h16M9 21v-6h6v6" />,
+  },
+  {
+    title: "Suelo / terreno",
+    desc: "Costes, plazos y escenarios.",
+    icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 3l9 5-9 5-9-5 9-5zm0 16l9-5M3 14l9 5" />,
+  },
+  {
+    title: "Edificio completo",
+    desc: "Visión global de inversión.",
+    icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M3 21h18M5 21V7l7-4 7 4v14M9 9h.01M9 13h.01M9 17h.01M15 9h.01M15 13h.01M15 17h.01" />,
+  },
+  {
+    title: "Reforma y venta",
+    desc: "Compra, obra y salida.",
+    icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M14.7 6.3a4 4 0 00-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 005.4-5.4l-2.5 2.5-2-2 2.5-2.5z" />,
+  },
+  {
+    title: "Alquiler",
+    desc: "Cashflow y retorno.",
+    icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M12 8c-1.66 0-3 .9-3 2s1.34 2 3 2 3 .9 3 2-1.34 2-3 2m0-8V6m0 10v2M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />,
+  },
+  {
+    title: "Cambio de uso",
+    desc: "Viabilidad y costes.",
+    icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4" />,
+  },
+  {
+    title: "Promoción",
+    desc: "Fases, margen e inversión.",
+    icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M9 17V9m4 8V5m4 12v-6M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z" />,
+  },
+  {
+    title: "Habitaciones",
+    desc: "Ingresos por unidad.",
+    icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.7} d="M21 3l-2 2m-7.4 7.4a3.5 3.5 0 11-4.9 5 3.5 3.5 0 014.9-5zm0 0L15 9l2 2 2-2-2-2" />,
+  },
 ];
 
 // Costes principales de la ficha (mock visual estático).
@@ -235,19 +273,28 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── Qué puedes analizar ──────────────────────────────────────────── */}
+      {/* ── Un análisis para cada tipo de activo ─────────────────────────── */}
       <section className="mt-20 sm:mt-28">
-        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-          Qué puedes analizar
-        </h2>
-        <div className="mt-6 flex flex-wrap gap-2.5">
-          {ANALYZE_CHIPS.map((chip) => (
-            <span
-              key={chip}
-              className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm"
+        <div className="max-w-2xl">
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+            Un análisis para cada tipo de activo
+          </h2>
+          <p className="mt-3 text-slate-600">
+            De vivienda a suelo: estudia los números de cada operación con el mismo rigor.
+          </p>
+        </div>
+        <div className="mt-8 grid grid-cols-2 gap-3.5 sm:grid-cols-3 sm:gap-4">
+          {ANALYZE_CARDS.map((c) => (
+            <div
+              key={c.title}
+              className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
             >
-              {chip}
-            </span>
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700 transition-colors group-hover:bg-slate-900 group-hover:text-white">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">{c.icon}</svg>
+              </div>
+              <h3 className="mt-4 text-sm font-semibold text-slate-900">{c.title}</h3>
+              <p className="mt-1 text-xs leading-relaxed text-slate-500">{c.desc}</p>
+            </div>
           ))}
         </div>
       </section>
@@ -281,7 +328,7 @@ export default function Home() {
               Colaboración win-win
             </span>
             <h2 className="mt-4 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
-              Qué podemos aportarte nosotros
+              Cómo podemos colaborar
             </h2>
             <ul className="mt-5 space-y-3">
               {WE_OFFER.map((b) => (
@@ -297,27 +344,48 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ── Por qué es gratis — banda destacada ──────────────────────────── */}
+      <section className="mt-20 sm:mt-28">
+        <div className="flex flex-col gap-5 rounded-3xl border border-emerald-100 bg-emerald-50/60 p-6 sm:flex-row sm:items-center sm:gap-7 sm:p-8">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-600 text-white">
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12l2 2 4-4m5.6 1A9 9 0 1112 3a9 9 0 019.6 8z" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">
+              Gratis, y con un motivo
+            </h2>
+            <p className="mt-1.5 text-sm leading-relaxed text-slate-600">
+              La app es gratuita porque queremos facilitar el análisis de operaciones reales.
+              Si una buena oportunidad encaja, podemos estudiar cómo colaborar.
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* ── CTA final ────────────────────────────────────────────────────── */}
       <section className="mt-20 sm:mt-28">
         <div className="rounded-3xl bg-slate-900 px-6 py-14 text-center sm:px-10">
           <h2 className="mx-auto max-w-2xl text-2xl sm:text-3xl font-bold tracking-tight text-white">
-            Cada operación compite por tu capital
+            Analiza primero. Decide después.
           </h2>
           <p className="mx-auto mt-3 max-w-md text-slate-300">
-            Calcula antes de entrar. Comparte si encaja.
+            Calcula la operación gratis y, si los números encajan, compártela para
+            valorar una posible colaboración.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link
               href={ANALIZAR_URL}
               className="inline-flex items-center justify-center rounded-full bg-white px-8 py-3.5 text-sm font-semibold text-slate-900 hover:bg-slate-100 transition-colors"
             >
-              Analizar operación
+              Empezar análisis
             </Link>
             <Link
               href={SERVICIOS_URL}
               className="inline-flex items-center justify-center rounded-full border border-slate-600 px-8 py-3.5 text-sm font-semibold text-white hover:bg-slate-800 transition-colors"
             >
-              Tengo una oportunidad
+              Colaborar
             </Link>
           </div>
         </div>
