@@ -322,13 +322,19 @@ export default function Home() {
             </ul>
           </div>
 
-          {/* Bloque 2 — nosotros */}
-          <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-6 shadow-sm sm:p-8">
+          {/* Bloque 2 — nosotros (toda la card lleva a Colaborar) */}
+          <Link
+            href={SERVICIOS_URL}
+            className="group block rounded-3xl border border-slate-200 bg-slate-50/70 p-6 shadow-sm transition-all hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md sm:p-8"
+          >
             <span className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">
               Colaboración win-win
             </span>
-            <h2 className="mt-4 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
+            <h2 className="mt-4 flex items-center gap-2 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">
               Cómo podemos colaborar
+              <svg className="h-5 w-5 text-slate-400 transition-all group-hover:translate-x-0.5 group-hover:text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
             </h2>
             <ul className="mt-5 space-y-3">
               {WE_OFFER.map((b) => (
@@ -340,7 +346,13 @@ export default function Home() {
                 </li>
               ))}
             </ul>
-          </div>
+            <span className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700">
+              Ver cómo colaborar
+              <svg className="h-4 w-4 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </span>
+          </Link>
         </div>
       </section>
 
