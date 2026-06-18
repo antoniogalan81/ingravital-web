@@ -1,7 +1,9 @@
 import Link from "next/link";
 import SiteShell from "@/components/SiteShell";
 
-const ANDROID_URL = "https://github.com/antoniogalan81/ingravital-web/releases/download/v1.0/ingravital.apk";
+// TEMPORAL: APK directo del build EAS de Invergravital. Sustituir por una URL
+// propia (p.ej. /downloads/invergravital.apk o una release propia "invergravital.apk").
+const ANDROID_URL = "https://expo.dev/artifacts/eas/P56ZmlkE7MRN5k1A-XI9cTYv6ZEwMHBMtxFAFisHZIY.apk";
 
 // Ruta real del módulo de análisis. /finanzas redirige a /login si no hay sesión.
 const ANALIZAR_URL = "/finanzas";
@@ -142,7 +144,7 @@ export default function Home() {
 
           <p className="mt-6 text-sm text-slate-400">
             ¿Móvil?{" "}
-            <a href={ANDROID_URL} download="ingravital.apk" className="text-slate-500 underline hover:text-slate-700">
+            <a href={ANDROID_URL} download="invergravital.apk" className="text-slate-500 underline hover:text-slate-700">
               Descargar para Android
             </a>
           </p>
