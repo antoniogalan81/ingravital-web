@@ -61,9 +61,9 @@ export const ENTITY_CONFIGS: Record<string, EntityConfig> = {
     getId: (item) => item.id,
     getUpdatedAt: (item) => item.updatedAt || new Date().toISOString(),
   },
-  nutritionQuickItems: {
-    tableName: "nutrition_quick_items",
-    localKey: "nutritionQuickItems",
+  realEstateOperations: {
+    tableName: "operaciones_inmobiliarias",
+    localKey: "realEstateOperations",
     getId: (item) => item.id,
     getUpdatedAt: (item) => item.updatedAt || new Date().toISOString(),
   },

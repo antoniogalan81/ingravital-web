@@ -6,7 +6,7 @@ const sections: LegalSection[] = [
     id: "introduccion",
     title: "1. Introducción",
     content: [
-      "Esta Política de Privacidad describe cómo Ventana al Futuro SL recopila, utiliza, procesa, almacena y protege tus datos personales cuando utilizas Ingravital y todos los servicios vinculados.",
+      "Esta Política de Privacidad describe cómo Ventana al Futuro SL recopila, utiliza, procesa, almacena y protege tus datos personales cuando utilizas Invergravital y todos los servicios vinculados.",
       "La presente Política cumple con:",
       {
         list: [
@@ -149,7 +149,7 @@ const sections: LegalSection[] = [
     id: "menores",
     title: "9. Menores de edad",
     content: [
-      "Ingravital no permite su uso a menores de 13 años. Si detectamos que un menor ha usado la app sin consentimiento parental, eliminaremos la cuenta y todos los datos asociados.",
+      "Invergravital no permite su uso a menores de 13 años. Si detectamos que un menor ha usado la app sin consentimiento parental, eliminaremos la cuenta y todos los datos asociados.",
     ],
   },
   {
@@ -254,7 +254,7 @@ const sections: LegalSection[] = [
     id: "anexo-internacional",
     title: "Anexo III — Transferencias internacionales",
     content: [
-      "Ingravital puede almacenar y procesar datos en la Unión Europea, Estados Unidos, Latinoamérica, Asia o cualquier país donde operen proveedores críticos.",
+      "Invergravital puede almacenar y procesar datos en la Unión Europea, Estados Unidos, Latinoamérica, Asia o cualquier país donde operen proveedores críticos.",
       "Cumplimos Cláusulas Contractuales Tipo (SCC), reglas corporativas vinculantes cuando existan, y evaluación continua de riesgos.",
     ],
   },
@@ -282,7 +282,7 @@ export default function Privacidad() {
     <LegalDocLayout
       title="Política de Privacidad"
       updated="02 de diciembre de 2025"
-      intro="Esta Política describe cómo Ventana al Futuro SL recopila, usa y protege tus datos personales cuando usas Ingravital, en cumplimiento del RGPD y la normativa aplicable."
+      intro="Esta Política describe cómo Ventana al Futuro SL recopila, usa y protege tus datos personales cuando usas Invergravital, en cumplimiento del RGPD y la normativa aplicable."
       sections={sections}
     />
   );

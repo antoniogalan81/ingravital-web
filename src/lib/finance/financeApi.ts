@@ -205,6 +205,7 @@ export async function fetchForecastLinesFull(): Promise<{ data: ForecastLineFull
     months: (row.data?.months as ForecastMonths) || undefined,
     enabledTypes: (row.data?.enabledTypes as { INGRESO?: boolean; GASTO?: boolean }) || undefined,
     order: typeof row.data?.order === "number" ? row.data.order : undefined,
+    createdAt: (row.data?.createdAt as string) || undefined,
   }));
 
   lines.sort((a, b) => {
@@ -271,7 +272,10 @@ export async function deleteForecastLine(lineId: string): Promise<{ error: strin
   return { error: null };
 }
 
-export async function persistForecastLinesOrder(updates: Array<{ id: string; order: number }>): Promise<{ error: string | null }> {
+export async function persistForecastLinesOrder(
+  updates: Array<{ id: string; order: number }>,
+  existingLines?: ForecastLineFull[]
+): Promise<{ error: string | null }> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) {
     return { error: "No autenticado" };
@@ -281,22 +285,31 @@ export async function persistForecastLinesOrder(updates: Array<{ id: string; ord
   const now = new Date().toISOString();
 
   for (const upd of updates) {
-    const { data: current, error: fetchError } = await supabase
-      .from("income_forecast_lines")
-      .select("data")
-      .eq("id", upd.id)
-      .eq("user_id", userId)
-      .single();
+    const existing = existingLines?.find(l => l.id === upd.id);
+    let normalized: Record<string, unknown>;
 
-    if (fetchError || !current) continue;
-
-    const existingData = current.data as Record<string, unknown>;
-    const normalized = normalizeForecastSourceForDbWeb({
-      ...(existingData as Record<string, unknown>),
-      id: upd.id,
-      order: upd.order,
-      createdAt: existingData.createdAt as string | undefined,
-    } as any);
+    if (existing) {
+      normalized = normalizeForecastSourceForDbWeb({
+        ...existing,
+        id: upd.id,
+        order: upd.order,
+      } as any);
+    } else {
+      const { data: current, error: fetchError } = await supabase
+        .from("income_forecast_lines")
+        .select("data")
+        .eq("id", upd.id)
+        .eq("user_id", userId)
+        .single();
+      if (fetchError || !current) continue;
+      const existingData = current.data as Record<string, unknown>;
+      normalized = normalizeForecastSourceForDbWeb({
+        ...(existingData as Record<string, unknown>),
+        id: upd.id,
+        order: upd.order,
+        createdAt: existingData.createdAt as string | undefined,
+      } as any);
+    }
 
     const { error } = await supabase
       .from("income_forecast_lines")
@@ -320,7 +333,8 @@ export async function updateForecastMonthPrev(
   id: string,
   monthId: string,
   type: "INGRESO" | "GASTO",
-  newPrev: number
+  newPrev: number,
+  existingLine?: ForecastLineFull
 ): Promise<{ error: string | null }> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) {
@@ -328,22 +342,29 @@ export async function updateForecastMonthPrev(
   }
   const userId = session.user.id;
 
-  const { data: current, error: fetchError } = await supabase
-    .from("income_forecast_lines")
-    .select("data")
-    .eq("id", id)
-    .eq("user_id", userId)
-    .single();
+  const now = new Date().toISOString();
+  let baseData: Record<string, unknown>;
+  let existingMonths: ForecastMonths;
 
-  if (fetchError || !current) {
-    return { error: fetchError?.message || "Previsión no encontrada" };
+  if (existingLine) {
+    existingMonths = existingLine.months || {};
+    baseData = existingLine as unknown as Record<string, unknown>;
+  } else {
+    const { data: current, error: fetchError } = await supabase
+      .from("income_forecast_lines")
+      .select("data")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .single();
+    if (fetchError || !current) {
+      return { error: fetchError?.message || "Previsión no encontrada" };
+    }
+    const existingData = current.data as Record<string, unknown>;
+    existingMonths = (existingData.months as ForecastMonths) || {};
+    baseData = { ...existingData, id, createdAt: existingData.createdAt };
   }
 
-  const now = new Date().toISOString();
-  const existingData = current.data as Record<string, unknown>;
-  const existingMonths = (existingData.months as ForecastMonths) || {};
   const existingMonth = existingMonths[monthId] || {};
-
   const nextMonth: ForecastMonthState = {
     ...existingMonth,
     [type]: {
@@ -358,10 +379,9 @@ export async function updateForecastMonthPrev(
   };
 
   const normalized = normalizeForecastSourceForDbWeb({
-    ...(existingData as Record<string, unknown>),
+    ...baseData,
     id,
     months: updatedMonths,
-    createdAt: existingData.createdAt as string | undefined,
   } as any);
 
   const { error } = await supabase
@@ -380,7 +400,8 @@ export async function updateForecastMonthBase(
   id: string,
   monthId: string,
   type: "INGRESO" | "GASTO",
-  newBase: number
+  newBase: number,
+  existingLine?: ForecastLineFull
 ): Promise<{ error: string | null }> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) {
@@ -388,22 +409,29 @@ export async function updateForecastMonthBase(
   }
   const userId = session.user.id;
 
-  const { data: current, error: fetchError } = await supabase
-    .from("income_forecast_lines")
-    .select("data")
-    .eq("id", id)
-    .eq("user_id", userId)
-    .single();
+  const now = new Date().toISOString();
+  let baseData: Record<string, unknown>;
+  let existingMonths: ForecastMonths;
 
-  if (fetchError || !current) {
-    return { error: fetchError?.message || "Previsión no encontrada" };
+  if (existingLine) {
+    existingMonths = existingLine.months || {};
+    baseData = existingLine as unknown as Record<string, unknown>;
+  } else {
+    const { data: current, error: fetchError } = await supabase
+      .from("income_forecast_lines")
+      .select("data")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .single();
+    if (fetchError || !current) {
+      return { error: fetchError?.message || "Previsión no encontrada" };
+    }
+    const existingData = current.data as Record<string, unknown>;
+    existingMonths = (existingData.months as ForecastMonths) || {};
+    baseData = { ...existingData, id, createdAt: existingData.createdAt };
   }
 
-  const now = new Date().toISOString();
-  const existingData = current.data as Record<string, unknown>;
-  const existingMonths = (existingData.months as ForecastMonths) || {};
   const existingMonth = existingMonths[monthId] || {};
-
   const nextMonth: ForecastMonthState = {
     ...existingMonth,
     [type]: {
@@ -418,10 +446,9 @@ export async function updateForecastMonthBase(
   };
 
   const normalized = normalizeForecastSourceForDbWeb({
-    ...(existingData as Record<string, unknown>),
+    ...baseData,
     id,
     months: updatedMonths,
-    createdAt: existingData.createdAt as string | undefined,
   } as any);
 
   const { error } = await supabase
@@ -550,4 +577,36 @@ export async function softDeleteMovement(movementId: string): Promise<{ error: s
     return { error: error.message };
   }
   return { error: null };
+}
+
+// ==================== ATOMIC BALANCE DELTA ====================
+
+/**
+ * Aplica un delta atómico al balance de una cuenta bancaria mediante RPC.
+ * Evita el race condition de read-modify-write desde cliente.
+ * delta > 0 → suma; delta < 0 → resta.
+ * Devuelve el nuevo balance si el UPDATE afectó alguna fila, null si la cuenta
+ * no existe o pertenece a otro usuario.
+ */
+export async function applyAccountBalanceDelta(
+  accountId: string,
+  delta: number,
+): Promise<{ newBalance: number | null; error: string | null }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) return { newBalance: null, error: "No autenticado" };
+
+  const { data, error } = await supabase.rpc("apply_account_balance_delta", {
+    p_account_id: accountId,
+    p_user_id: session.user.id,
+    p_delta: delta,
+  });
+
+  if (error) {
+    console.warn("applyAccountBalanceDelta error:", error.message);
+    return { newBalance: null, error: error.message };
+  }
+
+  // data es el JSONB completo del campo 'data' de bank_accounts
+  const newBalance = data != null && typeof data.balance === "number" ? data.balance : null;
+  return { newBalance, error: null };
 }

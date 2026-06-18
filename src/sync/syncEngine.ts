@@ -49,13 +49,15 @@ export async function pullEntity(
   return { rows: (data || []) as SupabaseRow[], error: null };
 }
 
-export async function pullAll(userId: string): Promise<{
+export async function pullAll(userId: string, forceFullPull?: boolean): Promise<{
   data: Record<EntityKey, SupabaseRow[]>;
   errors: string[];
 }> {
   const results: Record<string, SupabaseRow[]> = {};
   const errors: string[] = [];
-  const lastPulled = getLastPulledAt();
+  // forceFullPull=true when the store is empty (new session): ignore lastPulledAt so
+  // we do a complete fetch instead of an incremental one that would return 0 rows.
+  const lastPulled = forceFullPull ? null : getLastPulledAt();
 
   const entityKeys = Object.keys(ENTITY_CONFIGS) as EntityKey[];
 
@@ -112,22 +114,24 @@ export async function pushItem(
     dataPayload = { ...item, updatedAt };
   }
 
-  const { error } = await supabase.from(config.tableName).upsert(
-    {
-      id: item.id,
-      user_id: userId,
-      data: dataPayload,
-      client_updated_at: updatedAt,
-      deleted_at: item.deleted ? now : null,
-    },
-    { onConflict: "id" }
-  );
+  const record = {
+    id: item.id,
+    user_id: userId,
+    data: dataPayload,
+    client_updated_at: updatedAt,
+    deleted_at: item.deleted ? now : null,
+  };
+
+  console.log(`[syncEngine] pushItem table=${config.tableName} id=${item.id}`, record);
+
+  const { error } = await supabase.from(config.tableName).upsert(record, { onConflict: "id" });
 
   if (error) {
-    console.warn(`[sync] pushItem ${entityKey} error:`, error.message);
+    console.error(`[syncEngine] pushItem FAILED table=${config.tableName} id=${item.id}:`, error.message, error);
     return { error: error.message };
   }
 
+  console.log(`[syncEngine] pushItem OK table=${config.tableName} id=${item.id}`);
   return { error: null };
 }
 

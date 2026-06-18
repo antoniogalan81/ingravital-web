@@ -26,7 +26,7 @@ export default function Agradecimiento() {
           </span>
 
           <h1 className="text-5xl font-extrabold tracking-tight text-slate-900 md:text-6xl leading-[1.05]">
-            Gracias por apoyar Ingravital
+            Gracias por apoyar Invergravital
           </h1>
 
           <p className="mt-6 text-base text-slate-500 leading-relaxed max-w-sm mx-auto">
@@ -53,7 +53,7 @@ export default function Agradecimiento() {
       <section className="py-4 md:py-6">
         <div className="mx-auto max-w-2xl rounded-3xl bg-slate-950 px-8 py-14 md:px-16 md:py-20 text-center">
           <p className="text-xl font-semibold tracking-tight text-white md:text-2xl">
-            Lo mejor de Ingravital todavía está por llegar.
+            Lo mejor de Invergravital todavía está por llegar.
           </p>
         </div>
       </section>

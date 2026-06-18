@@ -6,7 +6,7 @@ const sections: LegalSection[] = [
     id: "aceptacion",
     title: "1. Aceptación de los términos",
     content: [
-      "El acceso y uso de Ingravital («la Aplicación», «el Servicio» o «los Servicios») implica la aceptación plena y sin reservas de estos Términos. Si no estás de acuerdo, no utilices la Aplicación.",
+      "El acceso y uso de Invergravital («la Aplicación», «el Servicio» o «los Servicios») implica la aceptación plena y sin reservas de estos Términos. Si no estás de acuerdo, no utilices la Aplicación.",
       "Estos Términos constituyen un acuerdo vinculante entre el usuario y Ventana al Futuro SL («nosotros»).",
     ],
   },
@@ -14,7 +14,7 @@ const sections: LegalSection[] = [
     id: "objeto",
     title: "2. Objeto del servicio",
     content: [
-      "Ingravital es una aplicación de productividad, organización personal, bienestar y análisis inteligente que incluye:",
+      "Invergravital es una aplicación de productividad, organización personal, bienestar y análisis inteligente que incluye:",
       {
         list: [
           "Registro de hábitos, rutinas y tareas",
@@ -89,7 +89,7 @@ const sections: LegalSection[] = [
     id: "no-medico",
     title: "7. No es un servicio médico ni profesional",
     content: [
-      "Ingravital NO es un servicio médico, sustitutivo de terapia, sistema de diagnóstico, programa clínico, asesor financiero o sistema de emergencia.",
+      "Invergravital NO es un servicio médico, sustitutivo de terapia, sistema de diagnóstico, programa clínico, asesor financiero o sistema de emergencia.",
       "Todo contenido:",
       {
         list: [
@@ -120,7 +120,7 @@ const sections: LegalSection[] = [
     id: "ia",
     title: "9. Inteligencia artificial",
     content: [
-      "La IA utilizada en Ingravital puede generar errores, interpretar mal datos introducidos, producir análisis incompletos o sugerir hábitos no adecuados para todos los usuarios.",
+      "La IA utilizada en Invergravital puede generar errores, interpretar mal datos introducidos, producir análisis incompletos o sugerir hábitos no adecuados para todos los usuarios.",
       "El usuario acepta que:",
       {
         list: [
@@ -238,7 +238,7 @@ export default function Terminos() {
     <LegalDocLayout
       title="Términos y Condiciones"
       updated="02 de diciembre de 2025"
-      intro="Estas condiciones regulan el uso de la aplicación Ingravital. Al acceder y usar el servicio, aceptas este acuerdo con Ventana al Futuro SL"
+      intro="Estas condiciones regulan el uso de la aplicación Invergravital. Al acceder y usar el servicio, aceptas este acuerdo con Ventana al Futuro SL"
       sections={sections}
     />
   );

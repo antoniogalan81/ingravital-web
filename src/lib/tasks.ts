@@ -88,26 +88,31 @@ export async function createTask(taskData: TaskData): Promise<{ data: TaskRow | 
   };
 }
 
-export async function updateTask(id: string, taskData: Partial<TaskData>): Promise<{ data: TaskRow | null; error: string | null }> {
+export async function updateTask(id: string, taskData: Partial<TaskData>, existingTaskData?: TaskData): Promise<{ data: TaskRow | null; error: string | null }> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) {
     return { data: null, error: "No autenticado" };
   }
   const userId = session.user.id;
 
-  const { data: currentTask, error: fetchError } = await supabase
-    .from("tasks")
-    .select("data")
-    .eq("id", id)
-    .eq("user_id", userId)
-    .single();
+  let existing: TaskData;
+  if (existingTaskData) {
+    existing = existingTaskData;
+  } else {
+    const { data: currentTask, error: fetchError } = await supabase
+      .from("tasks")
+      .select("data")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .single();
 
-  if (fetchError || !currentTask) {
-    return { data: null, error: fetchError?.message || "Tarea no encontrada" };
+    if (fetchError || !currentTask) {
+      return { data: null, error: fetchError?.message || "Tarea no encontrada" };
+    }
+
+    // Hidratar la tarea existente para tener todos los campos
+    existing = hydrateTaskFromDb(currentTask.data as Record<string, unknown>);
   }
-
-  // Hidratar la tarea existente para tener todos los campos
-  const existing = hydrateTaskFromDb(currentTask.data as Record<string, unknown>);
   const now = new Date().toISOString();
 
   // Detectar si hay cambio de tipo o scope
@@ -547,6 +552,33 @@ export async function deleteMetaAndTasks(metaId: string): Promise<{ success: boo
   if (metaError) {
     return { success: false, error: `Error eliminando meta: ${metaError.message}` };
   }
+
+  return { success: true };
+}
+
+export async function restoreMeta(metaId: string): Promise<{ success: boolean; error?: string }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) return { success: false, error: "No autenticado" };
+  const userId = session.user.id;
+  const now = new Date().toISOString();
+
+  // Restaurar tareas de esta meta
+  const { error: tasksError } = await supabase
+    .from("tasks")
+    .update({ deleted_at: null, client_updated_at: now })
+    .eq("user_id", userId)
+    .filter("data->>metaId", "eq", metaId);
+
+  if (tasksError) return { success: false, error: `Error restaurando tareas: ${tasksError.message}` };
+
+  // Restaurar la meta
+  const { error: metaError } = await supabase
+    .from("metas")
+    .update({ deleted_at: null, client_updated_at: now })
+    .eq("id", metaId)
+    .eq("user_id", userId);
+
+  if (metaError) return { success: false, error: `Error restaurando meta: ${metaError.message}` };
 
   return { success: true };
 }

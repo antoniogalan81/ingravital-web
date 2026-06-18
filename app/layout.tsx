@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ingravital",
-  description: "Ingravital Web App",
+  title: "Invergravital",
+  description: "Invergravital Web App",
 };
 
 export default function RootLayout({

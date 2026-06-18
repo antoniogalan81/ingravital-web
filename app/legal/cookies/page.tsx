@@ -6,7 +6,7 @@ const sections: LegalSection[] = [
     id: "introduccion",
     title: "1. Introducción",
     content: [
-      "El sitio web de Ingravital puede utilizar cookies y tecnologías similares para mejorar la experiencia del usuario, garantizar el correcto funcionamiento del sitio y obtener información sobre el uso de la web.",
+      "El sitio web de Invergravital puede utilizar cookies y tecnologías similares para mejorar la experiencia del usuario, garantizar el correcto funcionamiento del sitio y obtener información sobre el uso de la web.",
       "Al continuar navegando por este sitio, el usuario acepta el uso de cookies conforme a esta Política.",
     ],
   },
@@ -68,7 +68,7 @@ export default function Cookies() {
     <LegalDocLayout
       title="Política de Cookies"
       updated="02 de diciembre de 2025"
-      intro="Información sobre el uso de cookies y tecnologías similares en el sitio web de Ingravital."
+      intro="Información sobre el uso de cookies y tecnologías similares en el sitio web de Invergravital."
       sections={sections}
     />
   );

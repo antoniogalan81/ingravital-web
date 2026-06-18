@@ -31,7 +31,7 @@ const SECTIONS = [
   {
     title: "Uso responsable de la app",
     paragraphs: [
-      "Ingravital es una herramienta de organización personal, productividad y bienestar.",
+      "Invergravital es una herramienta de organización personal, productividad y bienestar.",
       "La información mostrada dentro de la aplicación, incluidas recomendaciones generadas por sistemas de inteligencia artificial, tiene carácter orientativo y no sustituye asesoramiento profesional.",
     ],
   },
@@ -68,7 +68,7 @@ export default function Legal() {
             Información legal
           </h1>
           <p className="mt-6 text-base text-slate-500 leading-relaxed max-w-md mx-auto">
-            Aquí encontrarás la información legal relacionada con el uso de Ingravital,
+            Aquí encontrarás la información legal relacionada con el uso de Invergravital,
             incluyendo privacidad, condiciones de uso y responsabilidades del servicio.
           </p>
         </div>

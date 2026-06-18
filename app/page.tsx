@@ -1,7 +1,7 @@
 import Image from "next/image";
 import SiteShell from "@/components/SiteShell";
 
-const ANDROID_URL = "/ingravital.apk";
+const ANDROID_URL = "https://github.com/antoniogalan81/ingravital-web/releases/download/v1.0/ingravital.apk";
 
 export default function Home() {
   return (
@@ -40,7 +40,7 @@ export default function Home() {
           <div className="relative w-[320px] sm:w-[420px]">
             <Image
               src="/images/home/hero-iphone.png"
-              alt="Ingravital app en iPhone"
+              alt="Invergravital app en iPhone"
               width={320}
               height={650}
               className="w-full h-auto"

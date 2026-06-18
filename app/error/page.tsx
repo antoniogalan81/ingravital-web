@@ -34,7 +34,7 @@ export default function Error() {
           </p>
 
           <p className="mt-3 text-base text-slate-400 leading-relaxed max-w-sm mx-auto">
-            Cada apoyo ayuda a acelerar esta nueva etapa de Ingravital.
+            Cada apoyo ayuda a acelerar esta nueva etapa de Invergravital.
           </p>
         </div>
       </section>

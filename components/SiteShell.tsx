@@ -6,7 +6,7 @@ import CookieBanner from "@/components/CookieBanner";
 
 type Props = {
   children: ReactNode;
-  active?: "home" | "servicios" | "legal" | "agenda" | "metas" | "finanzas";
+  active?: "home" | "servicios" | "legal" | "finanzas";
 };
 
 const WHATSAPP_URL = "https://wa.me/34656195880";
@@ -21,8 +21,8 @@ export default function SiteShell({ children, active }: Props) {
           <div className="flex items-center justify-between">
             {/* Logo */}
             <Link href="/" className="flex items-center gap-2.5 shrink-0">
-              <Image src="/logo.png" alt="Ingravital" width={36} height={36} priority />
-              <span className="text-base font-semibold tracking-tight">Ingravital</span>
+              <Image src="/logo.png" alt="Invergravital" width={36} height={36} priority />
+              <span className="text-base font-semibold tracking-tight">Invergravital</span>
             </Link>
 
             {/* Nav center - hidden on mobile */}
@@ -38,26 +38,6 @@ export default function SiteShell({ children, active }: Props) {
                 Servicios
               </Link>
               <Link
-                href="/agenda?view=agenda"
-                className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                  active === "agenda"
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                Agenda
-              </Link>
-              <Link
-                href="/agenda?view=metas"
-                className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                  active === "metas"
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                Metas
-              </Link>
-              <Link
                 href="/finanzas"
                 className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
                   active === "finanzas"
@@ -65,7 +45,7 @@ export default function SiteShell({ children, active }: Props) {
                     : "text-slate-600 hover:bg-slate-100"
                 }`}
               >
-                Finanzas
+                Inversiones
               </Link>
             </nav>
 
@@ -94,26 +74,6 @@ export default function SiteShell({ children, active }: Props) {
               Servicios
             </Link>
             <Link
-              href="/agenda?view=agenda"
-              className={`rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
-                active === "agenda"
-                  ? "bg-slate-900 text-white"
-                  : "text-slate-600 bg-slate-100"
-              }`}
-            >
-              Agenda
-            </Link>
-            <Link
-              href="/agenda?view=metas"
-              className={`rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
-                active === "metas"
-                  ? "bg-slate-900 text-white"
-                  : "text-slate-600 bg-slate-100"
-              }`}
-            >
-              Metas
-            </Link>
-            <Link
               href="/finanzas"
               className={`rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
                 active === "finanzas"
@@ -121,7 +81,7 @@ export default function SiteShell({ children, active }: Props) {
                   : "text-slate-600 bg-slate-100"
               }`}
             >
-              Finanzas
+              Inversiones
             </Link>
           </nav>
         </div>
@@ -138,7 +98,7 @@ export default function SiteShell({ children, active }: Props) {
       <footer className="border-t border-slate-100">
         <div className="mx-auto max-w-[1140px] px-4 sm:px-6 py-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm text-slate-500">
-            <div>© 2026 Ingravital</div>
+            <div>© 2026 Invergravital</div>
             <div className="flex flex-wrap items-center gap-4">
               <a className="hover:text-slate-900 transition-colors" href={WHATSAPP_URL}>
                 WhatsApp

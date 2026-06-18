@@ -61,7 +61,7 @@ export default function Donaciones() {
             Esto es solo el principio
           </h2>
           <p className="mt-5 text-base text-slate-400 leading-relaxed max-w-md mx-auto">
-            La próxima etapa de Ingravital no es solo una actualización.
+            La próxima etapa de Invergravital no es solo una actualización.
             Es una evolución completa del proyecto para ayudarte a avanzar
             con más claridad, más enfoque y más capacidad de ejecución en tu día a día.
           </p>
@@ -72,7 +72,7 @@ export default function Donaciones() {
       <section className="py-10 md:py-14">
         <div className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-slate-50 px-8 py-12 text-center shadow-sm">
           <h2 className="text-2xl font-bold tracking-tight text-slate-900 md:text-3xl">
-            Lo mejor de Ingravital<br className="hidden sm:block" /> todavía está por llegar
+            Lo mejor de Invergravital<br className="hidden sm:block" /> todavía está por llegar
           </h2>
           <p className="mt-4 text-base text-slate-500 leading-relaxed">
             Si crees en el proyecto y quieres ayudar a que esta nueva etapa

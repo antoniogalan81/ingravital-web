@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/src/lib/supabaseClient";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { useSync } from "@/src/sync/SyncContext";
 import type { Gender } from "@/src/lib/types";
 import SiteShell from "@/components/SiteShell";
 
@@ -34,6 +35,7 @@ type FormData = {
 export default function AccountPage() {
   const router = useRouter();
   const { loading: authLoading, user, profile, signOut } = useAuth();
+  const { modules, setModuleEnabled } = useSync();
   
   // Form state
   const [formData, setFormData] = useState<FormData>({
@@ -819,6 +821,26 @@ export default function AccountPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
               </Link>
+            </div>
+          </div>
+
+          {/* Funciones */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6">
+            <h2 className="text-lg font-semibold text-slate-900 mb-4">Funciones</h2>
+            <div className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0">
+              <div>
+                <div className="text-sm font-medium text-slate-800">Inversión inmobiliaria</div>
+                <div className="text-xs text-slate-500 mt-0.5">Analiza rentabilidad, costes y financiación de propiedades</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModuleEnabled("operaciones", !modules.operaciones.enabled)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ml-4 ${modules.operaciones.enabled ? "bg-blue-600" : "bg-slate-200"}`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${modules.operaciones.enabled ? "translate-x-6" : "translate-x-1"}`}
+                />
+              </button>
             </div>
           </div>
 

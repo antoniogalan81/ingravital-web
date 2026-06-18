@@ -105,8 +105,8 @@ export default function ResetPasswordPage() {
         <header className="w-full border-b border-slate-100 bg-white">
           <div className="mx-auto max-w-[1140px] px-6 py-4">
             <Link href="/" className="flex items-center gap-2.5">
-              <Image src="/logo.png" alt="Ingravital" width={32} height={32} />
-              <span className="text-base font-semibold tracking-tight text-slate-900">Ingravital</span>
+              <Image src="/logo.png" alt="Invergravital" width={32} height={32} />
+              <span className="text-base font-semibold tracking-tight text-slate-900">Invergravital</span>
             </Link>
           </div>
         </header>
@@ -147,8 +147,8 @@ export default function ResetPasswordPage() {
         <header className="w-full border-b border-slate-100 bg-white">
           <div className="mx-auto max-w-[1140px] px-6 py-4">
             <Link href="/" className="flex items-center gap-2.5">
-              <Image src="/logo.png" alt="Ingravital" width={32} height={32} />
-              <span className="text-base font-semibold tracking-tight text-slate-900">Ingravital</span>
+              <Image src="/logo.png" alt="Invergravital" width={32} height={32} />
+              <span className="text-base font-semibold tracking-tight text-slate-900">Invergravital</span>
             </Link>
           </div>
         </header>
@@ -180,8 +180,8 @@ export default function ResetPasswordPage() {
       <header className="w-full border-b border-slate-100 bg-white">
         <div className="mx-auto max-w-[1140px] px-6 py-4">
           <Link href="/" className="flex items-center gap-2.5">
-            <Image src="/logo.png" alt="Ingravital" width={32} height={32} />
-            <span className="text-base font-semibold tracking-tight text-slate-900">Ingravital</span>
+            <Image src="/logo.png" alt="Invergravital" width={32} height={32} />
+            <span className="text-base font-semibold tracking-tight text-slate-900">Invergravital</span>
           </Link>
         </div>
       </header>

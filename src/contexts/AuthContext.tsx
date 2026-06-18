@@ -25,7 +25,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data } = await supabase
         .from("profiles")
-        .select("*")
+        .select("id, premium_active, premium_until, premium_source, created_at, updated_at")
         .eq("id", userId)
         .single();
       if (data) setProfile(data as Profile);
@@ -63,7 +63,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (event === "SIGNED_IN" && session?.user) {
         setUser(session.user);
         setProfile(null);
-        loadProfile(session.user.id);
+        // Garantizar que el perfil existe (cubre OAuth signup donde no pasa por /signup)
+        supabase
+          .from("profiles")
+          .upsert({ id: session.user.id }, { onConflict: "id" })
+          .then(() => loadProfile(session.user!.id));
         setLoading(false);
       }
 

@@ -13,7 +13,7 @@ const sections: LegalSection[] = [
           "CIF: B70919006",
           "Domicilio: C/ Hernando Colón 39, 41004 Sevilla, España",
           "Email de contacto: info@palmaycoco.com",
-          "Actividad: Desarrollo de software y servicios digitales asociados a la app INGRAVITAL",
+          "Actividad: Desarrollo de software y servicios digitales asociados a la app INVERGRAVITAL",
         ],
       },
     ],
@@ -22,7 +22,7 @@ const sections: LegalSection[] = [
     id: "objeto",
     title: "2. Objeto del aviso legal",
     content: [
-      "Este Aviso Legal regula el acceso, navegación y uso del sitio web asociado a la aplicación Ingravital, así como cualquier página, dominio, subdominio o servicio online propiedad de la empresa.",
+      "Este Aviso Legal regula el acceso, navegación y uso del sitio web asociado a la aplicación Invergravital, así como cualquier página, dominio, subdominio o servicio online propiedad de la empresa.",
       "Este Aviso Legal regula:",
       {
         list: [
@@ -128,7 +128,7 @@ const sections: LegalSection[] = [
     id: "datos-personales",
     title: "8. Protección de datos personales",
     content: [
-      "Los datos personales se gestionan conforme a la Política de Privacidad de Ingravital, el RGPD (UE 2016/679) y la LOPDGDD (LO 3/2018).",
+      "Los datos personales se gestionan conforme a la Política de Privacidad de Invergravital, el RGPD (UE 2016/679) y la LOPDGDD (LO 3/2018).",
       "Puedes acceder a todos tus derechos (acceso, rectificación, supresión, oposición, portabilidad y limitación) escribiendo a info@palmaycoco.com.",
     ],
   },
@@ -185,7 +185,7 @@ export default function AvisoLegal() {
     <LegalDocLayout
       title="Aviso Legal"
       updated="02 de diciembre de 2025"
-      intro="Este Aviso Legal regula el acceso, navegación y uso del sitio web asociado a la aplicación Ingravital y todos los servicios online de Ventana al Futuro SL"
+      intro="Este Aviso Legal regula el acceso, navegación y uso del sitio web asociado a la aplicación Invergravital y todos los servicios online de Ventana al Futuro SL"
       sections={sections}
     />
   );

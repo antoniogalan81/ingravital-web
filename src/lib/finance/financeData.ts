@@ -32,6 +32,7 @@ export interface ForecastLineFull {
   months?: ForecastMonths;
   enabledTypes?: { INGRESO?: boolean; GASTO?: boolean };
   order?: number;
+  createdAt?: string;
 }
 
 export interface FinanceMovement {
@@ -62,12 +63,15 @@ export function parseNumberInput(input: string): number {
 
 // ==================== FORMATTERS ====================
 
+const _FMT_INT = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 0 });
+const _FMT_DEC = new Intl.NumberFormat("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+
 export function formatNumberES(n: number): string {
   if (n === undefined || n === null || Number.isNaN(n)) return "0";
   if (Number.isInteger(n)) {
-    return new Intl.NumberFormat("es-ES", { maximumFractionDigits: 0 }).format(n);
+    return _FMT_INT.format(n);
   }
-  const formatted = new Intl.NumberFormat("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 2 }).format(n);
+  const formatted = _FMT_DEC.format(n);
   return formatted.replace(/,(\d)0$/, ",$1");
 }
 
@@ -164,6 +168,50 @@ export function getMonthBase(
     if (typeof m.base === "number") return m.base;
   }
   return 0;
+}
+
+/**
+ * Computes the REAL value for a forecast line/month/type, mirroring the APP's
+ * `getForecastComputedReal`. When `variable=true`, sums linked movements on top
+ * of the stored base; otherwise returns the stored base directly.
+ */
+export function computeMonthReal(
+  line: ForecastLineFull,
+  monthId: string,
+  type: "INGRESO" | "GASTO",
+  movements: FinanceMovement[]
+): number {
+  const m = line.months?.[monthId];
+  if (!m) return 0;
+  const typeState = m[type];
+
+  if (!typeState) {
+    // Legacy fallback (no typed state)
+    if (line.type === type && typeof m.base === "number") return m.base;
+    return 0;
+  }
+
+  const base = typeof typeState.base === "number" ? typeState.base : 0;
+
+  // Match APP behavior: variable defaults to true when not explicitly set.
+  // APP uses `state?.variable ?? true` (ensureForecastTypeState, appStore.ts:1687).
+  // WEB normalizeTypeState stores true or undefined (never false), so undefined = default true.
+  const isVariable = typeState.variable !== false;
+  if (!isVariable) return base;
+
+  // Variable: base + Σ linked movements for this line / month / type
+  const cutoff = typeState.cutoffISO ? new Date(typeState.cutoffISO) : null;
+
+  const movementSum = movements.reduce((sum, mv) => {
+    const linkedId = mv.linkedPredictionId ?? mv.forecastId ?? null;
+    if (linkedId !== line.id) return sum;
+    if (mv.type !== type) return sum;
+    if (!mv.date || mv.date.slice(0, 7) !== monthId) return sum;
+    if (cutoff && new Date(mv.date) < cutoff) return sum;
+    return sum + mv.amount;
+  }, 0);
+
+  return base + movementSum;
 }
 
 // ==================== UI COLORS ====================
