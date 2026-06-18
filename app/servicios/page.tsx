@@ -1,188 +1,182 @@
+import Link from "next/link";
 import SiteShell from "@/components/SiteShell";
 
+const ANALIZAR_URL = "/finanzas";
 const WHATSAPP_URL = "https://wa.me/34656195880";
 
-const PLANS = [
-  {
-    id: "free",
-    name: "Gratis",
-    price: "0 €",
-    oldPrice: null as string | null,
-    discountLabel: null as string | null,
-    period: "para siempre",
-    subtitle: "Todo lo esencial para organizarte",
-    featured: false,
-    topBadge: null as string | null,
-    savings: null as string | null,
-    cta: "Empezar gratis",
-    items: [
-      "Metas ilimitadas",
-      "Tareas (todos los tipos)",
-      "Subtareas",
-      "Agenda diaria",
-      "Notificaciones básicas",
-      "Sincronización móvil + PC",
-    ],
-  },
-  {
-    id: "monthly",
-    name: "Premium Mensual",
-    price: "6,99 €",
-    oldPrice: "9,99 €" as string | null,
-    discountLabel: "−30%" as string | null,
-    period: "/mes",
-    subtitle: "Avanza más rápido con IA",
-    featured: false,
-    topBadge: null as string | null,
-    savings: null as string | null,
-    cta: "Hacerme Premium",
-    items: [
-      "Todo lo de Gratis",
-      "IA por texto",
-      "IA por voz — audio → tareas",
-      "IA Coach de metas",
-      "Nutrición automática",
-      "Entrenamiento automático",
-      "Meditaciones guiadas",
-      "Micro-coaches: foco, decisiones, bloqueos…",
-    ],
-  },
-  {
-    id: "annual",
-    name: "Premium Anual",
-    price: "65 €",
-    oldPrice: "99 €" as string | null,
-    discountLabel: "−34%" as string | null,
-    period: "/año",
-    subtitle: "La mejor forma de avanzar",
-    featured: true,
-    topBadge: "Más popular" as string | null,
-    savings: "Equivale a 5,41 €/mes · Ahorras 18,88 €" as string | null,
-    cta: "Pasar a Premium",
-    items: [
-      "Todo lo de Gratis",
-      "IA por texto",
-      "IA por voz — audio → tareas",
-      "IA Coach de metas",
-      "Nutrición automática",
-      "Entrenamiento automático",
-      "Meditaciones guiadas",
-      "Micro-coaches: foco, decisiones, bloqueos…",
-    ],
-  },
+// "Qué podemos aportar" — tarjetas muy cortas.
+const APORTES = [
+  { title: "Análisis", icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 17V9m4 8V5m4 12v-6M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z" /> },
+  { title: "Capital", icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 8c-1.66 0-3 .9-3 2s1.34 2 3 2 3 .9 3 2-1.34 2-3 2m0-8c1.1 0 2.08.4 2.6 1M12 8V6m0 10v2m0-2c-1.1 0-2.08-.4-2.6-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /> },
+  { title: "Inversores", icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 20h5v-1a4 4 0 00-3-3.87M9 20H4v-1a4 4 0 013-3.87m6-6a3 3 0 11-6 0 3 3 0 016 0zm6 1a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" /> },
+  { title: "Experiencia", icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M12 14l9-5-9-5-9 5 9 5zm0 0v7m-5-9.5V17l5 2.5 5-2.5v-5.5" /> },
+  { title: "Riesgos", icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12l2 2 4-4m5.6 1A9 9 0 1112 3a9 9 0 019.6 8z" /> },
+  { title: "Estructura", icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /> },
+];
+
+// "Cómo funciona" — pasos cortos.
+const STEPS = [
+  { title: "Calculas", desc: "Los números en la app." },
+  { title: "Visualizas", desc: "Gráficos y resumen claro." },
+  { title: "Compartes", desc: "Envías la ficha a cualquier inversor." },
+  { title: "Analizamos", desc: "Revisamos la operación." },
+  { title: "Nos reunimos", desc: "Si encaja, cita." },
+  { title: "Valoramos", desc: "Colaboración o capital." },
+];
+
+// "Operaciones que nos interesan" — chips.
+const INTEREST_CHIPS = [
+  "Margen real",
+  "Descuento sobre mercado",
+  "Cambio de uso de local",
+  "Reforma y venta",
+  "Potencial de alquiler",
+  "Suelos o edificios con recorrido",
+  "Riesgo compensado",
 ];
 
 export default function Servicios() {
   return (
     <SiteShell active="servicios">
-      <section className="py-12 md:py-20">
-        <div className="mx-auto max-w-3xl text-center">
-          <h1 className="text-4xl font-extrabold tracking-tight text-slate-900 md:text-5xl">
-            Elige tu plan
+      {/* ── Hero ─────────────────────────────────────────────────────────── */}
+      <section className="py-6 sm:py-10">
+        <div className="max-w-3xl">
+          <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            Colaboración con criterio de inversión
+          </span>
+          <h1 className="mt-5 text-4xl sm:text-5xl font-bold leading-[1.08] tracking-tight text-slate-900">
+            Comparte buenas operaciones.
+            <br />
+            Nosotros las analizamos.
           </h1>
-          <p className="mt-4 text-lg text-slate-500 md:text-xl">
-            Organizarte es gratis. Avanzar más rápido es{" "}
-            <span className="font-semibold text-slate-800">Premium</span>.
+          <p className="mt-5 text-lg text-slate-600">
+            Envíanos una oportunidad con números claros y vemos si tiene sentido colaborar.
           </p>
-        </div>
-
-        <div className="mx-auto mt-14 grid max-w-5xl gap-6 md:grid-cols-3 md:items-start">
-          {PLANS.map((plan) => (
-            <div
-              key={plan.id}
-              className={`relative flex flex-col rounded-2xl border p-6 transition-shadow duration-200 ${
-                plan.featured
-                  ? "border-blue-500 bg-white shadow-xl shadow-blue-500/15 ring-1 ring-blue-500"
-                  : "border-slate-200 bg-white hover:shadow-md"
-              }`}
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <Link
+              href={ANALIZAR_URL}
+              className="inline-flex items-center justify-center rounded-full bg-slate-900 px-7 py-3.5 text-sm font-semibold text-white hover:bg-slate-800 transition-colors"
             >
-              {/* Badge superior (Más popular) */}
-              {plan.topBadge && (
-                <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 rounded-full bg-blue-600 px-4 py-1 text-xs font-semibold tracking-wide text-white shadow-sm">
-                  {plan.topBadge}
-                </span>
-              )}
+              Analizar operación
+            </Link>
+            <a
+              href={WHATSAPP_URL}
+              className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-7 py-3.5 text-sm font-semibold text-slate-800 hover:border-slate-400 hover:bg-slate-50 transition-colors"
+            >
+              Contactar
+            </a>
+          </div>
+        </div>
+      </section>
 
-              <div className="mb-5">
-                <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-                  {plan.name}
-                </h2>
-
-                {/* Bloque de precio */}
-                <div className="mt-3">
-                  <div className="flex items-start gap-2">
-                    <span className={`text-4xl font-extrabold leading-none tracking-tight ${plan.featured ? "text-blue-700" : "text-slate-900"}`}>
-                      {plan.price}
-                    </span>
-                    <div className="flex flex-col justify-start pt-1 gap-0.5">
-                      <span className="text-sm text-slate-400 leading-none">{plan.period}</span>
-                      {plan.oldPrice && (
-                        <span className="text-xs text-slate-400 line-through leading-none">
-                          {plan.oldPrice}
-                        </span>
-                      )}
-                    </div>
-                    {plan.discountLabel && (
-                      <span className={`ml-auto self-start rounded-md px-2 py-0.5 text-xs font-bold tabular-nums ${
-                        plan.featured
-                          ? "bg-blue-100 text-blue-700"
-                          : "bg-slate-100 text-slate-600"
-                      }`}>
-                        {plan.discountLabel}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Savings pill (solo plan anual) */}
-                  {plan.savings && (
-                    <p className="mt-2.5 text-xs text-emerald-700 font-medium bg-emerald-50 rounded-lg px-2.5 py-1.5 leading-snug">
-                      {plan.savings}
-                    </p>
-                  )}
-                </div>
-
-                <p className="mt-3 text-sm text-slate-500">{plan.subtitle}</p>
+      {/* ── Qué podemos aportar ──────────────────────────────────────────── */}
+      <section className="mt-16 sm:mt-24">
+        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+          Qué podemos aportar
+        </h2>
+        <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+          {APORTES.map((a) => (
+            <div
+              key={a.title}
+              className="flex flex-col items-center gap-2 rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-sm hover:shadow-md hover:border-slate-300 transition-all"
+            >
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white">
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">{a.icon}</svg>
               </div>
-
-              <ul className="mb-6 flex-1 space-y-2.5" role="list">
-                {plan.items.map((item) => (
-                  <li
-                    key={item}
-                    className="flex items-start gap-2 text-sm text-slate-600"
-                  >
-                    <svg
-                      className={`mt-0.5 h-4 w-4 flex-shrink-0 ${
-                        plan.featured ? "text-blue-500" : "text-slate-400"
-                      }`}
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2.5}
-                      aria-hidden="true"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M5 13l4 4L19 7"
-                      />
-                    </svg>
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-
-              <a
-                href={WHATSAPP_URL}
-                className={`block w-full rounded-xl px-5 py-3 text-center text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
-                  plan.featured
-                    ? "bg-blue-600 text-white hover:bg-blue-700 focus-visible:ring-blue-500"
-                    : "bg-slate-900 text-white hover:bg-slate-800 focus-visible:ring-slate-500"
-                }`}
-              >
-                {plan.cta}
-              </a>
+              <span className="text-sm font-semibold text-slate-900">{a.title}</span>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* ── Cómo funciona ────────────────────────────────────────────────── */}
+      <section className="mt-20 sm:mt-28">
+        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+          Cómo funciona
+        </h2>
+        <div className="mt-8 overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <table className="w-full min-w-[480px] border-collapse text-left">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50">
+                <th className="w-16 px-5 py-3.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Paso
+                </th>
+                <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Acción
+                </th>
+                <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  En qué consiste
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {STEPS.map((step, i) => (
+                <tr key={step.title} className="transition-colors hover:bg-slate-50/70">
+                  <td className="px-5 py-4">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white tabular-nums">
+                      {i + 1}
+                    </span>
+                  </td>
+                  <td className="whitespace-nowrap px-5 py-4 text-sm font-semibold text-slate-900">
+                    {step.title}
+                  </td>
+                  <td className="px-5 py-4 text-sm text-slate-600">{step.desc}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* ── Operaciones que estudiamos contigo ───────────────────────────── */}
+      <section className="mt-20 sm:mt-28">
+        <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+          ¿Tienes una operación interesante?
+        </h2>
+        <p className="mt-3 max-w-2xl text-slate-600">
+          Si encaja con nuestros criterios de inversión, podemos estudiarla contigo.
+        </p>
+        <div className="mt-6 flex flex-wrap gap-2.5">
+          {INTEREST_CHIPS.map((chip) => (
+            <span
+              key={chip}
+              className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              {chip}
+            </span>
+          ))}
+        </div>
+      </section>
+
+      {/* ── CTA final ────────────────────────────────────────────────────── */}
+      <section className="mt-20 sm:mt-28 mb-4">
+        <div className="rounded-3xl bg-slate-900 px-6 py-14 text-center sm:px-10">
+          <h2 className="mx-auto max-w-2xl text-2xl sm:text-3xl font-bold tracking-tight text-white">
+            ¿Tienes una operación que merece ser analizada?
+          </h2>
+          <p className="mx-auto mt-3 max-w-md text-slate-300">
+            Calcula los números. Si encaja, compártela.
+          </p>
+          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <Link
+              href={ANALIZAR_URL}
+              className="inline-flex items-center justify-center rounded-full bg-white px-8 py-3.5 text-sm font-semibold text-slate-900 hover:bg-slate-100 transition-colors"
+            >
+              Analizar operación
+            </Link>
+            <a
+              href={WHATSAPP_URL}
+              className="inline-flex items-center justify-center rounded-full border border-slate-600 px-8 py-3.5 text-sm font-semibold text-white hover:bg-slate-800 transition-colors"
+            >
+              Contactar
+            </a>
+          </div>
+          <p className="mx-auto mt-6 max-w-lg text-xs text-slate-400">
+            Cada operación se estudia de forma individual. No financiamos cualquier
+            propuesta: revisamos números, riesgos, plazos y viabilidad.
+          </p>
         </div>
       </section>
     </SiteShell>

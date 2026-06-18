@@ -28,7 +28,7 @@ export default function SiteShell({ children, active }: Props) {
             {/* Nav center - hidden on mobile */}
             <nav className="hidden md:flex items-center gap-1.5">
               <Link
-                href="/donaciones"
+                href="/servicios"
                 className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
                   active === "servicios"
                     ? "bg-slate-900 text-white"
@@ -64,7 +64,7 @@ export default function SiteShell({ children, active }: Props) {
           {/* Mobile nav */}
           <nav className="flex md:hidden items-center gap-1.5 mt-3 overflow-x-auto pb-1 -mx-2 px-2">
             <Link
-              href="/donaciones"
+              href="/servicios"
               className={`rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
                 active === "servicios"
                   ? "bg-slate-900 text-white"
