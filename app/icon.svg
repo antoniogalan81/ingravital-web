@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="Invergravital app icon">
+  <!-- App icon: anthracite rounded tile -->
+  <rect x="0" y="0" width="120" height="120" rx="26" fill="#0F172A"/>
+  <path d="M94.641 80 A40 40 0 1 1 94.641 40"
+        fill="none" stroke="#F5F7FA" stroke-width="11" stroke-linecap="round"
+        transform="translate(60 60) scale(0.84) translate(-60 -60)"/>
+  <g transform="translate(60 60) scale(0.84) translate(-60 -60)">
+    <rect x="43.5" y="58" width="9" height="16" rx="4.5" fill="#F5F7FA"/>
+    <rect x="55.5" y="48" width="9" height="26" rx="4.5" fill="#F5F7FA"/>
+    <rect x="67.5" y="38" width="9" height="36" rx="4.5" fill="#2DD4A6"/>
+  </g>
+</svg>

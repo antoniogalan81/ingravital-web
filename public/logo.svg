@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="Invergravital">
+  <!-- "G" ring: open on the right, 300° geometric arc -->
+  <path d="M94.641 80 A40 40 0 1 1 94.641 40"
+        fill="none" stroke="#0F172A" stroke-width="11" stroke-linecap="round"/>
+  <!-- Ascending columns inside the ring: building + growth, echoing the "I" -->
+  <rect x="43.5" y="58" width="9" height="16" rx="4.5" fill="#0F172A"/>
+  <rect x="55.5" y="48" width="9" height="26" rx="4.5" fill="#0F172A"/>
+  <rect x="67.5" y="38" width="9" height="36" rx="4.5" fill="#10B981"/>
+</svg>

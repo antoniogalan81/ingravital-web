@@ -10,7 +10,7 @@ type Props = {
 };
 
 const WHATSAPP_URL = "https://wa.me/34656195880";
-const EMAIL = "contacto@ingravital.com";
+const EMAIL = "info@palmaycoco.com";
 
 export default function SiteShell({ children, active }: Props) {
   return (
@@ -20,9 +20,8 @@ export default function SiteShell({ children, active }: Props) {
         <div className="mx-auto max-w-[1140px] px-4 sm:px-6 py-4">
           <div className="flex items-center justify-between">
             {/* Logo */}
-            <Link href="/" className="flex items-center gap-2.5 shrink-0">
-              <Image src="/logo.png" alt="Invergravital" width={36} height={36} priority />
-              <span className="text-base font-semibold tracking-tight">Invergravital</span>
+            <Link href="/" className="flex items-center shrink-0">
+              <Image src="/logo-horizontal.svg" alt="Invergravital" width={144} height={36} priority />
             </Link>
 
             {/* Nav center - hidden on mobile */}
@@ -45,7 +44,7 @@ export default function SiteShell({ children, active }: Props) {
                     : "text-slate-600 hover:bg-slate-100"
                 }`}
               >
-                Inversiones
+                Mi inversion
               </Link>
             </nav>
 
@@ -81,7 +80,7 @@ export default function SiteShell({ children, active }: Props) {
                   : "text-slate-600 bg-slate-100"
               }`}
             >
-              Inversiones
+              Mi inversion
             </Link>
           </nav>
         </div>
@@ -98,7 +97,10 @@ export default function SiteShell({ children, active }: Props) {
       <footer className="border-t border-slate-100">
         <div className="mx-auto max-w-[1140px] px-4 sm:px-6 py-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm text-slate-500">
-            <div>© 2026 Invergravital</div>
+            <div className="flex items-center gap-2">
+              <Image src="/logo.svg" alt="Invergravital" width={22} height={22} />
+              <span>© 2026 Invergravital</span>
+            </div>
             <div className="flex flex-wrap items-center gap-4">
               <a className="hover:text-slate-900 transition-colors" href={WHATSAPP_URL}>
                 WhatsApp
