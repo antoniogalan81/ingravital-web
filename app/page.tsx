@@ -45,7 +45,7 @@ const BENEFITS = [
   },
 ];
 
-const MODULOS = [
+const PILARES = [
   {
     tag: "Núcleo",
     title: "Inversiones inmobiliarias",
@@ -57,12 +57,6 @@ const MODULOS = [
     title: "Comparador de escenarios",
     desc: "Pon varias operaciones frente a frente y detecta cuál rinde mejor.",
     icon: "M9 17V9m4 8V5m4 12v-6M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z",
-  },
-  {
-    tag: "Inversor",
-    title: "Perfil y ajustes",
-    desc: "Calibra el análisis a tu estrategia: riesgo, horizonte y criterios.",
-    icon: "M12 12a4 4 0 100-8 4 4 0 000 8zm0 2c-4.4 0-8 2.2-8 5v1h16v-1c0-2.8-3.6-5-8-5z",
   },
   {
     tag: "Pipeline",
@@ -100,7 +94,7 @@ export default function Home() {
         <div>
           <span className="lp-rise lp-free" style={{ animationDelay: "0ms" }}>
             <span className="lp-pulse h-1.5 w-1.5 rounded-full bg-[var(--lp-positive)]" />
-            Gratis · Sin tarjeta · Sin comisiones
+            Gratuita · 100% funcional · Sin tarjeta
           </span>
 
           <h1 className="lp-rise mt-6 text-4xl font-extrabold leading-[1.04] tracking-tight sm:text-5xl lg:text-[3.5rem]" style={{ animationDelay: "90ms" }}>
@@ -113,12 +107,13 @@ export default function Home() {
 
           <p className="lp-rise mt-6 max-w-xl text-lg leading-relaxed text-[var(--lp-muted)]" style={{ animationDelay: "180ms" }}>
             Calcula rentabilidad, compara escenarios y decide con datos antes de
-            comprometer capital. Gratis, sin costes ocultos.
+            comprometer capital. Una herramienta gratuita y profesional, sin
+            funciones bloqueadas.
           </p>
 
           <div className="lp-rise mt-8 flex flex-col gap-3 sm:flex-row" style={{ animationDelay: "270ms" }}>
             <Link href={ENTRAR_URL} className="lp-btn lp-btn-primary">
-              Empezar a analizar gratis
+              Analizar una operación
               <Icon d="M13 7l5 5-5 5M18 12H6" className="h-4 w-4" />
             </Link>
             <Link href={OPORTUNIDADES_URL} className="lp-btn lp-btn-ghost">
@@ -166,13 +161,14 @@ export default function Home() {
       <section className="mx-auto max-w-[1180px] px-5 pt-6 sm:px-8">
         <div className="lp-reveal lp-free-band flex flex-col items-center gap-5 px-6 py-7 sm:flex-row sm:justify-between sm:px-10">
           <div>
-            <h2 className="text-xl font-bold tracking-tight sm:text-2xl">Gratis, sin costes ocultos</h2>
+            <h2 className="text-xl font-bold tracking-tight sm:text-2xl">Gratuita y 100% funcional</h2>
             <p className="mt-1.5 text-sm text-[var(--lp-muted)]">
-              Accede a las herramientas principales sin pagar ni introducir tarjeta.
+              Accede a todas las herramientas sin pagar ni introducir tarjeta. No es
+              una demo ni una prueba temporal.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
-            {["Sin tarjeta", "Sin comisiones", "Sin letra pequeña"].map((t) => (
+            {["Sin tarjeta", "Sin funciones bloqueadas", "Sin letra pequeña"].map((t) => (
               <span key={t} className="lp-pill-static">
                 <Icon d="M9 12l2 2 4-4m5.6 1A9 9 0 1112 3a9 9 0 019.6 8z" className="h-3.5 w-3.5 text-[var(--lp-positive)]" />
                 {t}
@@ -197,17 +193,17 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── Módulos principales ──────────────────────────────────────────── */}
-      <section id="modulos" className="mx-auto max-w-[1180px] px-5 pb-20 sm:px-8 sm:pb-24">
+      {/* ── Pilares de la plataforma ─────────────────────────────────────── */}
+      <section id="plataforma" className="mx-auto max-w-[1180px] px-5 pb-20 sm:px-8 sm:pb-24">
         <div className="lp-reveal max-w-2xl">
           <p className="lp-eyebrow">Plataforma</p>
           <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
-            Una plataforma, cuatro piezas que encajan
+            Todo lo que necesitas para decidir
           </h2>
         </div>
-        <div className="mt-10 grid gap-5 md:grid-cols-2">
-          {MODULOS.map((m, i) => (
-            <div key={m.title} className="lp-reveal lp-card flex gap-5 p-7" data-delay={i * 80}>
+        <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {PILARES.map((m, i) => (
+            <div key={m.title} className="lp-reveal lp-card flex flex-col gap-5 p-7" data-delay={i * 80}>
               <span className="lp-card-icon h-12 w-12 shrink-0">
                 <Icon d={m.icon} className="h-6 w-6" />
               </span>
@@ -232,16 +228,16 @@ export default function Home() {
               Analiza primero. <span className="lp-grad-text">Decide después.</span>
             </h2>
             <p className="mx-auto mt-5 max-w-lg text-[var(--lp-muted)]">
-              Empieza gratis, sin tarjeta. Si los números encajan, compártela para
-              valorar una posible colaboración.
+              Crea tu primera operación sin coste ni tarjeta. Cuando los números
+              encajen, compártela con quien quieras —o con nosotros.
             </p>
             <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <Link href={ENTRAR_URL} className="lp-btn lp-btn-primary">
-                Empezar gratis
+                Analizar una operación
                 <Icon d="M13 7l5 5-5 5M18 12H6" className="h-4 w-4" />
               </Link>
               <Link href={COLABORAR_URL} className="lp-btn lp-btn-ghost">
-                Compartir oportunidad
+                Compartir un proyecto
               </Link>
             </div>
           </div>

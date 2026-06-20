@@ -18,7 +18,7 @@ const EMAIL = "info@palmaycoco.com";
 type Active = "home" | "servicios" | "legal";
 
 const NAV: { label: string; href: string; key: Active | "oportunidades" }[] = [
-  { label: "Plataforma", href: "/#modulos", key: "home" },
+  { label: "Plataforma", href: "/#plataforma", key: "home" },
   { label: "Colaborar", href: "/servicios", key: "servicios" },
   { label: "Oportunidades", href: "/oportunidades", key: "oportunidades" },
 ];
@@ -100,7 +100,7 @@ export default function PublicShell({
                 Iniciar sesión
               </Link>
               <Link href={ENTRAR_URL} className="lp-btn lp-btn-primary !px-5 !py-2.5 !text-sm">
-                Entrar gratis
+                Acceder
               </Link>
             </div>
           </div>
@@ -118,7 +118,7 @@ export default function PublicShell({
           <div className="mx-auto flex max-w-[1180px] flex-col gap-4 px-5 py-8 sm:flex-row sm:items-center sm:justify-between sm:px-8">
             <div className="flex items-center gap-2.5 text-sm text-[var(--lp-subtle)]">
               <Image src="/logo.svg" alt="Invergravital" width={22} height={22} />
-              <span>© 2026 Invergravital · Gratis, sin costes ocultos</span>
+              <span>© 2026 Invergravital · Herramienta gratuita, sin costes ocultos</span>
             </div>
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-[var(--lp-muted)]">
               <Link href="/servicios" className="transition-colors hover:text-[var(--lp-text)]">Colaborar</Link>

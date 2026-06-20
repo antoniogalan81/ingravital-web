@@ -101,7 +101,7 @@ export default function LoginPage() {
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${window.location.origin}/auth/callback?next=/panel`,
       },
     });
 
@@ -147,7 +147,7 @@ export default function LoginPage() {
                 <p className="mt-2 text-sm text-[var(--lp-muted)]">Entra y sigue analizando operaciones.</p>
                 <span className="lp-free mt-4">
                   <span className="h-1.5 w-1.5 rounded-full bg-[var(--lp-positive)]" />
-                  Gratis · Sin tarjeta · Sin comisiones
+                  Gratuita · 100% funcional · Sin tarjeta
                 </span>
               </div>
 
@@ -222,7 +222,7 @@ export default function LoginPage() {
                 <p className="text-sm text-[var(--lp-muted)]">
                   ¿No tienes cuenta?{" "}
                   <Link href="/signup" className="font-semibold text-[var(--lp-text)] hover:underline">
-                    Crear cuenta gratis
+                    Crear cuenta
                   </Link>
                 </p>
               </div>

@@ -140,8 +140,8 @@ export default function SignupPage() {
               ) : (
                 <>
                   <div className="mb-7 text-center">
-                    <h1 className="text-2xl font-bold tracking-tight text-[var(--lp-text)]">Crea tu cuenta gratis</h1>
-                    <p className="mt-2 text-sm text-[var(--lp-muted)]">Empieza a analizar operaciones hoy mismo.</p>
+                    <h1 className="text-2xl font-bold tracking-tight text-[var(--lp-text)]">Crea tu cuenta</h1>
+                    <p className="mt-2 text-sm text-[var(--lp-muted)]">Acceso gratuito a todas las herramientas, sin tarjeta.</p>
                     <span className="lp-free mt-4">
                       <span className="h-1.5 w-1.5 rounded-full bg-[var(--lp-positive)]" />
                       Sin tarjeta · Sin comisiones · Sin letra pequeña
@@ -204,7 +204,7 @@ export default function SignupPage() {
                           Creando cuenta...
                         </span>
                       ) : (
-                        "Crear cuenta gratis"
+                        "Crear cuenta"
                       )}
                     </button>
                   </form>
