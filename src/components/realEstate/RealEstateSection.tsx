@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback, useRef } from "react";
+import { toast } from "sonner";
 import { useSync } from "@/src/sync/SyncContext";
 import { calcResults, fmtEUR, fmtPct, CATEGORY_INFO, type RealEstateCategory } from "@/src/lib/realEstateCalc";
 import type { REOperation, REResults } from "@/src/lib/realEstate";
@@ -331,7 +332,7 @@ function CompareModal({ ops, onClose, onOpenOp }: { ops: REOperation[]; onClose:
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0 gap-4">
-          <h2 className="text-base font-bold text-slate-900 shrink-0">Comparación de inversiones</h2>
+          <h2 className="text-base font-extrabold text-ink tracking-tight shrink-0">Comparación de inversiones</h2>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -526,12 +527,12 @@ function RECard({
   return (
     <div
       onClick={handleClick}
-      className={`bg-white rounded-xl border p-4 cursor-pointer transition-all ${
+      className={`bg-surface rounded-2xl border p-4 cursor-pointer transition-all shadow-[0_6px_16px_rgba(14,23,38,0.05)] ${
         compareMode
           ? selected
-            ? "border-blue-500 shadow-md ring-2 ring-blue-200"
-            : "border-slate-200 hover:border-blue-300 hover:shadow-sm"
-          : "border-slate-200 hover:border-slate-300 hover:shadow-sm"
+            ? "border-brand ring-2 ring-[var(--brand-soft)] shadow-md"
+            : "border-line hover:border-brand hover:shadow-md"
+          : "border-line hover:border-[var(--line-strong)] hover:shadow-md"
       }`}
     >
       <div className="flex items-start justify-between mb-3">
@@ -550,7 +551,7 @@ function RECard({
             </div>
           )}
           <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-semibold text-slate-900 leading-tight">
+            <h3 className="text-sm font-bold text-ink leading-tight tracking-tight">
               {op.name}
             </h3>
             {op.isDraft && (
@@ -636,15 +637,15 @@ function RECard({
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <div className="bg-emerald-50 rounded-lg p-3">
-          <div className="text-[10px] font-medium text-emerald-600 uppercase tracking-wide mb-1">Alquiler</div>
-          <div className="text-base font-bold text-emerald-700 tabular-nums">{fmtPct(res.rentYield)}</div>
-          <div className="text-xs text-emerald-600 tabular-nums">{fmtEUR(res.monthlyRentBenefit)}/mes</div>
+        <div className="rounded-xl p-3" style={{ background: "var(--positive-soft)" }}>
+          <div className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: "var(--positive)" }}>Alquiler</div>
+          <div className="text-lg font-extrabold tabular-nums" style={{ color: "var(--positive)" }}>{fmtPct(res.rentYield)}</div>
+          <div className="text-xs tabular-nums" style={{ color: "var(--positive)" }}>{fmtEUR(res.monthlyRentBenefit)}/mes</div>
         </div>
-        <div className="bg-blue-50 rounded-lg p-3">
-          <div className="text-[10px] font-medium text-blue-600 uppercase tracking-wide mb-1">Venta</div>
-          <div className="text-base font-bold text-blue-700 tabular-nums">{fmtPct(res.saleYield)}</div>
-          <div className="text-xs text-blue-600 tabular-nums">{fmtEUR(res.saleBenefit)}</div>
+        <div className="rounded-xl p-3" style={{ background: "var(--brand-soft)" }}>
+          <div className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: "var(--brand)" }}>Venta</div>
+          <div className="text-lg font-extrabold tabular-nums" style={{ color: "var(--brand)" }}>{fmtPct(res.saleYield)}</div>
+          <div className="text-xs tabular-nums" style={{ color: "var(--brand)" }}>{fmtEUR(res.saleBenefit)}</div>
         </div>
       </div>
     </div>
@@ -683,12 +684,12 @@ function REVariantRow({
   return (
     <div
       onClick={handleClick}
-      className={`bg-white rounded-lg border px-3 py-2 cursor-pointer transition-all ${
+      className={`bg-surface rounded-xl border px-3 py-2 cursor-pointer transition-all ${
         compareMode
           ? selected
-            ? "border-blue-500 ring-2 ring-blue-200"
-            : "border-slate-200 hover:border-blue-300"
-          : "border-slate-200 hover:border-slate-300 hover:shadow-sm"
+            ? "border-brand ring-2 ring-[var(--brand-soft)]"
+            : "border-line hover:border-brand"
+          : "border-line hover:border-[var(--line-strong)] hover:shadow-sm"
       }`}
     >
       <div className="flex items-center gap-2">
@@ -702,9 +703,9 @@ function REVariantRow({
           </div>
         )}
         <div className="flex-1 min-w-0 flex items-center gap-2 justify-between">
-          <span className="text-sm font-semibold text-slate-900 truncate">{op.name}</span>
+          <span className="text-sm font-bold text-ink truncate">{op.name}</span>
           {unitSummary !== "—" && (
-            <span className="text-xs text-slate-500 tabular-nums whitespace-nowrap flex-shrink-0">{unitSummary}</span>
+            <span className="text-xs text-ink-subtle tabular-nums whitespace-nowrap flex-shrink-0">{unitSummary}</span>
           )}
         </div>
         {!compareMode && (
@@ -741,12 +742,12 @@ function REVariantRow({
         )}
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 mt-1">
-        <span className="text-xs text-emerald-600 tabular-nums">
-          Alquiler: <span className="font-semibold">{fmtPct(res.rentYield)}</span>
+        <span className="text-xs tabular-nums" style={{ color: "var(--positive)" }}>
+          Alquiler: <span className="font-bold">{fmtPct(res.rentYield)}</span>
           {res.monthlyRentBenefit > 0 && <> · {fmtEUR(res.monthlyRentBenefit)}/mes</>}
         </span>
-        <span className="text-xs text-blue-600 tabular-nums">
-          Venta: <span className="font-semibold">{fmtPct(res.saleYield)}</span>
+        <span className="text-xs tabular-nums" style={{ color: "var(--brand)" }}>
+          Venta: <span className="font-bold">{fmtPct(res.saleYield)}</span>
           {res.saleBenefit > 0 && <> · {fmtEUR(res.saleBenefit)}</>}
         </span>
       </div>
@@ -1012,6 +1013,7 @@ export function RealEstateSection() {
   // OBJETIVO 4/7: duplicate — no "Variante X" names, original stays first
   const handleDuplicate = useCallback((op: REOperation) => {
     const now = new Date().toISOString();
+    toast.success("Operación duplicada", { description: op.name });
 
     if (op.variantGroupId) {
       // Already in a group → copy enters same group right after op
@@ -1083,9 +1085,11 @@ export function RealEstateSection() {
   }, [setRealEstateOperation]);
 
   const handleDelete = useCallback((id: string) => {
+    const name = realEstateOperations.find((o) => o.id === id)?.name;
     deleteRealEstateOperation(id);
     setSelectedId(null);
-  }, [deleteRealEstateOperation]);
+    toast.success("Operación eliminada", name ? { description: name } : undefined);
+  }, [deleteRealEstateOperation, realEstateOperations]);
 
   const toggleCompareMode = useCallback(() => {
     setCompareMode((v) => !v);
@@ -1237,7 +1241,7 @@ export function RealEstateSection() {
               <span className="text-xs text-slate-400 group-hover:text-slate-600 transition-colors">
                 {expanded ? "▼" : "▶"}
               </span>
-              <h2 className="text-base font-semibold text-slate-700">Inversión Inmobiliaria</h2>
+              <h2 className="text-base font-extrabold text-ink tracking-tight">Operaciones</h2>
             </button>
 
             {activeOps.length >= 2 && (
@@ -1262,7 +1266,7 @@ export function RealEstateSection() {
             <button
               type="button"
               onClick={handleNew}
-              className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="px-3.5 py-1.5 text-sm font-semibold bg-brand text-white rounded-xl hover:bg-brand-dark transition-colors"
             >
               + Nueva
             </button>
@@ -1310,12 +1314,13 @@ export function RealEstateSection() {
         {expanded && (
           <>
             {activeOps.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-slate-200 px-6 py-10 text-center">
-                <p className="text-sm text-slate-400 mb-4">No hay operaciones todavía</p>
+              <div className="re-card px-6 py-12 text-center">
+                <p className="text-base font-bold text-ink mb-1">Aún no hay operaciones</p>
+                <p className="text-sm text-ink-subtle mb-5">Analiza tu primera operación inmobiliaria.</p>
                 <button
                   type="button"
                   onClick={handleNew}
-                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="px-5 py-2.5 text-sm font-semibold bg-brand text-white rounded-xl hover:bg-brand-dark transition-colors"
                 >
                   + Nueva operación
                 </button>

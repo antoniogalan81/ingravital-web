@@ -26,7 +26,7 @@ export default function HeaderAuth() {
   if (loading) {
     return (
       <div className="flex items-center gap-2">
-        <div className="w-20 h-9 bg-slate-100 rounded-full animate-pulse" />
+        <div className="w-20 h-9 bg-white/10 rounded-full animate-pulse" />
       </div>
     );
   }
@@ -36,9 +36,9 @@ export default function HeaderAuth() {
     return (
       <Link
         href="/login"
-        className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+        className="rounded-full border border-white/15 px-4 py-2 text-sm font-medium text-[#e8edf5] hover:bg-white/10 transition-colors"
       >
-        Login
+        Iniciar sesión
       </Link>
     );
   }
@@ -51,10 +51,10 @@ export default function HeaderAuth() {
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setDropdownOpen(!dropdownOpen)}
-        className="flex items-center gap-2 rounded-full border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+        className="flex items-center gap-2 rounded-full border border-white/15 px-3 py-2 text-sm font-medium text-[#e8edf5] hover:bg-white/10 transition-colors"
       >
         {/* Avatar placeholder */}
-        <div className="w-6 h-6 rounded-full bg-slate-900 text-white flex items-center justify-center text-xs font-semibold">
+        <div className="w-6 h-6 rounded-full bg-white/15 text-white flex items-center justify-center text-xs font-semibold">
           {displayName.charAt(0).toUpperCase()}
         </div>
         <span className="hidden sm:inline max-w-[120px] truncate">{displayName}</span>

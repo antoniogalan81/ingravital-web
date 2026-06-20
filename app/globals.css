@@ -1,26 +1,505 @@
 @import "tailwindcss";
 
+/* ───────────────────────────────────────────────────────────────────────────
+   Sistema de diseño premium financiero de Invergravital (WEB).
+   Paridad con APP/theme/*: paleta slate + azul profundo + oro, tipografía seria.
+   ─────────────────────────────────────────────────────────────────────────── */
+
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #121926;
+
+  /* App (zona autenticada / herramienta de inversión) */
+  --app-bg: #f4f6f9;
+  --surface: #ffffff;
+  --surface-alt: #f8fafc;
+  --line: #e3e8ef;
+  --line-strong: #cbd3df;
+
+  --ink: #121926;
+  --ink-muted: #4b5563;
+  --ink-subtle: #697586;
+
+  --brand: #1e4fa3;       /* azul profundo, serio */
+  --brand-dark: #143a7a;
+  --brand-soft: #e8eff9;
+
+  --positive: #15805a;
+  --positive-soft: #e3f2ec;
+  --negative: #c0392b;
+  --negative-soft: #fbe9e7;
+  --warning: #b7791f;
+  --warning-soft: #fbf1dd;
+  --accent: #b68d40;      /* oro/bronce apagado (uso puntual) */
+  --accent-soft: #f6efdf;
+
+  --backdrop-deep: #0e1726; /* hero oscuro del dashboard */
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+
+  --color-brand: var(--brand);
+  --color-brand-dark: var(--brand-dark);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-subtle: var(--ink-subtle);
+  --color-surface: var(--surface);
+  --color-line: var(--line);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --color-accent: var(--accent);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ── Primitivas reutilizables (paridad con components/ui/Premium.tsx de APP) ── */
+@layer components {
+  .app-bg {
+    background: var(--app-bg);
+  }
+
+  .re-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: 0 6px 16px rgba(14, 23, 38, 0.05);
+  }
+
+  .section-label {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--ink-subtle);
+  }
+
+  .section-title {
+    font-size: 1.625rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    line-height: 1.15;
+  }
+
+  .kpi-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-subtle);
+  }
+
+  .kpi-value {
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 9999px;
+    padding: 0.15rem 0.6rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+  .pill-info { background: var(--brand-soft); color: var(--brand); }
+  .pill-positive { background: var(--positive-soft); color: var(--positive); }
+  .pill-negative { background: var(--negative-soft); color: var(--negative); }
+  .pill-warning { background: var(--warning-soft); color: var(--warning); }
+  .pill-accent { background: var(--accent-soft); color: var(--accent); }
+  .pill-neutral { background: #f1f4f8; color: var(--ink-muted); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LANDING PÚBLICA PREMIUM ("lp-*")
+   Estilos scoped exclusivamente a la landing de marketing en "/".
+   No afectan a la zona autenticada (AppGate) ni a SiteShell.
+   Inspiración visual: docs/ejemplopagina.png (dashboard inversión premium).
+   ═════════════════════════════════════════════════════════════════════════ */
+
+.lp-root {
+  --lp-bg: #070c16;
+  --lp-bg-2: #0c1424;
+  --lp-line: rgba(255, 255, 255, 0.08);
+  --lp-line-strong: rgba(255, 255, 255, 0.14);
+  --lp-text: #e8edf5;
+  --lp-muted: #9aa6b8;
+  --lp-subtle: #66728a;
+  --lp-brand: #3f74d6;
+  --lp-brand-light: #6fa0f0;
+  --lp-positive: #2dd4a6;
+  --lp-gold: #cfa256;
+  --lp-gold-light: #e6c585;
+
+  position: relative;
+  min-height: 100vh;
+  background: var(--lp-bg);
+  color: var(--lp-text);
+  overflow-x: hidden;
+  font-family: var(--font-geist-sans), system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Fondo trabajado: gradientes profundos + grid sutil + glow ───────────── */
+.lp-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 600px at 78% -8%, rgba(63, 116, 214, 0.22), transparent 60%),
+    radial-gradient(720px 520px at 8% 4%, rgba(45, 212, 166, 0.10), transparent 58%),
+    radial-gradient(1000px 800px at 50% 108%, rgba(207, 162, 86, 0.10), transparent 60%),
+    linear-gradient(180deg, var(--lp-bg) 0%, var(--lp-bg-2) 45%, var(--lp-bg) 100%);
+}
+.lp-grid {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 64px 64px;
+  -webkit-mask-image: radial-gradient(closest-side at 60% 18%, black, transparent 92%);
+  mask-image: radial-gradient(closest-side at 60% 18%, black, transparent 92%);
+}
+.lp-noise {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.lp-glow {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(70px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.lp-content { position: relative; z-index: 1; }
+
+/* ── Tipografía / utilidades ─────────────────────────────────────────────── */
+.lp-eyebrow {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lp-muted);
+}
+.lp-grad-text {
+  background: linear-gradient(100deg, #ffffff 0%, #d6e2f7 42%, var(--lp-gold-light) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.lp-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--lp-line-strong), transparent);
+}
+
+/* ── Superficies de cristal ──────────────────────────────────────────────── */
+.lp-glass {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.018));
+  border: 1px solid var(--lp-line);
+  border-radius: 20px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 24px 60px -28px rgba(0, 0, 0, 0.7);
+}
+.lp-card {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+  border: 1px solid var(--lp-line);
+  border-radius: 18px;
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.4s ease, box-shadow 0.4s ease, background 0.4s ease;
+}
+.lp-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--lp-line-strong);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025));
+  box-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.8);
+}
+.lp-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: linear-gradient(150deg, rgba(63, 116, 214, 0.28), rgba(45, 212, 166, 0.14));
+  border: 1px solid var(--lp-line-strong);
+  color: #cfe0ff;
+}
+
+/* ── Botones ─────────────────────────────────────────────────────────────── */
+.lp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.92rem;
+  font-weight: 650;
+  padding: 0.85rem 1.6rem;
+  transition: transform 0.25s ease, box-shadow 0.3s ease, background 0.3s ease, border-color 0.3s ease;
+  will-change: transform;
+}
+.lp-btn-primary {
+  color: #07101f;
+  background: linear-gradient(180deg, #f4f8ff, #cfe0ff);
+  box-shadow: 0 14px 34px -12px rgba(111, 160, 240, 0.55);
+}
+.lp-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 20px 44px -12px rgba(111, 160, 240, 0.7); }
+.lp-btn-ghost {
+  color: var(--lp-text);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--lp-line-strong);
+}
+.lp-btn-ghost:hover { transform: translateY(-2px); background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.22); }
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+.lp-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  border-bottom: 1px solid transparent;
+  transition: background 0.3s ease, border-color 0.3s ease, backdrop-filter 0.3s ease;
+}
+.lp-header.is-stuck {
+  background: rgba(7, 12, 22, 0.72);
+  border-bottom-color: var(--lp-line);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.lp-navlink {
+  color: var(--lp-muted);
+  font-size: 0.9rem;
+  font-weight: 550;
+  padding: 0.5rem 0.85rem;
+  border-radius: 9999px;
+  transition: color 0.25s ease, background 0.25s ease;
+}
+.lp-navlink:hover { color: var(--lp-text); background: rgba(255, 255, 255, 0.05); }
+
+/* ── Mockup dashboard (hero) ─────────────────────────────────────────────── */
+.lp-dash {
+  background: linear-gradient(165deg, #0f1a2e 0%, #0a1322 100%);
+  border: 1px solid var(--lp-line-strong);
+  border-radius: 22px;
+  box-shadow: 0 50px 110px -40px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+.lp-tile {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--lp-line);
+  border-radius: 13px;
+  transition: background 0.3s ease, border-color 0.3s ease;
+}
+.lp-dash:hover .lp-tile { border-color: var(--lp-line-strong); }
+.lp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 9999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.18rem 0.6rem;
+}
+
+/* ── Floating cards ──────────────────────────────────────────────────────── */
+.lp-floatcard {
+  background: linear-gradient(160deg, rgba(15, 26, 46, 0.92), rgba(10, 19, 34, 0.92));
+  border: 1px solid var(--lp-line-strong);
+  border-radius: 16px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 28px 60px -26px rgba(0, 0, 0, 0.9);
+}
+
+/* ── Animaciones ─────────────────────────────────────────────────────────── */
+@keyframes lp-rise {
+  from { opacity: 0; transform: translateY(26px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.lp-rise { opacity: 0; animation: lp-rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+
+.lp-reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1), transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.lp-reveal.is-visible { opacity: 1; transform: translateY(0); }
+
+@keyframes lp-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+.lp-float { animation: lp-float 7s ease-in-out infinite; }
+.lp-float-slow { animation: lp-float 11s ease-in-out infinite; }
+
+@keyframes lp-drift {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(24px, -18px); }
+}
+.lp-drift { animation: lp-drift 18s ease-in-out infinite; }
+
+@keyframes lp-draw {
+  to { stroke-dashoffset: 0; }
+}
+.lp-chart-line {
+  stroke-dasharray: 620;
+  stroke-dashoffset: 620;
+  animation: lp-draw 2.4s ease-out 0.5s forwards;
+}
+
+@keyframes lp-pulse {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.25); }
+}
+.lp-pulse { animation: lp-pulse 2.4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-rise, .lp-reveal { animation: none; opacity: 1; transform: none; transition: none; }
+  .lp-float, .lp-float-slow, .lp-drift, .lp-chart-line, .lp-pulse { animation: none; }
+  .lp-chart-line { stroke-dashoffset: 0; }
+}
+
+/* ── Mensaje "gratis" premium (badge + banda) ────────────────────────────── */
+.lp-free {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--lp-positive);
+  background: rgba(45, 212, 166, 0.10);
+  border: 1px solid rgba(45, 212, 166, 0.28);
+}
+.lp-free-band {
+  position: relative;
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid var(--lp-line-strong);
+  background:
+    radial-gradient(600px 240px at 12% 0%, rgba(45, 212, 166, 0.14), transparent 70%),
+    radial-gradient(600px 240px at 88% 100%, rgba(207, 162, 86, 0.12), transparent 70%),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
+  backdrop-filter: blur(10px);
+}
+.lp-pill-static {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: 9999px;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--lp-text);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--lp-line-strong);
+}
+
+/* ── Formularios premium (auth, dark) ────────────────────────────────────── */
+.lp-label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--lp-muted);
+  margin-bottom: 0.4rem;
+}
+.lp-input {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--lp-line-strong);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--lp-text);
+  padding: 0.7rem 0.9rem;
+  font-size: 0.95rem;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
+}
+.lp-input::placeholder { color: var(--lp-subtle); }
+.lp-input:focus {
+  outline: none;
+  border-color: var(--lp-brand-light);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 0 0 3px rgba(63, 116, 214, 0.22);
+}
+
+/* ── Superficie "papel" clara dentro del shell oscuro (legal, lectura) ────── */
+.lp-paper {
+  background: #fbfcfe;
+  color: #1d2735;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 22px;
+  box-shadow: 0 40px 90px -50px rgba(0, 0, 0, 0.85);
+}
+.lp-paper h1, .lp-paper h2, .lp-paper h3 { color: #121926; }
+.lp-paper a.lp-paper-link { color: var(--brand); text-decoration: underline; text-underline-offset: 3px; }
+.lp-paper a.lp-paper-link:hover { color: var(--brand-dark); }
+
+/* ── Chrome oscuro de la app autenticada (AppGate) ───────────────────────── */
+.app-chrome {
+  --lp-line: rgba(255, 255, 255, 0.08);
+  --lp-line-strong: rgba(255, 255, 255, 0.14);
+  background: linear-gradient(180deg, #0a1322 0%, #0c1626 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+}
+.app-chrome-link {
+  border-radius: 9999px;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #9aa6b8;
+  transition: color 0.25s ease, background 0.25s ease;
+}
+.app-chrome-link:hover { color: #e8edf5; background: rgba(255, 255, 255, 0.06); }
+.app-chrome-link.is-active { color: #07101f; background: linear-gradient(180deg, #f4f8ff, #cfe0ff); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   IMPRESIÓN — Dossier de inversión (ReportDocument) en A4
+   window.print() aísla #report-print-area y oculta el resto de la app.
+   Solo claros: nada de fondos oscuros que impriman mal.
+   ═════════════════════════════════════════════════════════════════════════ */
+@media print {
+  @page { size: A4; margin: 12mm; }
+
+  html, body { background: #ffffff !important; }
+
+  /* Oculta toda la app excepto el área de informe (conserva layout) */
+  body * { visibility: hidden !important; }
+  #report-print-area, #report-print-area * { visibility: visible !important; }
+
+  #report-print-area {
+    position: absolute !important;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .no-print { display: none !important; }
+
+  /* Evita cortes feos entre secciones / tarjetas */
+  .report-section { break-inside: avoid; }
+  .report-card { break-inside: avoid; }
 }

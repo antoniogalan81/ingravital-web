@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { Drawer as Vaul } from "vaul";
+import { toast } from "sonner";
 import type { REOperation, REUnit, UnitType } from "@/src/lib/realEstate";
 import { DEFAULT_TASAS } from "@/src/lib/realEstate";
 import { calcResults, calcNumTrasteros, calcNumPlazas, calcTINFromCuota, fmtEUR, fmtNum, fmtPct, convertRealEstateOperationType } from "@/src/lib/realEstateCalc";
+import { ScenariosPanel } from "./ScenariosPanel";
 
 type RealEstateCategory = "vivienda" | "local" | "suelo" | "adaptacion";
 
@@ -84,17 +87,17 @@ interface SectionBlockProps {
 
 function SectionBlock({ title, badge, open, onToggle, children, id }: SectionBlockProps) {
   return (
-    <div id={id} className="border border-slate-200 rounded-xl overflow-hidden">
+    <div id={id} className="re-card overflow-hidden">
       <button
         type="button"
         onClick={onToggle}
-        className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors text-left"
+        className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-[var(--surface-alt)] transition-colors text-left"
       >
-        <span className="text-sm font-semibold text-slate-800">{title}</span>
-        <div className="flex items-center gap-2">
-          {badge && <span className="text-sm font-semibold text-slate-600">{badge}</span>}
+        <span className="text-sm font-bold text-ink tracking-tight">{title}</span>
+        <div className="flex items-center gap-2.5">
+          {badge && <span className="text-sm font-bold text-ink-muted tabular-nums">{badge}</span>}
           <svg
-            className={`w-4 h-4 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`}
+            className={`w-4 h-4 text-ink-subtle transition-transform ${open ? "rotate-180" : ""}`}
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -103,7 +106,7 @@ function SectionBlock({ title, badge, open, onToggle, children, id }: SectionBlo
           </svg>
         </div>
       </button>
-      {open && <div className="px-4 py-4 space-y-3 bg-white">{children}</div>}
+      {open && <div className="px-5 py-4 space-y-3 border-t border-line bg-white">{children}</div>}
     </div>
   );
 }
@@ -158,12 +161,17 @@ function BiRow({
   );
 }
 
-function KPI({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function KPI({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "positive" | "info" | "accent" }) {
+  const valueColor =
+    tone === "positive" ? "var(--positive)" :
+    tone === "info" ? "var(--brand)" :
+    tone === "accent" ? "var(--accent)" :
+    "var(--ink)";
   return (
-    <div className="bg-slate-50 rounded-lg p-3 text-center">
-      <div className="text-[10px] font-medium text-slate-500 uppercase tracking-wide mb-1">{label}</div>
-      <div className="text-base font-bold text-slate-900 tabular-nums">{value}</div>
-      {sub && <div className="text-xs text-slate-500 tabular-nums">{sub}</div>}
+    <div className="rounded-xl border border-line p-3" style={{ background: "var(--surface-alt)" }}>
+      <div className="text-[10px] font-semibold text-ink-subtle uppercase tracking-wide mb-1">{label}</div>
+      <div className="text-lg font-extrabold tabular-nums" style={{ color: valueColor }}>{value}</div>
+      {sub && <div className="text-xs text-ink-muted tabular-nums mt-0.5">{sub}</div>}
     </div>
   );
 }
@@ -174,11 +182,11 @@ function ResultRow({ label, value, positive, negative }: {
   positive?: boolean;
   negative?: boolean;
 }) {
-  const valClass = positive ? "text-green-600" : negative ? "text-red-500" : "text-slate-900";
+  const valClass = positive ? "text-positive" : negative ? "text-negative" : "text-ink";
   return (
-    <div className="flex items-center justify-between py-1.5 border-b border-slate-100 last:border-0">
-      <span className="text-sm text-slate-600">{label}</span>
-      <span className={`text-sm font-semibold tabular-nums ${valClass}`}>{value}</span>
+    <div className="flex items-center justify-between py-2 border-b border-line last:border-0">
+      <span className="text-sm text-ink-muted">{label}</span>
+      <span className={`text-sm font-bold tabular-nums ${valClass}`}>{value}</span>
     </div>
   );
 }
@@ -187,17 +195,17 @@ function ResultPair({ label1, value1, label2, value2, pos1, neg1, pos2, neg2 }: 
   label1: string; value1: string; label2: string; value2: string;
   pos1?: boolean; neg1?: boolean; pos2?: boolean; neg2?: boolean;
 }) {
-  const c1 = pos1 ? "text-green-600" : neg1 ? "text-red-500" : "text-slate-900";
-  const c2 = pos2 ? "text-green-600" : neg2 ? "text-red-500" : "text-slate-900";
+  const c1 = pos1 ? "text-positive" : neg1 ? "text-negative" : "text-ink";
+  const c2 = pos2 ? "text-positive" : neg2 ? "text-negative" : "text-ink";
   return (
-    <div className="grid grid-cols-2 gap-2 py-1.5 border-b border-slate-100">
+    <div className="grid grid-cols-2 gap-2 py-2 border-b border-line">
       <div>
-        <div className="text-xs text-slate-500 truncate">{label1}</div>
-        <div className={`text-sm font-semibold tabular-nums ${c1}`}>{value1}</div>
+        <div className="text-xs text-ink-subtle truncate">{label1}</div>
+        <div className={`text-sm font-bold tabular-nums ${c1}`}>{value1}</div>
       </div>
       <div>
-        <div className="text-xs text-slate-500 truncate">{label2}</div>
-        <div className={`text-sm font-semibold tabular-nums ${c2}`}>{value2}</div>
+        <div className="text-xs text-ink-subtle truncate">{label2}</div>
+        <div className={`text-sm font-bold tabular-nums ${c2}`}>{value2}</div>
       </div>
     </div>
   );
@@ -569,6 +577,7 @@ const SECTION_NAV = [
   { key: "impuestos" as const, label: "Impuestos" },
   { key: "financiacion" as const, label: "Financiación" },
   { key: "resultados" as const, label: "Resultados" },
+  { key: "escenarios" as const, label: "Escenarios" },
 ] as const;
 
 // ==================== MAIN MODAL ====================
@@ -586,6 +595,22 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isManualTasasTotal, setIsManualTasasTotal] = useState(false);
   const [showTypeChanger, setShowTypeChanger] = useState(false);
+
+  // El guardado es autosave (cada commit). Marcamos si hubo cambios para confirmar
+  // con un único toast al cerrar, en lugar de uno por cada pulsación.
+  const dirtyRef = useRef(false);
+
+  // Drawer abierto al montar; al cerrar, animamos la salida antes de desmontar (onClose).
+  const [drawerOpen, setDrawerOpen] = useState(true);
+  const handleClose = useCallback(() => {
+    if (dirtyRef.current) {
+      dirtyRef.current = false;
+      toast.success("Operación guardada");
+    }
+    setDrawerOpen(false);
+    // Coincide con la duración de la animación de vaul (0.5s) para no cortar la salida.
+    setTimeout(onClose, 500);
+  }, [onClose]);
 
   const currentCat = (draft._cat ?? "vivienda") as RealEstateCategory;
 
@@ -611,6 +636,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
     impuestos: false,
     financiacion: false,
     resultados: false,
+    escenarios: false,
     tasas: false,
   });
 
@@ -626,6 +652,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
       const updated = { ...draft, ...patch, updatedAt: new Date().toISOString() };
       setDraft(updated);
       onSave(updated);
+      dirtyRef.current = true;
     },
     [draft, onSave]
   );
@@ -678,11 +705,6 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
     setOpen((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  // Prevent body scroll when modal is open
-  useEffect(() => {
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = ""; };
-  }, []);
 
   const n0 = (v: number | undefined | null) => (Number.isFinite(v as number) ? (v as number) : 0);
 
@@ -711,19 +733,24 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
   })();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+    <Vaul.Root open={drawerOpen} onOpenChange={(o) => { if (!o) handleClose(); }} direction="right">
+      <Vaul.Portal>
+        {/* Backdrop */}
+        <Vaul.Overlay className="fixed inset-0 z-50 bg-black/40" />
 
-      {/* Panel */}
-      <div className="relative w-full max-w-4xl h-full bg-white shadow-2xl flex flex-col overflow-hidden">
+        {/* Panel lateral deslizante */}
+        <Vaul.Content
+          aria-describedby={undefined}
+          className="fixed inset-y-0 right-0 z-50 w-full max-w-4xl bg-white shadow-2xl flex flex-col overflow-hidden outline-none"
+        >
+          <Vaul.Title className="sr-only">{draft.name || "Detalle de operación"}</Vaul.Title>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white flex-shrink-0">
           <input
             type="text"
             value={draft.name}
             onChange={(e) => commit({ name: e.target.value })}
-            className="text-lg font-bold text-slate-900 bg-transparent border-0 outline-none focus:ring-0 w-full"
+            className="text-xl font-extrabold text-ink tracking-tight bg-transparent border-0 outline-none focus:ring-0 w-full placeholder:text-ink-subtle"
             placeholder="Nombre de la operación"
           />
           <div className="flex items-center gap-2 ml-2 flex-shrink-0">
@@ -771,7 +798,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
             )}
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="p-2 text-slate-400 hover:text-slate-600 transition-colors rounded-lg hover:bg-slate-100"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -831,7 +858,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
                   document.getElementById(`section-${s.key}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
                 });
               }}
-              className="px-3 py-1 text-xs font-medium rounded-full whitespace-nowrap border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors flex-shrink-0"
+              className="px-3 py-1 text-xs font-semibold rounded-full whitespace-nowrap border border-line text-ink-muted hover:text-brand hover:border-brand hover:bg-[var(--brand-soft)] transition-colors flex-shrink-0"
             >
               {s.label}
             </button>
@@ -851,11 +878,13 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
                 label="Alquiler"
                 value={fmtPct(res.rentYield)}
                 sub={`${fmtEUR(res.monthlyRentBenefit)}/mes`}
+                tone="positive"
               />
               <KPI
                 label="Venta"
                 value={fmtPct(res.saleYield)}
                 sub={fmtEUR(res.saleBenefit)}
+                tone="info"
               />
               {draft.financing.enabled && (
                 <KPI
@@ -1221,7 +1250,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
               <button
                 type="button"
                 onClick={() => setFinancing({ enabled: !draft.financing.enabled })}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${draft.financing.enabled ? "bg-blue-600" : "bg-slate-200"}`}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${draft.financing.enabled ? "bg-brand" : "bg-slate-200"}`}
               >
                 <span
                   className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${draft.financing.enabled ? "translate-x-6" : "translate-x-1"}`}
@@ -1232,8 +1261,8 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
             {draft.financing.enabled && (
               <div className="space-y-4">
                 {/* Compra */}
-                <div className="bg-slate-50 rounded-lg p-3 space-y-2">
-                  <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Préstamo compra</div>
+                <div className="rounded-xl border border-line p-3 space-y-2" style={{ background: "var(--surface-alt)" }}>
+                  <div className="text-xs font-bold text-ink-muted uppercase tracking-wide">Préstamo compra</div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-slate-500 shrink-0">Importe</span>
                     <NumInput value={draft.financing.compra.pct} onChange={(v) => setFinancing({ compra: { ...draft.financing.compra, pct: v ?? 0, amount: v != null ? (v / 100) * draft.purchasePrice : undefined } })} suffix="%" className="w-16" />
@@ -1262,8 +1291,8 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
                 </div>
 
                 {/* Obra */}
-                <div className="bg-slate-50 rounded-lg p-3 space-y-2">
-                  <div className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Préstamo obra</div>
+                <div className="rounded-xl border border-line p-3 space-y-2" style={{ background: "var(--surface-alt)" }}>
+                  <div className="text-xs font-bold text-ink-muted uppercase tracking-wide">Préstamo obra</div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-slate-500 shrink-0">Importe</span>
                     <NumInput value={draft.financing.obra.pct} onChange={(v) => setFinancing({ obra: { ...draft.financing.obra, pct: v ?? 0, amount: undefined } })} suffix="%" className="w-16" />
@@ -1331,8 +1360,14 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
             </div>
           </SectionBlock>
 
+          {/* ── SECCIÓN 10: ESCENARIOS Y SENSIBILIDAD ── */}
+          <SectionBlock id="section-escenarios" title="Escenarios y sensibilidad" open={open.escenarios} onToggle={() => toggleSection("escenarios")}>
+            <ScenariosPanel op={draft} />
+          </SectionBlock>
+
         </div>
-      </div>
-    </div>
+        </Vaul.Content>
+      </Vaul.Portal>
+    </Vaul.Root>
   );
 }

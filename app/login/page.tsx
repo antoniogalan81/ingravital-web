@@ -80,7 +80,7 @@ export default function LoginPage() {
       const redirectUrl = `${window.location.origin}/auth/reset`;
       const { error: resetError } = 
       await supabase.auth.resetPasswordForEmail(targetEmail, {
-        redirectTo: "https://www.ingravital.com/auth/reset",
+        redirectTo: redirectUrl,
       });
 
       if (resetError) {
@@ -111,178 +111,155 @@ export default function LoginPage() {
   };
 
   // Mostrar loading mientras verificamos auth
-  if (authLoading) {
+  if (authLoading || user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="animate-spin w-8 h-8 border-2 border-slate-900 border-t-transparent rounded-full" />
-      </div>
-    );
-  }
-
-  // No mostrar nada si ya está autenticado (evitar flicker)
-  if (user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="animate-spin w-8 h-8 border-2 border-slate-900 border-t-transparent rounded-full" />
+      <div className="lp-root flex min-h-screen items-center justify-center">
+        <div className="lp-bg" aria-hidden />
+        <div className="animate-spin h-8 w-8 rounded-full border-2 border-[var(--lp-brand-light)] border-t-transparent" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50">
-      {/* Header simple */}
-      <header className="w-full border-b border-slate-100 bg-white">
-        <div className="mx-auto max-w-[1140px] px-4 sm:px-6 py-4">
-          <Link href="/" className="flex items-center gap-2.5">
-            <Image src="/logo.png" alt="Invergravital" width={32} height={32} />
-            <span className="text-base font-semibold tracking-tight text-slate-900">Invergravital</span>
-          </Link>
-        </div>
-      </header>
+    <div className="lp-root flex min-h-screen flex-col">
+      <div className="lp-bg" aria-hidden />
+      <div className="lp-grid" aria-hidden />
 
-      {/* Main content */}
-      <main className="flex-1 flex items-center justify-center px-4 py-12">
-        <div className="w-full max-w-[400px]">
-          {/* Card */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8">
-            {/* Title */}
-            <div className="text-center mb-8">
-              <h1 className="text-2xl font-bold text-slate-900">Bienvenido de nuevo</h1>
-              <p className="text-sm text-slate-500 mt-2">Inicia sesión en tu cuenta</p>
-            </div>
+      <div className="lp-content flex min-h-screen flex-col">
+        {/* Header simple */}
+        <header className="w-full">
+          <div className="mx-auto flex max-w-[1180px] items-center justify-between px-5 py-5 sm:px-8">
+            <Link href="/" className="flex items-center">
+              <Image src="/logo-horizontal-dark.svg" alt="Invergravital" width={140} height={36} priority />
+            </Link>
+            <Link href="/signup" className="text-sm font-medium text-[var(--lp-muted)] transition-colors hover:text-[var(--lp-text)]">
+              Crear cuenta
+            </Link>
+          </div>
+        </header>
 
-            {/* Form */}
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Email */}
-              <div>
-                <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Email
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="tu@email.com"
-                  autoComplete="email"
-                  className="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 transition-colors"
-                />
+        {/* Main content */}
+        <main className="flex flex-1 items-center justify-center px-4 py-10">
+          <div className="w-full max-w-[420px]">
+            <div className="lp-glass p-8 sm:p-9">
+              <div className="mb-7 text-center">
+                <h1 className="text-2xl font-bold tracking-tight text-[var(--lp-text)]">Bienvenido de nuevo</h1>
+                <p className="mt-2 text-sm text-[var(--lp-muted)]">Entra y sigue analizando operaciones.</p>
+                <span className="lp-free mt-4">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[var(--lp-positive)]" />
+                  Gratis · Sin tarjeta · Sin comisiones
+                </span>
               </div>
 
-              {/* Password */}
-              <div>
-                <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-1.5">
-                  Contraseña
-                </label>
-                <input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                  className="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 transition-colors"
-                />
-              </div>
-
-              {/* Forgot password */}
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setForgotOpen(true);
-                    setForgotEmail(email);
-                    setForgotError(null);
-                    setForgotSuccess(false);
-                  }}
-                  className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
-                >
-                  He olvidado mi contraseña
-                </button>
-              </div>
-
-              {/* Error */}
-              {error && (
-                <div className="p-3 rounded-lg bg-red-50 border border-red-100">
-                  <p className="text-sm text-red-600">{error}</p>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label htmlFor="email" className="lp-label">Email</label>
+                  <input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="tu@email.com"
+                    autoComplete="email"
+                    className="lp-input"
+                  />
                 </div>
-              )}
 
-              {/* Submit */}
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-2.5 px-4 rounded-lg bg-slate-900 text-white font-medium hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900/20 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {loading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                    Entrando...
-                  </span>
-                ) : (
-                  "Entrar"
+                <div>
+                  <label htmlFor="password" className="lp-label">Contraseña</label>
+                  <input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                    className="lp-input"
+                  />
+                </div>
+
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForgotOpen(true);
+                      setForgotEmail(email);
+                      setForgotError(null);
+                      setForgotSuccess(false);
+                    }}
+                    className="text-sm font-medium text-[var(--lp-brand-light)] transition-colors hover:text-white"
+                  >
+                    He olvidado mi contraseña
+                  </button>
+                </div>
+
+                {error && (
+                  <div className="rounded-xl border border-red-400/30 bg-red-500/10 p-3">
+                    <p className="text-sm text-red-300">{error}</p>
+                  </div>
                 )}
-              </button>
-            </form>
 
-            {/* OAuth */}
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={handleGoogleSignIn}
-                className="w-full py-2.5 px-4 rounded-lg border border-slate-200 bg-white text-slate-900 font-medium hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900/10 transition-colors"
-              >
+                <button type="submit" disabled={loading} className="lp-btn lp-btn-primary w-full disabled:opacity-50">
+                  {loading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      Entrando...
+                    </span>
+                  ) : (
+                    "Entrar"
+                  )}
+                </button>
+              </form>
+
+              <button type="button" onClick={handleGoogleSignIn} className="lp-btn lp-btn-ghost mt-3 w-full">
                 Continuar con Google
               </button>
+
+              <div className="mt-6 border-t border-[var(--lp-line)] pt-5 text-center">
+                <p className="text-sm text-[var(--lp-muted)]">
+                  ¿No tienes cuenta?{" "}
+                  <Link href="/signup" className="font-semibold text-[var(--lp-text)] hover:underline">
+                    Crear cuenta gratis
+                  </Link>
+                </p>
+              </div>
             </div>
 
-            {/* Divider */}
-            <div className="mt-6 pt-6 border-t border-slate-100 text-center">
-              <p className="text-sm text-slate-500">
-                ¿No tienes cuenta?{" "}
-                <Link href="/signup" className="font-medium text-slate-900 hover:underline">
-                  Crear cuenta
-                </Link>
-              </p>
-            </div>
+            <p className="mt-5 text-center text-xs text-[var(--lp-subtle)]">
+              Tus datos se tratan de forma segura. Analiza operaciones reales sin barreras de entrada.
+            </p>
           </div>
-        </div>
-      </main>
+        </main>
+      </div>
 
       {/* Modal: forgot password */}
       {forgotOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setForgotOpen(false)} />
-          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-[420px] mx-4 p-6">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setForgotOpen(false)} />
+          <div className="lp-glass relative mx-4 w-full max-w-[420px] p-6">
             {!forgotSuccess ? (
               <>
-                <h3 className="text-lg font-semibold text-slate-900 mb-1">Recuperar contraseña</h3>
-                <p className="text-sm text-slate-500 mb-6">Te enviaremos un enlace para crear una nueva contraseña.</p>
+                <h3 className="mb-1 text-lg font-semibold text-[var(--lp-text)]">Recuperar contraseña</h3>
+                <p className="mb-6 text-sm text-[var(--lp-muted)]">Te enviaremos un enlace para crear una nueva contraseña.</p>
 
                 {forgotError && (
-                  <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-100">
-                    <p className="text-sm text-red-600">{forgotError}</p>
+                  <div className="mb-4 rounded-xl border border-red-400/30 bg-red-500/10 p-3">
+                    <p className="text-sm text-red-300">{forgotError}</p>
                   </div>
                 )}
 
                 <div className="mb-6">
-                  <label htmlFor="forgotEmail" className="block text-sm font-medium text-slate-700 mb-1.5">
-                    Email
-                  </label>
+                  <label htmlFor="forgotEmail" className="lp-label">Email</label>
                   <input
                     id="forgotEmail"
                     type="email"
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
                     placeholder="tu@email.com"
-                    className="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 transition-colors"
+                    className="lp-input"
                   />
                 </div>
 
@@ -290,32 +267,29 @@ export default function LoginPage() {
                   <button
                     onClick={() => setForgotOpen(false)}
                     disabled={forgotLoading}
-                    className="flex-1 py-2.5 px-4 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                    className="lp-btn lp-btn-ghost flex-1 !py-2.5 disabled:opacity-50"
                   >
                     Cancelar
                   </button>
                   <button
                     onClick={handleForgotSubmit}
                     disabled={forgotLoading}
-                    className="flex-1 py-2.5 px-4 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 transition-colors disabled:opacity-50"
+                    className="lp-btn lp-btn-primary flex-1 !py-2.5 disabled:opacity-50"
                   >
                     {forgotLoading ? "Enviando..." : "Enviar enlace"}
                   </button>
                 </div>
               </>
             ) : (
-              <div className="text-center py-4">
-                <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-emerald-100 flex items-center justify-center">
-                  <svg className="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <div className="py-4 text-center">
+                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[rgba(45,212,166,0.14)]">
+                  <svg className="h-6 w-6 text-[var(--lp-positive)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
-                <h3 className="text-lg font-semibold text-slate-900 mb-2">Enlace enviado</h3>
-                <p className="text-sm text-slate-500 mb-6">Te hemos enviado un enlace para cambiar la contraseña.</p>
-                <button
-                  onClick={() => setForgotOpen(false)}
-                  className="w-full py-2.5 px-4 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 transition-colors"
-                >
+                <h3 className="mb-2 text-lg font-semibold text-[var(--lp-text)]">Enlace enviado</h3>
+                <p className="mb-6 text-sm text-[var(--lp-muted)]">Te hemos enviado un enlace para cambiar la contraseña.</p>
+                <button onClick={() => setForgotOpen(false)} className="lp-btn lp-btn-primary w-full">
                   Entendido
                 </button>
               </div>
