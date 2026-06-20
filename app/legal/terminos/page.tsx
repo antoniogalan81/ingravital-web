@@ -14,37 +14,46 @@ const sections: LegalSection[] = [
     id: "objeto",
     title: "2. Objeto del servicio",
     content: [
-      "Invergravital es una aplicación de productividad, organización personal, bienestar y análisis inteligente que incluye:",
+      "Invergravital es una herramienta de análisis de inversiones inmobiliarias que ayuda al usuario a estudiar operaciones antes de decidir. Incluye:",
       {
         list: [
-          "Registro de hábitos, rutinas y tareas",
-          "Sistema de puntos y estadísticas",
-          "Gráficos y métricas avanzadas",
-          "Análisis generados por IA",
-          "Posible sincronización entre dispositivos (futuro)",
-          "Servicios premium y suscripciones (futuro)",
+          "Cálculo de costes, reforma, impuestos y financiación de una operación",
+          "Estimación de rentabilidad de compraventa y de alquiler",
+          "Comparación de varios escenarios de inversión",
+          "Generación de informes de operación",
+          "Análisis y resúmenes generados por IA (orientativos)",
+          "Sincronización de tus operaciones entre dispositivos",
         ],
       },
+      "La Aplicación es una herramienta de cálculo y apoyo a la decisión. No interviene en la compra, venta ni financiación de inmuebles, no ejecuta operaciones y no gestiona dinero del usuario.",
       "La Aplicación puede evolucionar, modificarse o ampliarse sin previo aviso.",
     ],
   },
   {
+    id: "gratuito",
+    title: "3. Servicio gratuito",
+    content: [
+      "El uso de las herramientas principales de Invergravital es gratuito: no se requiere tarjeta, suscripción ni pago para acceder y analizar operaciones.",
+      "No existen costes ocultos ni comisiones por el uso de la herramienta de análisis. Si en el futuro se ofrecieran servicios opcionales de pago, se informarían de forma clara y se regirían por condiciones específicas que el usuario podría aceptar o no.",
+    ],
+  },
+  {
     id: "edad",
-    title: "3. Edad mínima",
+    title: "4. Edad mínima y capacidad",
     content: [
       "El uso está permitido solo a personas:",
       {
         list: [
-          "Con al menos 13 años",
-          "Con capacidad legal",
-          "O con consentimiento de sus tutores si la ley local lo exige",
+          "Mayores de 18 años",
+          "Con capacidad legal para contratar",
+          "Que actúen en su propio nombre o debidamente autorizadas",
         ],
       },
     ],
   },
   {
     id: "cuenta",
-    title: "4. Cuenta de usuario",
+    title: "5. Cuenta de usuario",
     content: [
       "El usuario puede registrarse con Google, Apple o email y contraseña. El usuario acepta:",
       {
@@ -55,12 +64,12 @@ const sections: LegalSection[] = [
           "Notificar accesos no autorizados",
         ],
       },
-      "La contraseña de Google/Apple nunca es visible para Ventana al Futuro SL Podemos suspender o eliminar cuentas por incumplimiento de los Términos.",
+      "La contraseña de Google/Apple nunca es visible para Ventana al Futuro SL. Podemos suspender o eliminar cuentas por incumplimiento de los Términos.",
     ],
   },
   {
     id: "obligaciones",
-    title: "5. Obligaciones del usuario",
+    title: "6. Obligaciones del usuario",
     content: [
       "El usuario se compromete a NO:",
       {
@@ -71,7 +80,7 @@ const sections: LegalSection[] = [
           "Intentar vulnerar la seguridad",
           "Publicar contenido ofensivo, ilegal o que infrinja derechos de terceros",
           "Usar bots o automatización no permitida",
-          "Utilizar la app para emitir diagnósticos profesionales",
+          "Presentar los análisis de la app como asesoramiento financiero, fiscal o de inversión profesional",
           "Manipular los sistemas de IA",
         ],
       },
@@ -80,84 +89,70 @@ const sections: LegalSection[] = [
   },
   {
     id: "acceso-internacional",
-    title: "6. Acceso internacional",
+    title: "7. Acceso internacional",
     content: [
       "El usuario es responsable de cumplir las leyes de su país. Si el uso de la app viola las leyes de tu jurisdicción, debes dejar de usarla.",
     ],
   },
   {
-    id: "no-medico",
-    title: "7. No es un servicio médico ni profesional",
+    id: "no-asesoramiento",
+    title: "8. No es asesoramiento financiero ni profesional",
     content: [
-      "Invergravital NO es un servicio médico, sustitutivo de terapia, sistema de diagnóstico, programa clínico, asesor financiero o sistema de emergencia.",
-      "Todo contenido:",
+      "Invergravital es una herramienta de cálculo y análisis. NO es un servicio de asesoramiento financiero, fiscal, legal o de inversión, ni una recomendación de compra o venta, ni una entidad de intermediación o gestión de inversiones.",
+      "Todo contenido, incluidos cálculos, estimaciones y análisis de IA:",
       {
         list: [
-          "Es orientativo",
+          "Es orientativo y se basa en los datos que introduce el usuario",
           "Puede ser inexacto o incompleto",
-          "No sustituye a profesionales",
-          "No debe usarse para decisiones críticas de salud ni legales",
+          "No garantiza rentabilidades ni resultados de inversión",
+          "No sustituye el criterio de un asesor financiero, fiscal o legal cualificado",
+          "No debe usarse como única base para una decisión de inversión",
         ],
       },
     ],
   },
   {
     id: "riesgos",
-    title: "8. Asunción de riesgos",
+    title: "9. Asunción de riesgos de inversión",
     content: [
       "El usuario acepta que:",
       {
         list: [
-          "Toda actividad física o de bienestar derivada de la app se realiza bajo su propio riesgo",
-          "La IA puede fallar, generar errores, información imprecisa o incompleta",
-          "Las recomendaciones generadas por IA no están garantizadas",
-          "Ventana al Futuro SL no es responsable por lesiones, daños o decisiones basadas en la app",
+          "Toda inversión inmobiliaria conlleva riesgo, incluida la posible pérdida del capital invertido",
+          "Las rentabilidades estimadas son proyecciones y no resultados garantizados",
+          "Los resultados reales dependen de factores de mercado ajenos a la Aplicación",
+          "Las decisiones de inversión se toman bajo la responsabilidad exclusiva del usuario",
+          "Ventana al Futuro SL no es responsable de pérdidas ni de decisiones tomadas a partir de la app",
         ],
       },
     ],
   },
   {
     id: "ia",
-    title: "9. Inteligencia artificial",
+    title: "10. Inteligencia artificial",
     content: [
-      "La IA utilizada en Invergravital puede generar errores, interpretar mal datos introducidos, producir análisis incompletos o sugerir hábitos no adecuados para todos los usuarios.",
+      "La IA utilizada en Invergravital puede generar errores, interpretar mal los datos introducidos o producir análisis incompletos de una operación.",
       "El usuario acepta que:",
       {
         list: [
-          "No debe tomar decisiones críticas basándose solo en la IA",
+          "No debe tomar decisiones de inversión basándose solo en la IA",
           "Es su responsabilidad validar cualquier contenido generado",
-          "La IA no constituye asesoramiento profesional",
-        ],
-      },
-    ],
-  },
-  {
-    id: "pagos",
-    title: "10. Compras, suscripciones y pagos",
-    content: [
-      "Al realizar compras in-app:",
-      {
-        list: [
-          "El pago se procesa mediante App Store o Google Play",
-          "Ventana al Futuro SL no almacena datos bancarios",
-          "Puede existir renovación automática",
-          "Los reembolsos dependen exclusivamente de Apple/Google",
-          "Las suscripciones son personales y no transferibles",
+          "La IA no constituye asesoramiento financiero, fiscal ni de inversión",
         ],
       },
     ],
   },
   {
     id: "contenido-usuario",
-    title: "11. Contenido del usuario",
+    title: "11. Contenido y datos del usuario",
     content: [
-      "El usuario puede introducir texto, listas, hábitos, rutinas, datos personales y notas. El usuario declara que:",
+      "El usuario introduce datos de sus operaciones (precios, costes, reformas, financiación, alquileres, notas y similares). El usuario declara que:",
       {
         list: [
-          "Es titular del contenido introducido",
-          "No infringe derechos de terceros",
-          "No contiene material ilegal u ofensivo",
-          "No viola la ley de propiedad intelectual",
+          "Es titular de la información introducida o está autorizado a tratarla",
+          "Los datos no infringen derechos de terceros",
+          "No introduce material ilegal u ofensivo",
+          "Es responsable de la veracidad de los datos sobre los que se calculan los resultados",
         ],
       },
     ],
@@ -166,7 +161,7 @@ const sections: LegalSection[] = [
     id: "propiedad-intelectual",
     title: "12. Propiedad intelectual",
     content: [
-      "Todo el contenido, código, diseño, IA, estructura y elementos de la app pertenecen a Ventana al Futuro SL",
+      "Todo el contenido, código, diseño, IA, estructura y elementos de la app pertenecen a Ventana al Futuro SL.",
       "Está prohibido copiar, modificar, distribuir, descompilar, revender o reutilizar partes de la app sin permiso escrito.",
     ],
   },
@@ -186,14 +181,14 @@ const sections: LegalSection[] = [
         list: [
           "Daños indirectos o consecuenciales",
           "Pérdida de datos o de ingresos",
+          "Pérdidas económicas derivadas de decisiones de inversión del usuario",
           "Errores derivados de IA",
-          "Decisiones tomadas por el usuario",
           "Hackeos o ataques imposibles de evitar",
-          "Fallos de proveedores externos (Google, Apple, OpenAI, Firebase…)",
+          "Fallos de proveedores externos (Google, Apple, proveedores de IA, alojamiento…)",
           "Suspensiones temporales del servicio",
         ],
       },
-      "La app se ofrece «TAL CUAL», sin garantías de ningún tipo.",
+      "La app se ofrece «TAL CUAL», sin garantías de ningún tipo sobre la exactitud de los cálculos ni sobre resultados de inversión.",
     ],
   },
   {
@@ -237,8 +232,8 @@ export default function Terminos() {
   return (
     <LegalDocLayout
       title="Términos y Condiciones"
-      updated="02 de diciembre de 2025"
-      intro="Estas condiciones regulan el uso de la aplicación Invergravital. Al acceder y usar el servicio, aceptas este acuerdo con Ventana al Futuro SL"
+      updated="20 de junio de 2026"
+      intro="Estas condiciones regulan el uso de Invergravital, una herramienta de análisis de inversiones inmobiliarias. Al acceder y usar el servicio, aceptas este acuerdo con Ventana al Futuro SL."
       sections={sections}
     />
   );

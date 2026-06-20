@@ -46,12 +46,18 @@ function InformesContent() {
 
   if (ops.length === 0) {
     return (
-      <div className="re-card p-10 text-center max-w-xl">
-        <h2 className="text-lg font-extrabold text-ink">No hay operaciones</h2>
-        <p className="text-sm text-ink-muted mt-2">Crea y analiza una operación en Inversiones para generar su informe.</p>
-        <a href="/finanzas" className="inline-block mt-5 rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-dark transition-colors">
-          Ir a Inversiones
-        </a>
+      <div className="empty-state max-w-xl">
+        <span className="empty-state-icon">
+          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6M9 16h6M9 8h2M7 3h7l5 5v11a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z" />
+          </svg>
+        </span>
+        <h2 className="text-xl font-extrabold text-ink tracking-tight">Aún no hay informes</h2>
+        <p className="text-sm text-ink-muted mt-2 max-w-md mx-auto leading-relaxed">
+          Crea y analiza una operación en Inversiones para generar un dossier profesional con compra, costes,
+          financiación, rentabilidad y escenarios, listo para imprimir o guardar en PDF.
+        </p>
+        <a href="/finanzas" className="btn-primary mt-6">Ir a Inversiones</a>
       </div>
     );
   }
@@ -64,6 +70,10 @@ function InformesContent() {
           Selecciona una operación para generar un informe profesional con datos de compra, costes, financiación,
           rentabilidad y escenarios, listo para imprimir o guardar como PDF.
         </p>
+        <div className="section-header">
+          <p className="section-label">Operaciones disponibles</p>
+          <span className="text-xs text-ink-subtle font-semibold">{ops.length} {ops.length === 1 ? "operación" : "operaciones"}</span>
+        </div>
         <div className="re-card overflow-hidden">
           {ops.map((o, i) => {
             const res = calcResults(o);
@@ -71,17 +81,24 @@ function InformesContent() {
               <button
                 key={o.id}
                 onClick={() => setSelectedId(o.id)}
-                className={`w-full flex items-center gap-3 px-5 py-3.5 text-left hover:bg-[var(--surface-alt)] transition-colors ${
+                className={`group w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-[var(--surface-alt)] transition-colors ${
                   i < ops.length - 1 ? "border-b border-line" : ""
                 }`}
               >
+                <span className="action-card-icon !w-10 !h-10">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6M9 16h6M7 3h7l5 5v11a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z" />
+                  </svg>
+                </span>
                 <div className="flex-1 min-w-0">
                   <p className="text-[15px] font-bold text-ink truncate">{o.name || "Sin nombre"}</p>
                   <p className="text-xs text-ink-subtle font-medium truncate">
                     {fmtEUR(res.totalInvestment)} · venta {fmtPct(res.saleYield)}
                   </p>
                 </div>
-                <span className="text-ink-subtle">→</span>
+                <svg className="w-4 h-4 text-ink-subtle shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:text-brand" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
               </button>
             );
           })}
@@ -101,22 +118,13 @@ function InformesContent() {
         <span className="text-ink-subtle">/</span>
         <span className="text-sm font-semibold text-ink truncate mr-auto">{op.name || "Informe"}</span>
 
-        <button
-          onClick={handleCopy}
-          className="rounded-lg border border-line bg-surface px-3.5 py-1.5 text-sm font-semibold text-ink-muted hover:text-ink hover:border-[var(--line-strong)] transition-colors"
-        >
+        <button onClick={handleCopy} className="btn-secondary !py-1.5">
           Copiar resumen
         </button>
-        <button
-          onClick={handleShare}
-          className="rounded-lg border border-line bg-surface px-3.5 py-1.5 text-sm font-semibold text-ink-muted hover:text-ink hover:border-[var(--line-strong)] transition-colors"
-        >
+        <button onClick={handleShare} className="btn-secondary !py-1.5">
           Compartir
         </button>
-        <button
-          onClick={handlePrint}
-          className="rounded-lg bg-brand px-3.5 py-1.5 text-sm font-semibold text-white hover:bg-brand-dark transition-colors"
-        >
+        <button onClick={handlePrint} className="btn-primary !py-1.5">
           Imprimir / guardar PDF
         </button>
       </div>

@@ -32,8 +32,8 @@ const SECTIONS = [
   {
     title: "Uso responsable de la app",
     paragraphs: [
-      "Invergravital es una herramienta de organización personal, productividad y bienestar.",
-      "La información mostrada dentro de la aplicación, incluidas recomendaciones generadas por sistemas de inteligencia artificial, tiene carácter orientativo y no sustituye asesoramiento profesional.",
+      "Invergravital es una herramienta de análisis de inversiones inmobiliarias: cálculos, comparativas y estimaciones de rentabilidad.",
+      "La información mostrada dentro de la aplicación, incluidas estimaciones y recomendaciones generadas por sistemas de inteligencia artificial, tiene carácter orientativo y no constituye asesoramiento financiero, fiscal ni de inversión.",
     ],
   },
   {

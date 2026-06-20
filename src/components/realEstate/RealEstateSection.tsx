@@ -1263,11 +1263,7 @@ export function RealEstateSection() {
           </div>
 
           {!compareMode && (
-            <button
-              type="button"
-              onClick={handleNew}
-              className="px-3.5 py-1.5 text-sm font-semibold bg-brand text-white rounded-xl hover:bg-brand-dark transition-colors"
-            >
+            <button type="button" onClick={handleNew} className="btn-primary !py-1.5">
               + Nueva
             </button>
           )}
@@ -1314,14 +1310,17 @@ export function RealEstateSection() {
         {expanded && (
           <>
             {activeOps.length === 0 ? (
-              <div className="re-card px-6 py-12 text-center">
-                <p className="text-base font-bold text-ink mb-1">Aún no hay operaciones</p>
-                <p className="text-sm text-ink-subtle mb-5">Analiza tu primera operación inmobiliaria.</p>
-                <button
-                  type="button"
-                  onClick={handleNew}
-                  className="px-5 py-2.5 text-sm font-semibold bg-brand text-white rounded-xl hover:bg-brand-dark transition-colors"
-                >
+              <div className="empty-state">
+                <span className="empty-state-icon">
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 17l5-5 4 4 8-8M21 8v5h-5" />
+                  </svg>
+                </span>
+                <p className="text-xl font-extrabold text-ink tracking-tight mb-1">Analiza tu primera operación</p>
+                <p className="text-sm text-ink-muted max-w-md mx-auto leading-relaxed mb-6">
+                  Introduce compra, costes y financiación y obtén la rentabilidad de venta y alquiler al instante. Compara escenarios antes de invertir.
+                </p>
+                <button type="button" onClick={handleNew} className="btn-primary">
                   + Nueva operación
                 </button>
               </div>

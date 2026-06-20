@@ -31,36 +31,6 @@ export interface SyncState {
 }
 
 export const ENTITY_CONFIGS: Record<string, EntityConfig> = {
-  metas: {
-    tableName: "metas",
-    localKey: "metas",
-    getId: (item) => item.id,
-    getUpdatedAt: (item) => item.updatedAt || new Date().toISOString(),
-  },
-  tasks: {
-    tableName: "tasks",
-    localKey: "tasks",
-    getId: (item) => item.id,
-    getUpdatedAt: (item) => item.updatedAt || new Date().toISOString(),
-  },
-  bankAccounts: {
-    tableName: "bank_accounts",
-    localKey: "bankAccounts",
-    getId: (item) => item.id,
-    getUpdatedAt: (item) => item.updatedAt || new Date().toISOString(),
-  },
-  financeMovements: {
-    tableName: "finance_movements",
-    localKey: "financeMovements",
-    getId: (item) => item.id,
-    getUpdatedAt: (item) => item.updatedAt || new Date().toISOString(),
-  },
-  incomeForecastLines: {
-    tableName: "income_forecast_lines",
-    localKey: "incomeForecastLines",
-    getId: (item) => item.id,
-    getUpdatedAt: (item) => item.updatedAt || new Date().toISOString(),
-  },
   realEstateOperations: {
     tableName: "operaciones_inmobiliarias",
     localKey: "realEstateOperations",

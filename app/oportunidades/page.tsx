@@ -40,7 +40,7 @@ function OpportunityCard({ op }: { op: Opportunity }) {
   const progress = op.capitalRequired && op.capitalRequired > 0 ? Math.min(1, (op.committedCapital ?? 0) / op.capitalRequired) : 0;
   const riskClass = op.risk === "ALTO" ? "pill-negative" : op.risk === "MEDIO" ? "pill-warning" : "pill-positive";
   return (
-    <div className="re-card p-5 max-w-2xl">
+    <div className="re-card re-card-interactive p-5 max-w-2xl">
       <div className="flex items-start gap-3">
         <h3 className="flex-1 text-lg font-extrabold text-ink tracking-tight">{op.title}</h3>
         <span className="pill pill-info">{OPP_STATUS_LABEL[op.status]}</span>
@@ -90,26 +90,47 @@ export default function OportunidadesPage() {
       title="Oportunidades"
       subtitle="Publica tus operaciones y deja que los inversores las exploren y expresen interés."
     >
-      <div className="space-y-6 max-w-2xl">
-        <div className="re-card p-5">
-          <span className="pill pill-accent">Preparado · backend pendiente</span>
-          <p className="text-sm text-ink-muted leading-relaxed mt-3">
-            La estructura y el diseño están listos. La publicación real de oportunidades y el flujo de interés se
-            activarán al conectar el backend.
-          </p>
-          <ul className="mt-3 space-y-1.5">
+      <div className="space-y-6 max-w-3xl">
+        <div className="re-card p-6 sm:p-7">
+          <div className="flex items-start gap-4">
+            <span className="empty-state-icon !m-0 !w-12 !h-12">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l2.5 5 5.5.8-4 3.9.9 5.5L12 21l-4.9-2.8.9-5.5-4-3.9 5.5-.8L12 3z" />
+              </svg>
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-lg font-extrabold text-ink tracking-tight">Oportunidades seleccionadas</h2>
+                <span className="pill pill-accent">Próximamente</span>
+              </div>
+              <p className="text-sm text-ink-muted leading-relaxed mt-2">
+                Operaciones con análisis previo e información clara antes de invertir. La publicación y el flujo de
+                interés se activarán al conectar el backend.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5 mt-5 pt-5 border-t border-line">
             {WILL_INCLUDE.map((w) => (
-              <li key={w} className="flex items-center gap-2 text-sm text-ink-muted font-medium">
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--accent)" }} />
+              <div key={w} className="flex items-center gap-2.5 text-sm text-ink-muted font-medium">
+                <svg className="w-4 h-4 shrink-0" style={{ color: "var(--brand)" }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
                 {w}
-              </li>
+              </div>
             ))}
-          </ul>
+          </div>
         </div>
 
         <div>
-          <p className="section-label mb-2">Vista previa de una oportunidad</p>
+          <div className="section-header">
+            <p className="section-label">Vista previa de una oportunidad</p>
+            <span className="text-xs text-ink-subtle font-semibold">Ejemplo ilustrativo</span>
+          </div>
           <OpportunityCard op={PREVIEW} />
+          <p className="text-xs text-ink-subtle mt-3 leading-relaxed max-w-2xl">
+            Datos de ejemplo para mostrar el formato. No constituye una oferta ni una recomendación de inversión.
+          </p>
         </div>
       </div>
     </AppGate>

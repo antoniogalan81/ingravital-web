@@ -2,9 +2,6 @@
 
 import { supabase } from "@/src/lib/supabaseClient";
 import { ENTITY_CONFIGS, EntityKey, SupabaseRow, SyncableEntity } from "./types";
-import { normalizeTaskForDb, hydrateTaskFromDb } from "./normalizeTask";
-import { normalizeMetaForDb, hydrateMetaFromDb } from "./normalizeMeta";
-import type { TaskData, Meta } from "@/src/lib/types";
 
 // ==================== HELPERS ====================
 
@@ -102,17 +99,8 @@ export async function pushItem(
   const now = new Date().toISOString();
   const updatedAt = config.getUpdatedAt(item) || now;
 
-  // Preparar data payload - normalizar según entidad
-  let dataPayload: Record<string, unknown>;
-  if (entityKey === "tasks") {
-    // Normalizar task antes de guardar (mismas reglas que APP)
-    dataPayload = normalizeTaskForDb(item as unknown as TaskData);
-  } else if (entityKey === "metas") {
-    // Normalizar meta antes de guardar (mismas reglas que APP)
-    dataPayload = normalizeMetaForDb(item as unknown as Meta & { createdAt?: string; updatedAt?: string });
-  } else {
-    dataPayload = { ...item, updatedAt };
-  }
+  // Preparar data payload
+  const dataPayload: Record<string, unknown> = { ...item, updatedAt };
 
   const record = {
     id: item.id,
@@ -188,31 +176,10 @@ export function isRemoteNewer(
 
 /**
  * Convierte SupabaseRow a entidad local
- * Para tasks y metas, usa funciones de hidratación para restaurar defaults
  */
-export function rowToEntity(row: SupabaseRow, entityKey?: EntityKey): SyncableEntity {
+export function rowToEntity(row: SupabaseRow): SyncableEntity {
   const data = row.data || {};
-  
-  // Si es task, hidratar con defaults
-  if (entityKey === "tasks") {
-    const hydrated = hydrateTaskFromDb(data);
-    return {
-      ...hydrated,
-      updatedAt: row.client_updated_at || hydrated.updatedAt,
-      deleted: row.deleted_at !== null,
-    } as SyncableEntity;
-  }
-  
-  // Si es meta, hidratar con defaults
-  if (entityKey === "metas") {
-    const hydrated = hydrateMetaFromDb({ ...data, id: row.id });
-    return {
-      ...hydrated,
-      updatedAt: row.client_updated_at || (data.updatedAt as string),
-      deleted: row.deleted_at !== null,
-    } as SyncableEntity;
-  }
-  
+
   return {
     id: row.id,
     ...data,
@@ -227,8 +194,7 @@ export function rowToEntity(row: SupabaseRow, entityKey?: EntityKey): SyncableEn
  */
 export function mergeRemoteRows<T extends SyncableEntity>(
   localItems: T[],
-  remoteRows: SupabaseRow[],
-  entityKey?: EntityKey
+  remoteRows: SupabaseRow[]
 ): T[] {
   const localMap = new Map(localItems.map((item) => [item.id, item]));
   const resultMap = new Map(localMap);
@@ -244,7 +210,7 @@ export function mergeRemoteRows<T extends SyncableEntity>(
 
     // Si remoto es más nuevo o no existe local, usar remoto
     if (isRemoteNewer(row, localItem)) {
-      resultMap.set(row.id, rowToEntity(row, entityKey) as T);
+      resultMap.set(row.id, rowToEntity(row) as T);
     }
     // Si local es más nuevo, mantener local (quedará dirty para push)
   }

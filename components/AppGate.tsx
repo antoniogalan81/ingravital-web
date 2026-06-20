@@ -12,11 +12,13 @@ import { supabase } from "@/src/lib/supabaseClient";
 
 export type AppSection = "panel" | "inversiones" | "oportunidades" | "informes" | "inversores";
 
+// Secciones reales del núcleo inmobiliario primero; Oportunidades e Inversores
+// quedan al final (secundarias / "Próximamente") para no darles protagonismo.
 const NAV: { id: AppSection; label: string; href: string }[] = [
   { id: "panel", label: "Panel", href: "/panel" },
   { id: "inversiones", label: "Inversiones", href: "/finanzas" },
-  { id: "oportunidades", label: "Oportunidades", href: "/oportunidades" },
   { id: "informes", label: "Informes", href: "/informes" },
+  { id: "oportunidades", label: "Oportunidades", href: "/oportunidades" },
   { id: "inversores", label: "Inversores", href: "/inversores" },
 ];
 
@@ -25,12 +27,14 @@ export default function AppGate({
   label,
   title,
   subtitle,
+  actions,
   children,
 }: {
-  active: AppSection;
+  active?: AppSection;
   label?: string;
   title?: string;
   subtitle?: string;
+  actions?: ReactNode;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -89,7 +93,7 @@ export default function AppGate({
             })}
           </nav>
 
-          <Link href="/account" className="app-chrome-link shrink-0">
+          <Link href="/account" className={`app-chrome-link shrink-0 ${pathname === "/account" ? "is-active" : ""}`}>
             Mi cuenta
           </Link>
         </div>
@@ -113,14 +117,17 @@ export default function AppGate({
 
       {/* Contenido */}
       <main className="max-w-[1400px] mx-auto px-3 sm:px-6 py-6">
-        {(label || title || subtitle) && (
-          <div className="mb-6">
-            {label && <p className="section-label">{label}</p>}
-            {title && <h1 className="section-title mt-1">{title}</h1>}
-            {subtitle && <p className="text-sm text-ink-muted mt-2 max-w-2xl leading-relaxed">{subtitle}</p>}
+        {(label || title || subtitle || actions) && (
+          <div className="mb-6 in-reveal flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+            <div className="min-w-0">
+              {label && <p className="section-label">{label}</p>}
+              {title && <h1 className="section-title mt-1">{title}</h1>}
+              {subtitle && <p className="text-sm text-ink-muted mt-2 max-w-2xl leading-relaxed">{subtitle}</p>}
+            </div>
+            {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
           </div>
         )}
-        {children}
+        <div className="in-reveal in-delay-1">{children}</div>
       </main>
     </div>
   );

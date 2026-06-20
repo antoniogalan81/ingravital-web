@@ -13,7 +13,7 @@ const sections: LegalSection[] = [
           "CIF: B70919006",
           "Domicilio: C/ Hernando Colón 39, 41004 Sevilla, España",
           "Email de contacto: info@palmaycoco.com",
-          "Actividad: Desarrollo de software y servicios digitales asociados a la app INVERGRAVITAL",
+          "Actividad: Desarrollo de software y servicios digitales — herramienta de análisis de inversiones inmobiliarias INVERGRAVITAL",
         ],
       },
     ],

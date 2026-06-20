@@ -5,9 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/src/lib/supabaseClient";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { useSync } from "@/src/sync/SyncContext";
 import type { Gender } from "@/src/lib/types";
-import SiteShell from "@/components/SiteShell";
+import AppGate from "@/components/AppGate";
 
 const PROFILE_SETTINGS_ID = "__PROFILE_SETTINGS__";
 
@@ -28,25 +27,24 @@ type FormData = {
   lastName: string;
   gender: Gender | "";
   birthDateISO: string;
-  heightCm: string;
-  weightKg: string;
 };
 
 export default function AccountPage() {
   const router = useRouter();
-  const { loading: authLoading, user, profile, signOut } = useAuth();
-  const { modules, setModuleEnabled } = useSync();
-  
+  const { loading: authLoading, user, signOut } = useAuth();
+
   // Form state
   const [formData, setFormData] = useState<FormData>({
     firstName: "",
     lastName: "",
     gender: "",
     birthDateISO: "",
-    heightCm: "",
-    weightKg: "",
   });
   const [originalData, setOriginalData] = useState<FormData | null>(null);
+  // Altura/peso son campos heredados (app fitness): ya no se editan en /account
+  // pero se conservan en profile_settings para no romper datos existentes ni la
+  // app nativa. Guardamos su último valor cargado para reescribirlo intacto.
+  const preservedMetricsRef = useRef<{ heightCm: number | null; weightKg: number | null }>({ heightCm: null, weightKg: null });
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -121,16 +119,16 @@ export default function AccountPage() {
             lastName: d.lastName || "",
             gender: (d.gender as Gender) || "",
             birthDateISO: d.birthDateISO || "",
-            heightCm: d.heightCm?.toString() || "",
-            weightKg: d.weightKg?.toString() || "",
           };
+          // Conserva altura/peso aunque ya no se editen aquí
+          preservedMetricsRef.current = { heightCm: d.heightCm ?? null, weightKg: d.weightKg ?? null };
           setFormData(data);
           setOriginalData(data);
           setBirthDateDisplay(isoToDisplay(d.birthDateISO || ""));
         } else {
           // Sin datos en Supabase todavía: inicializa originalData con el estado vacío
           // para que hasChanges funcione en cuanto el usuario escriba algo
-          setOriginalData({ firstName: "", lastName: "", gender: "", birthDateISO: "", heightCm: "", weightKg: "" });
+          setOriginalData({ firstName: "", lastName: "", gender: "", birthDateISO: "" });
         }
       } finally {
         setLoadingSettings(false);
@@ -182,18 +180,10 @@ export default function AccountPage() {
     setBirthDateError(null);
   };
 
-  const validateBodyMetrics = (): string | null => {
+  const validateProfile = (): string | null => {
     if (birthDateError) return birthDateError;
     if (birthDateDisplay && !formData.birthDateISO) {
       return "Fecha de nacimiento incompleta (usa DD-MM-AAAA)";
-    }
-    if (formData.heightCm !== "") {
-      const h = Number(formData.heightCm);
-      if (!isFinite(h) || h < 100 || h > 250) return "Altura debe estar entre 100 y 250 cm";
-    }
-    if (formData.weightKg !== "") {
-      const w = Number(formData.weightKg);
-      if (!isFinite(w) || w < 30 || w > 300) return "Peso debe estar entre 30 y 300 kg";
     }
     return null;
   };
@@ -207,7 +197,7 @@ export default function AccountPage() {
       debounceTimerRef.current = null;
     }
 
-    const validationError = validateBodyMetrics();
+    const validationError = validateProfile();
     if (validationError) {
       setSaveError(validationError);
       return;
@@ -233,8 +223,9 @@ export default function AccountPage() {
         email: user.email || "",
         gender: snapshotData.gender || "",
         birthDateISO: snapshotData.birthDateISO || "",
-        heightCm: snapshotData.heightCm ? parseInt(snapshotData.heightCm, 10) : null,
-        weightKg: snapshotData.weightKg ? parseInt(snapshotData.weightKg, 10) : null,
+        // Campos heredados: se reescriben con su último valor conocido, intactos.
+        heightCm: preservedMetricsRef.current.heightCm,
+        weightKg: preservedMetricsRef.current.weightKg,
         updatedAt: nowISO,
       };
 
@@ -276,9 +267,8 @@ export default function AccountPage() {
             lastName: serverData.lastName || "",
             gender: (serverData.gender as Gender) || "",
             birthDateISO: serverData.birthDateISO || "",
-            heightCm: serverData.heightCm?.toString() || "",
-            weightKg: serverData.weightKg?.toString() || "",
           };
+          preservedMetricsRef.current = { heightCm: serverData.heightCm ?? null, weightKg: serverData.weightKg ?? null };
           setFormData(refreshed);
           setOriginalData(refreshed);
           setBirthDateDisplay(isoToDisplay(serverData.birthDateISO || ""));
@@ -308,7 +298,7 @@ export default function AccountPage() {
 
   const hasChanges = useMemo(() => {
     if (!originalData) return false;
-    const keys: Array<keyof FormData> = ["firstName", "lastName", "gender", "birthDateISO", "heightCm", "weightKg"];
+    const keys: Array<keyof FormData> = ["firstName", "lastName", "gender", "birthDateISO"];
     return keys.some(key => formData[key] !== originalData[key]);
   }, [formData, originalData]);
 
@@ -421,18 +411,11 @@ export default function AccountPage() {
     return age;
   };
 
-  // Formatear fecha premium
-  const formatPremiumDate = (dateStr: string | null | undefined): string => {
-    if (!dateStr) return "";
-    const date = new Date(dateStr);
-    return date.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" });
-  };
-
   // Loading
   if (authLoading || loadingSettings) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="animate-spin w-8 h-8 border-2 border-slate-900 border-t-transparent rounded-full" />
+      <div className="min-h-screen flex items-center justify-center app-bg">
+        <div className="animate-spin w-8 h-8 border-2 border-brand border-t-transparent rounded-full" />
       </div>
     );
   }
@@ -440,82 +423,41 @@ export default function AccountPage() {
   // No mostrar si no hay user
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="animate-spin w-8 h-8 border-2 border-slate-900 border-t-transparent rounded-full" />
+      <div className="min-h-screen flex items-center justify-center app-bg">
+        <div className="animate-spin w-8 h-8 border-2 border-brand border-t-transparent rounded-full" />
       </div>
     );
   }
 
-  const isPremium = profile?.premium_active ?? false;
   const displayName = formData.firstName || user.email?.split("@")[0] || "Usuario";
   const age = calculateAge(formData.birthDateISO);
 
   return (
     <>
-      <SiteShell>
+      <AppGate>
         <div className="max-w-[640px] mx-auto space-y-6">
           {/* Header de cuenta */}
-          <div className="text-center mb-8">
-            <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-slate-900 text-white flex items-center justify-center text-3xl font-bold">
+          <div className="text-center mb-8 in-reveal">
+            <div className="w-20 h-20 mx-auto mb-4 rounded-full flex items-center justify-center text-3xl font-extrabold text-white" style={{ background: "linear-gradient(160deg, var(--brand), var(--brand-dark))", boxShadow: "0 16px 36px -16px rgba(30,79,163,0.6)" }}>
               {displayName.charAt(0).toUpperCase()}
             </div>
-            <h1 className="text-2xl font-bold text-slate-900">{displayName}</h1>
-            <p className="text-sm text-slate-500">{user.email}</p>
-          </div>
-
-          {/* Tarjeta Premium */}
-          <div className={`rounded-2xl border p-6 ${isPremium ? "bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200" : "bg-white border-slate-200"}`}>
-            <div className="flex flex-col xs:flex-row items-start justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  {isPremium ? (
-                    <svg className="w-6 h-6 text-amber-500" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
-                    </svg>
-                  ) : (
-                    <svg className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                  )}
-                  <h2 className={`text-lg font-semibold ${isPremium ? "text-amber-900" : "text-slate-900"}`}>
-                    {isPremium ? "Premium activo" : "Plan Gratuito"}
-                  </h2>
-                </div>
-                <p className={`text-sm ${isPremium ? "text-amber-700" : "text-slate-500"}`}>
-                  {isPremium 
-                    ? profile?.premium_until 
-                      ? `Activo hasta ${formatPremiumDate(profile.premium_until)}`
-                      : "Suscripción activa"
-                    : "Accede a todas las funciones premium"
-                  }
-                </p>
-              </div>
-              {!isPremium && (
-                <a
-                  href="https://wa.me/34656195880?text=Hola,%20quiero%20información%20sobre%20Premium"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="shrink-0 px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 transition-colors"
-                >
-                  Obtener Premium
-                </a>
-              )}
-            </div>
+            <h1 className="text-2xl font-extrabold tracking-tight text-ink">{displayName}</h1>
+            <p className="text-sm text-ink-subtle mt-0.5">{user.email}</p>
           </div>
 
           {/* Tarjeta Editar perfil */}
-          <div ref={formContainerRef} className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+          <div ref={formContainerRef} className="re-card overflow-hidden in-reveal in-delay-1">
             {/* Header */}
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-slate-900">Información personal</h2>
+            <div className="px-6 py-4 border-b border-line flex items-center justify-between">
+              <h2 className="text-lg font-bold tracking-tight text-ink">Información personal</h2>
             </div>
 
             {/* Content */}
             <div className="p-6">
               {/* Success message */}
               {saveSuccess && (
-                <div className="mb-4 p-3 rounded-lg bg-emerald-50 border border-emerald-100">
-                  <p className="text-sm text-emerald-700 flex items-center gap-2">
+                <div className="mb-4 p-3 rounded-lg border" style={{ background: "var(--positive-soft)", borderColor: "rgba(21,128,90,0.2)" }}>
+                  <p className="text-sm flex items-center gap-2" style={{ color: "var(--positive)" }}>
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
@@ -526,8 +468,8 @@ export default function AccountPage() {
 
               {/* Sync message */}
               {syncMessage && (
-                <div className="mb-4 p-3 rounded-lg bg-blue-50 border border-blue-100">
-                  <p className="text-sm text-blue-700 flex items-center gap-2">
+                <div className="mb-4 p-3 rounded-lg border" style={{ background: "var(--brand-soft)", borderColor: "rgba(30,79,163,0.2)" }}>
+                  <p className="text-sm flex items-center gap-2" style={{ color: "var(--brand)" }}>
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
@@ -538,21 +480,21 @@ export default function AccountPage() {
 
               {/* Error message */}
               {saveError && (
-                <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-100">
-                  <p className="text-sm text-red-600">{saveError}</p>
+                <div className="mb-4 p-3 rounded-lg border" style={{ background: "var(--negative-soft)", borderColor: "rgba(192,57,43,0.2)" }}>
+                  <p className="text-sm" style={{ color: "var(--negative)" }}>{saveError}</p>
                 </div>
               )}
 
               {/* Barra de cambios */}
               {hasChanges && (
-                <div className="mb-4 p-3 rounded-lg bg-slate-50 border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                  <p className="text-sm text-slate-700">Tienes cambios sin guardar</p>
+                <div className="mb-4 p-3 rounded-lg bg-[var(--surface-alt)] border border-line flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <p className="text-sm font-medium text-ink-muted">Tienes cambios sin guardar</p>
                   <div className="flex gap-2 w-full sm:w-auto">
                     <button
                       type="button"
                       onClick={handleCancel}
                       disabled={saving}
-                      className="px-4 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                      className="btn-secondary !py-2 disabled:opacity-50"
                     >
                       Cancelar
                     </button>
@@ -560,7 +502,7 @@ export default function AccountPage() {
                       type="button"
                       onClick={handleSave}
                       disabled={saving}
-                      className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 transition-colors disabled:opacity-50"
+                      className="btn-primary !py-2 disabled:opacity-50"
                     >
                       {saving ? (
                         <span className="flex items-center gap-2">
@@ -582,7 +524,7 @@ export default function AccountPage() {
                 {/* Nombre y Apellidos */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label htmlFor="firstName" className="block text-sm font-medium text-slate-700 mb-1.5">
+                    <label htmlFor="firstName" className="form-label">
                       Nombre
                     </label>
                     <input
@@ -592,11 +534,11 @@ export default function AccountPage() {
                       value={formData.firstName}
                       onChange={handleChange}
                       placeholder="Tu nombre"
-                      className="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-slate-900 placeholder:text-slate-400 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400"
+                      className="form-input"
                     />
                   </div>
                   <div>
-                    <label htmlFor="lastName" className="block text-sm font-medium text-slate-700 mb-1.5">
+                    <label htmlFor="lastName" className="form-label">
                       Apellidos
                     </label>
                     <input
@@ -606,7 +548,7 @@ export default function AccountPage() {
                       value={formData.lastName}
                       onChange={handleChange}
                       placeholder="Tus apellidos"
-                      className="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-slate-900 placeholder:text-slate-400 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400"
+                      className="form-input"
                     />
                   </div>
                 </div>
@@ -614,7 +556,7 @@ export default function AccountPage() {
                 {/* Género y Fecha nacimiento */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label htmlFor="gender" className="block text-sm font-medium text-slate-700 mb-1.5">
+                    <label htmlFor="gender" className="form-label">
                       Género
                     </label>
                     <select
@@ -622,7 +564,7 @@ export default function AccountPage() {
                       name="gender"
                       value={formData.gender}
                       onChange={handleChange}
-                      className="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-slate-900 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400"
+                      className="form-select"
                     >
                       <option value="">Seleccionar</option>
                       <option value="hombre">Hombre</option>
@@ -631,8 +573,8 @@ export default function AccountPage() {
                     </select>
                   </div>
                   <div>
-                    <label htmlFor="birthDateISO" className="block text-sm font-medium text-slate-700 mb-1.5">
-                      Fecha de nacimiento {age !== null && <span className="text-slate-400">({age} años)</span>}
+                    <label htmlFor="birthDateISO" className="form-label">
+                      Fecha de nacimiento {age !== null && <span className="text-ink-subtle">({age} años)</span>}
                     </label>
                     <div className="relative">
                       <input
@@ -644,7 +586,7 @@ export default function AccountPage() {
                         onChange={(e) => handleBirthDateDisplayChange(e.target.value)}
                         placeholder="DD-MM-AAAA"
                         maxLength={10}
-                        className={`w-full px-4 py-2.5 pr-10 rounded-lg border ${birthDateError ? "border-red-400" : "border-slate-200"} text-slate-900 placeholder:text-slate-400 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400`}
+                        className={`form-input pr-10 ${birthDateError ? "form-input-error" : ""}`}
                       />
                       {/* Hidden date picker — se abre con el botón calendario */}
                       <input
@@ -672,7 +614,7 @@ export default function AccountPage() {
                           el.showPicker?.();
                           setTimeout(() => { el.style.pointerEvents = "none"; }, 1000);
                         }}
-                        className="absolute right-0 top-0 h-full px-3 text-slate-400 hover:text-slate-600 transition-colors"
+                        className="absolute right-0 top-0 h-full px-3 text-ink-subtle hover:text-ink transition-colors"
                         tabIndex={-1}
                         aria-label="Abrir selector de fecha"
                       >
@@ -682,46 +624,11 @@ export default function AccountPage() {
                       </button>
                     </div>
                     {birthDateError && (
-                      <p className="mt-1 text-xs text-red-500">{birthDateError}</p>
+                      <p className="mt-1 text-xs" style={{ color: "var(--negative)" }}>{birthDateError}</p>
                     )}
                   </div>
                 </div>
 
-                {/* Altura y Peso */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label htmlFor="heightCm" className="block text-sm font-medium text-slate-700 mb-1.5">
-                      Altura (cm)
-                    </label>
-                    <input
-                      id="heightCm"
-                      name="heightCm"
-                      type="number"
-                      min="100"
-                      max="250"
-                      value={formData.heightCm}
-                      onChange={handleChange}
-                      placeholder="175"
-                      className="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-slate-900 placeholder:text-slate-400 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="weightKg" className="block text-sm font-medium text-slate-700 mb-1.5">
-                      Peso (kg)
-                    </label>
-                    <input
-                      id="weightKg"
-                      name="weightKg"
-                      type="number"
-                      min="30"
-                      max="300"
-                      value={formData.weightKg}
-                      onChange={handleChange}
-                      placeholder="70"
-                      className="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-slate-900 placeholder:text-slate-400 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400"
-                    />
-                  </div>
-                </div>
 
                 {/* Botón guardar explícito */}
                 <div className="pt-1 flex items-center justify-end gap-3">
@@ -729,7 +636,7 @@ export default function AccountPage() {
                     type="button"
                     onClick={handleSave}
                     disabled={saving || !hasChanges}
-                    className="px-5 py-2.5 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="btn-primary disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0"
                   >
                     {saving ? (
                       <span className="flex items-center gap-2">
@@ -742,7 +649,7 @@ export default function AccountPage() {
                     ) : "Guardar"}
                   </button>
                   {saveSuccess && !saving && (
-                    <span className="text-sm text-emerald-600 flex items-center gap-1.5">
+                    <span className="text-sm flex items-center gap-1.5" style={{ color: "var(--positive)" }}>
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
@@ -755,125 +662,97 @@ export default function AccountPage() {
           </div>
 
           {/* Tarjeta Seguridad */}
-          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100">
-              <h2 className="text-lg font-semibold text-slate-900">Seguridad</h2>
+          <div className="re-card overflow-hidden in-reveal in-delay-2">
+            <div className="px-6 py-4 border-b border-line">
+              <h2 className="text-lg font-bold tracking-tight text-ink">Seguridad</h2>
             </div>
             <div className="p-6 space-y-4">
               {/* Email actual */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-slate-700">Email</p>
-                  <p className="text-sm text-slate-500">{user.email}</p>
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-ink">Email</p>
+                  <p className="text-sm text-ink-subtle truncate">{user.email}</p>
                 </div>
                 <button
                   onClick={() => setEmailModalOpen(true)}
-                  className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
+                  className="text-sm font-semibold text-brand hover:text-brand-dark transition-colors shrink-0"
                 >
                   Cambiar
                 </button>
               </div>
-              
+
               {/* Contraseña */}
-              <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+              <div className="flex items-center justify-between gap-4 pt-4 border-t border-line">
                 <div>
-                  <p className="text-sm font-medium text-slate-700">Contraseña</p>
-                  <p className="text-sm text-slate-500">••••••••</p>
+                  <p className="text-sm font-semibold text-ink">Contraseña</p>
+                  <p className="text-sm text-ink-subtle">••••••••</p>
                 </div>
                 <button
                   onClick={() => setPasswordModalOpen(true)}
-                  className="text-sm font-medium text-blue-600 hover:text-blue-700 transition-colors"
+                  className="text-sm font-semibold text-brand hover:text-brand-dark transition-colors shrink-0"
                 >
                   Cambiar
-      </button>
+                </button>
               </div>
             </div>
           </div>
 
           {/* Links rápidos */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6">
-            <h2 className="text-lg font-semibold text-slate-900 mb-4">Accesos rápidos</h2>
-            <div className="space-y-2">
-              <Link
-                href="/agenda"
-                className="flex items-center justify-between px-4 py-3 rounded-lg hover:bg-slate-50 transition-colors group"
-              >
-                <span className="text-sm font-medium text-slate-700">Ir a la Agenda</span>
-                <svg className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </Link>
-              <Link
-                href="/finanzas"
-                className="flex items-center justify-between px-4 py-3 rounded-lg hover:bg-slate-50 transition-colors group"
-              >
-                <span className="text-sm font-medium text-slate-700">Ver Finanzas</span>
-                <svg className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </Link>
-              <Link
-                href="/legal"
-                className="flex items-center justify-between px-4 py-3 rounded-lg hover:bg-slate-50 transition-colors group"
-              >
-                <span className="text-sm font-medium text-slate-700">Legal y privacidad</span>
-                <svg className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </Link>
-            </div>
-          </div>
-
-          {/* Funciones */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6">
-            <h2 className="text-lg font-semibold text-slate-900 mb-4">Funciones</h2>
-            <div className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0">
-              <div>
-                <div className="text-sm font-medium text-slate-800">Inversión inmobiliaria</div>
-                <div className="text-xs text-slate-500 mt-0.5">Analiza rentabilidad, costes y financiación de propiedades</div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setModuleEnabled("operaciones", !modules.operaciones.enabled)}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ml-4 ${modules.operaciones.enabled ? "bg-blue-600" : "bg-slate-200"}`}
-              >
-                <span
-                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${modules.operaciones.enabled ? "translate-x-6" : "translate-x-1"}`}
-                />
-              </button>
+          <div className="re-card p-6 in-reveal in-delay-3">
+            <h2 className="text-lg font-bold tracking-tight text-ink mb-4">Accesos rápidos</h2>
+            <div className="space-y-1">
+              {[
+                { href: "/panel", label: "Ir al Panel" },
+                { href: "/finanzas", label: "Ver Inversiones" },
+                { href: "/legal", label: "Legal y privacidad" },
+              ].map((l) => (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  className="group flex items-center justify-between px-4 py-3 rounded-xl hover:bg-[var(--surface-alt)] transition-colors"
+                >
+                  <span className="text-sm font-semibold text-ink-muted group-hover:text-ink transition-colors">{l.label}</span>
+                  <svg className="w-4 h-4 text-ink-subtle transition-transform group-hover:translate-x-0.5 group-hover:text-brand" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </Link>
+              ))}
             </div>
           </div>
 
           {/* Cerrar sesión (mobile friendly) */}
           <button
             onClick={handleSignOut}
-            className="w-full py-3 px-4 rounded-lg border border-red-200 text-red-600 text-sm font-medium hover:bg-red-50 transition-colors"
+            className="w-full py-3 px-4 rounded-xl border text-sm font-semibold transition-colors in-reveal in-delay-5"
+            style={{ borderColor: "rgba(192,57,43,0.3)", color: "var(--negative)" }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "var(--negative-soft)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
           >
             Cerrar sesión
           </button>
         </div>
-      </SiteShell>
+      </AppGate>
 
       {/* Modal: Cambiar email */}
       {emailModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/50" onClick={closeEmailModal} />
-          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-[420px] mx-4 p-6">
+          <div className="relative bg-surface rounded-2xl border border-line shadow-2xl w-full max-w-[420px] mx-4 p-6">
             {!emailSuccess ? (
               <>
-                <h3 className="text-lg font-semibold text-slate-900 mb-1">Cambiar email</h3>
-                <p className="text-sm text-slate-500 mb-6">
+                <h3 className="text-lg font-bold tracking-tight text-ink mb-1">Cambiar email</h3>
+                <p className="text-sm text-ink-subtle mb-6">
                   Te enviaremos un enlace de confirmación al nuevo email.
                 </p>
 
                 {emailError && (
-                  <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-100">
-                    <p className="text-sm text-red-600">{emailError}</p>
+                  <div className="mb-4 p-3 rounded-lg border" style={{ background: "var(--negative-soft)", borderColor: "rgba(192,57,43,0.2)" }}>
+                    <p className="text-sm" style={{ color: "var(--negative)" }}>{emailError}</p>
                   </div>
                 )}
 
                 <div className="mb-6">
-                  <label htmlFor="newEmail" className="block text-sm font-medium text-slate-700 mb-1.5">
+                  <label htmlFor="newEmail" className="form-label">
                     Nuevo email
                   </label>
                   <input
@@ -882,7 +761,7 @@ export default function AccountPage() {
                     value={newEmail}
                     onChange={(e) => setNewEmail(e.target.value)}
                     placeholder="nuevo@email.com"
-                    className="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 transition-colors"
+                    className="form-input"
                   />
                 </div>
 
@@ -890,14 +769,14 @@ export default function AccountPage() {
                   <button
                     onClick={closeEmailModal}
                     disabled={emailSending}
-                    className="flex-1 py-2.5 px-4 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                    className="flex-1 btn-secondary !py-2.5 disabled:opacity-50"
                   >
                     Cancelar
                   </button>
                   <button
                     onClick={handleChangeEmail}
                     disabled={emailSending}
-                    className="flex-1 py-2.5 px-4 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 transition-colors disabled:opacity-50"
+                    className="flex-1 btn-primary !py-2.5 disabled:opacity-50"
                   >
                     {emailSending ? "Enviando..." : "Enviar enlace"}
                   </button>
@@ -905,19 +784,16 @@ export default function AccountPage() {
               </>
             ) : (
               <div className="text-center py-4">
-                <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-emerald-100 flex items-center justify-center">
-                  <svg className="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className="w-12 h-12 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ background: "var(--positive-soft)" }}>
+                  <svg className="w-6 h-6" style={{ color: "var(--positive)" }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
-                <h3 className="text-lg font-semibold text-slate-900 mb-2">Email enviado</h3>
-                <p className="text-sm text-slate-500 mb-6">
-                  Te hemos enviado un email de confirmación a <strong>{newEmail}</strong> para completar el cambio.
+                <h3 className="text-lg font-bold tracking-tight text-ink mb-2">Email enviado</h3>
+                <p className="text-sm text-ink-subtle mb-6">
+                  Te hemos enviado un email de confirmación a <strong className="text-ink-muted">{newEmail}</strong> para completar el cambio.
                 </p>
-                <button
-                  onClick={closeEmailModal}
-                  className="w-full py-2.5 px-4 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 transition-colors"
-                >
+                <button onClick={closeEmailModal} className="w-full btn-primary !py-2.5">
                   Entendido
                 </button>
               </div>
@@ -930,17 +806,17 @@ export default function AccountPage() {
       {passwordModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/50" onClick={closePasswordModal} />
-          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-[420px] mx-4 p-6">
+          <div className="relative bg-surface rounded-2xl border border-line shadow-2xl w-full max-w-[420px] mx-4 p-6">
             {!passwordSuccess ? (
               <>
-                <h3 className="text-lg font-semibold text-slate-900 mb-1">Cambiar contraseña</h3>
-                <p className="text-sm text-slate-500 mb-6">
-                  Te enviaremos un enlace a <strong>{user.email}</strong> para crear una nueva contraseña.
+                <h3 className="text-lg font-bold tracking-tight text-ink mb-1">Cambiar contraseña</h3>
+                <p className="text-sm text-ink-subtle mb-6">
+                  Te enviaremos un enlace a <strong className="text-ink-muted">{user.email}</strong> para crear una nueva contraseña.
                 </p>
 
                 {passwordError && (
-                  <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-100">
-                    <p className="text-sm text-red-600">{passwordError}</p>
+                  <div className="mb-4 p-3 rounded-lg border" style={{ background: "var(--negative-soft)", borderColor: "rgba(192,57,43,0.2)" }}>
+                    <p className="text-sm" style={{ color: "var(--negative)" }}>{passwordError}</p>
                   </div>
                 )}
 
@@ -948,14 +824,14 @@ export default function AccountPage() {
                   <button
                     onClick={closePasswordModal}
                     disabled={passwordSending}
-                    className="flex-1 py-2.5 px-4 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                    className="flex-1 btn-secondary !py-2.5 disabled:opacity-50"
                   >
                     Cancelar
                   </button>
                   <button
                     onClick={handleChangePassword}
                     disabled={passwordSending}
-                    className="flex-1 py-2.5 px-4 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 transition-colors disabled:opacity-50"
+                    className="flex-1 btn-primary !py-2.5 disabled:opacity-50"
                   >
                     {passwordSending ? "Enviando..." : "Enviar enlace"}
                   </button>
@@ -963,19 +839,16 @@ export default function AccountPage() {
               </>
             ) : (
               <div className="text-center py-4">
-                <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-emerald-100 flex items-center justify-center">
-                  <svg className="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className="w-12 h-12 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ background: "var(--positive-soft)" }}>
+                  <svg className="w-6 h-6" style={{ color: "var(--positive)" }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
-                <h3 className="text-lg font-semibold text-slate-900 mb-2">Email enviado</h3>
-                <p className="text-sm text-slate-500 mb-6">
+                <h3 className="text-lg font-bold tracking-tight text-ink mb-2">Email enviado</h3>
+                <p className="text-sm text-ink-subtle mb-6">
                   Te hemos enviado un enlace para cambiar la contraseña.
                 </p>
-                <button
-                  onClick={closePasswordModal}
-                  className="w-full py-2.5 px-4 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 transition-colors"
-                >
+                <button onClick={closePasswordModal} className="w-full btn-primary !py-2.5">
                   Entendido
                 </button>
               </div>

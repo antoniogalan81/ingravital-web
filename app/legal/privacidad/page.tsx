@@ -6,17 +6,14 @@ const sections: LegalSection[] = [
     id: "introduccion",
     title: "1. Introducción",
     content: [
-      "Esta Política de Privacidad describe cómo Ventana al Futuro SL recopila, utiliza, procesa, almacena y protege tus datos personales cuando utilizas Invergravital y todos los servicios vinculados.",
+      "Esta Política de Privacidad describe cómo Ventana al Futuro SL recopila, utiliza, procesa, almacena y protege tus datos personales cuando utilizas Invergravital, una herramienta de análisis de inversiones inmobiliarias, y todos los servicios vinculados.",
       "La presente Política cumple con:",
       {
         list: [
           "RGPD (Reglamento UE 2016/679)",
           "LOPDGDD (Ley Orgánica 3/2018)",
           "CCPA (California)",
-          "LGPD (Brasil)",
-          "COPPA (USA, menores)",
           "Requisitos de App Store y Google Play",
-          "Normativa aplicable a datos de salud digital",
           "Normativa de transferencias internacionales",
         ],
       },
@@ -38,31 +35,28 @@ const sections: LegalSection[] = [
     title: "3. Datos personales que recopilamos",
     content: [
       "Recopilamos datos proporcionados por el usuario, datos generados automáticamente, datos inferidos por algoritmos o IA, y datos obtenidos de terceros.",
-      "Datos proporcionados por el usuario:",
+      "Datos de cuenta proporcionados por el usuario:",
       {
         list: [
           "Nombre, apellidos, email, fecha de nacimiento y género",
-          "Imagen/avatar y preferencias personales",
-          "Datos de progreso, rutinas, hábitos y objetivos",
+          "Avatar y preferencias de la cuenta",
           "Mensajes enviados al soporte",
         ],
       },
-      "Datos de salud y bienestar (solo con tu autorización explícita):",
+      "Datos de operaciones e inversión que introduce el usuario:",
       {
         list: [
-          "Peso, altura, IMC y composición corporal",
-          "Rutinas, hábitos y listas de tareas",
-          "Horarios de sueño, energía y estado anímico",
-          "Datos de ejercicio, pasos, distancia y calorías",
-          "Datos procedentes de Apple Health / HealthKit o Google Fit",
+          "Precios de compra, costes, reforma e impuestos de cada operación",
+          "Condiciones de financiación (capital, plazo, interés)",
+          "Importes de alquiler, venta y escenarios analizados",
+          "Notas, nombres de operación y documentación que el usuario añada",
         ],
       },
-      "Estos datos se consideran categoría especial en la UE y siempre requerirán consentimiento explícito.",
+      "Estos datos son datos personales del usuario asociados a sus análisis. No son datos de categoría especial. Invergravital no solicita ni trata datos de salud, biométricos ni de ningún tipo sensible.",
       "Datos técnicos y de uso (recopilados automáticamente):",
       {
         list: [
           "Dirección IP, zona horaria e idioma del dispositivo",
-          "Identificadores de publicidad (IDFA/GAID)",
           "Datos sobre rendimiento, fallos y errores",
           "Actividad dentro de la app (pantallas visitadas, tiempo de uso)",
         ],
@@ -73,8 +67,8 @@ const sections: LegalSection[] = [
     id: "finalidades",
     title: "4. Finalidades del tratamiento",
     content: [
-      "Procesamos tus datos para prestar el servicio (crear cuenta, guardar rutinas, calcular métricas y mostrar estadísticas), mejorar la aplicación mediante analítica técnica, cumplir obligaciones legales y, con tu consentimiento explícito, para funciones de inteligencia artificial y publicidad personalizada.",
-      "Nunca utilizamos datos de salud para publicidad.",
+      "Procesamos tus datos para prestar el servicio (crear cuenta, guardar tus operaciones, calcular rentabilidad y mostrar informes), mejorar la aplicación mediante analítica técnica, cumplir obligaciones legales y, con tu consentimiento explícito, para funciones de inteligencia artificial y publicidad personalizada.",
+      "Nunca vendemos los datos de tus operaciones ni los usamos para publicidad.",
     ],
   },
   {
@@ -83,8 +77,8 @@ const sections: LegalSection[] = [
     content: [
       {
         list: [
-          "Ejecutar un contrato: funcionamiento de la app",
-          "Consentimiento explícito: IA, HealthKit, Google Fit, publicidad personalizada",
+          "Ejecutar un contrato: funcionamiento de la app y guardado de tus operaciones",
+          "Consentimiento explícito: análisis con IA y, en su caso, publicidad personalizada",
           "Interés legítimo: seguridad y analítica técnica",
           "Obligación legal: fiscalidad y procesos judiciales",
         ],
@@ -98,10 +92,10 @@ const sections: LegalSection[] = [
       {
         list: [
           "Cuenta activa → todos los datos mientras esté activa",
-          "Obligación legal → mínimo exigido (ej. 5 años para datos financieros)",
+          "Obligación legal → mínimo exigido (ej. 5 años para datos con relevancia fiscal)",
           "Logs técnicos → entre 3 y 24 meses",
           "Datos anonimizados → indefinidamente",
-          "Datos de IA → según consentimiento o necesidad funcional",
+          "Datos tratados por IA → según consentimiento o necesidad funcional",
         ],
       },
       "El usuario puede solicitar eliminación total en cualquier momento.",
@@ -115,10 +109,9 @@ const sections: LegalSection[] = [
       {
         list: [
           "Servicios de alojamiento y bases de datos",
-          "Firebase, Google Analytics y Crashlytics",
+          "Herramientas de analítica técnica y registro de errores",
           "Servicios de inteligencia artificial (OpenAI, Google Vertex AI, AWS Bedrock u otros)",
           "Herramientas de email, soporte y mensajería",
-          "Procesadores de pagos y plataformas de suscripción",
           "Servicios de publicidad (solo si aceptas publicidad personalizada)",
         ],
       },
@@ -138,7 +131,7 @@ const sections: LegalSection[] = [
           "Limitación del tratamiento: limitar el uso sin solicitar eliminación",
           "Portabilidad: recibir tus datos en formato estructurado (JSON, CSV…)",
           "Oposición: a publicidad personalizada, profiling o interés legítimo",
-          "Retirada del consentimiento: en cualquier momento para IA, salud o publicidad",
+          "Retirada del consentimiento: en cualquier momento para IA o publicidad",
           "Reclamación ante la AEPD si consideras que hemos incumplido la normativa",
         ],
       },
@@ -149,7 +142,7 @@ const sections: LegalSection[] = [
     id: "menores",
     title: "9. Menores de edad",
     content: [
-      "Invergravital no permite su uso a menores de 13 años. Si detectamos que un menor ha usado la app sin consentimiento parental, eliminaremos la cuenta y todos los datos asociados.",
+      "Invergravital es una herramienta de análisis de inversión y no está dirigida a menores de 18 años. Si detectamos que un menor ha creado una cuenta, eliminaremos la cuenta y todos los datos asociados.",
     ],
   },
   {
@@ -178,32 +171,31 @@ const sections: LegalSection[] = [
   },
   {
     id: "ia",
-    title: "15. Uso de inteligencia artificial",
+    title: "12. Uso de inteligencia artificial",
     content: [
       "Con tu consentimiento explícito, podemos tratar datos personales mediante IA para:",
       {
         list: [
-          "Análisis de hábitos, rutinas, métricas y tendencias",
-          "Generación de recomendaciones personalizadas y resúmenes",
-          "Predicciones de comportamiento o rendimiento",
-          "Mejora de modelos internos o externos",
+          "Análisis de tus operaciones, escenarios y métricas de rentabilidad",
+          "Generación de resúmenes y observaciones sobre una operación",
+          "Mejora de los modelos internos de análisis",
         ],
       },
-      "Podemos enviar datos a proveedores como OpenAI, Google Vertex AI o Amazon AWS Bedrock. Puedes revocar este consentimiento en cualquier momento. Ningún proveedor adquiere la propiedad de tus datos.",
+      "Podemos enviar datos a proveedores como OpenAI, Google Vertex AI o Amazon AWS Bedrock. Los resultados de la IA son orientativos y no constituyen asesoramiento de inversión. Puedes revocar este consentimiento en cualquier momento. Ningún proveedor adquiere la propiedad de tus datos.",
     ],
   },
   {
     id: "limitacion",
-    title: "17. Responsabilidad y limitación legal",
+    title: "13. Responsabilidad y limitación legal",
     content: [
-      "La información generada por la app, incluidas recomendaciones y predicciones, no constituye asesoramiento médico, psicológico ni financiero, y no sustituye opiniones profesionales.",
-      "Ventana al Futuro SL no será responsable por daños indirectos, pérdidas de datos, errores de proveedores de servicios, ataques externos o uso indebido de la app.",
+      "La información generada por la app, incluidos cálculos, estimaciones, recomendaciones y predicciones, no constituye asesoramiento financiero, fiscal ni de inversión, y no sustituye la opinión de profesionales cualificados.",
+      "Ventana al Futuro SL no será responsable por daños indirectos, pérdidas de datos, pérdidas económicas derivadas de decisiones de inversión del usuario, errores de proveedores de servicios o ataques externos.",
       "En caso de brecha de seguridad, cumpliremos los requisitos de notificación según el RGPD (plazo 72 horas) y la normativa internacional aplicable.",
     ],
   },
   {
     id: "cambios",
-    title: "28. Cambios en esta política",
+    title: "14. Cambios en esta política",
     content: [
       "Podemos modificar esta Política cuando actualicemos funciones, integremos nueva IA, cambiemos proveedores o cambie la normativa aplicable.",
       "Cuando haya cambios significativos, publicaremos la nueva versión en la app y te avisaremos dentro de la aplicación. El uso posterior implica aceptación de los cambios.",
@@ -211,14 +203,14 @@ const sections: LegalSection[] = [
   },
   {
     id: "ley-aplicable",
-    title: "29. Ley aplicable y jurisdicción",
+    title: "15. Ley aplicable y jurisdicción",
     content: [
       "Esta Política se rige por las leyes de España, el RGPD y la LOPDGDD. En caso de conflicto, el fuero preferente es Sevilla, España, salvo que la ley disponga otra cosa de forma imperativa.",
     ],
   },
   {
     id: "contacto",
-    title: "30. Contacto y ejercicio de derechos",
+    title: "16. Contacto y ejercicio de derechos",
     content: [
       "Puedes ejercer cualquier derecho (acceso, rectificación, supresión, oposición, limitación, portabilidad, retirada de consentimiento) escribiendo a:",
       "Ventana al Futuro SL · C/ Hernando Colón 39, 41004 Sevilla, España · info@palmaycoco.com",
@@ -226,47 +218,38 @@ const sections: LegalSection[] = [
     ],
   },
   {
-    id: "anexo-salud",
-    title: "Anexo I — Tratamiento de datos de salud (RGPD Art. 9)",
-    content: [
-      "Solo tratamos datos de salud con consentimiento explícito. Estos datos se procesan únicamente para mostrar métricas, análisis interno, funciones inteligentes y backups autorizados.",
-      "Los datos de salud nunca se venden ni se comparten con anunciantes.",
-    ],
-  },
-  {
     id: "anexo-ia",
-    title: "Anexo II — Tratamiento por IA y modelos automatizados",
+    title: "Anexo I — Tratamiento por IA y modelos automatizados",
     content: [
       "Este anexo documenta el uso de IA en la plataforma:",
       {
         list: [
-          "Entrenamiento opcional con datos personales",
-          "Uso interno para mejorar recomendaciones",
+          "Procesamiento de los datos de operaciones para generar análisis y resúmenes",
+          "Uso interno para mejorar las recomendaciones de análisis",
           "Procesamiento en proveedores externos bajo contrato",
           "Control del usuario sobre su consentimiento en todo momento",
           "Medidas para evitar resultados discriminatorios",
-          "Explicabilidad limitada cuando el modelo sea de tercer proveedor",
+          "Explicabilidad limitada cuando el modelo sea de un tercer proveedor",
         ],
       },
     ],
   },
   {
     id: "anexo-internacional",
-    title: "Anexo III — Transferencias internacionales",
+    title: "Anexo II — Transferencias internacionales",
     content: [
-      "Invergravital puede almacenar y procesar datos en la Unión Europea, Estados Unidos, Latinoamérica, Asia o cualquier país donde operen proveedores críticos.",
+      "Invergravital puede almacenar y procesar datos en la Unión Europea, Estados Unidos o cualquier país donde operen proveedores críticos.",
       "Cumplimos Cláusulas Contractuales Tipo (SCC), reglas corporativas vinculantes cuando existan, y evaluación continua de riesgos.",
     ],
   },
   {
     id: "anexo-retencion",
-    title: "Anexo IV — Política de retención extendida",
+    title: "Anexo III — Política de retención extendida",
     content: [
       {
         list: [
           "Perfil: mientras exista la cuenta",
-          "Hábitos / tareas: hasta que solicites eliminación",
-          "Datos de salud: hasta retirada del consentimiento",
+          "Operaciones e informes: hasta que solicites su eliminación",
           "Logs técnicos: 3 a 24 meses",
           "Analytics agregados: indefinido",
           "Datos anonimizados: indefinido",
@@ -281,7 +264,7 @@ export default function Privacidad() {
   return (
     <LegalDocLayout
       title="Política de Privacidad"
-      updated="02 de diciembre de 2025"
+      updated="20 de junio de 2026"
       intro="Esta Política describe cómo Ventana al Futuro SL recopila, usa y protege tus datos personales cuando usas Invergravital, en cumplimiento del RGPD y la normativa aplicable."
       sections={sections}
     />
