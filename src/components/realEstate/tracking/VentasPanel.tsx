@@ -8,7 +8,7 @@ import type { REOperation, REResults } from "@/src/lib/realEstate";
 import {
   RE_SALE_STATUS_LABEL,
   RE_SALE_STATUSES,
-  newTrackingId,
+  makeSale,
   type RESale,
   type RESaleStatus,
 } from "@/src/lib/realEstateTracking";
@@ -22,16 +22,15 @@ import {
   DateCellInput,
   type DataTableColumn,
 } from "@/src/components/ui/DataTable";
-import { StatTile } from "@/src/components/ui/StatTile";
 
 const STATUS_OPTS = RE_SALE_STATUSES.map((s) => ({ value: s, label: RE_SALE_STATUS_LABEL[s] }));
 
-const STATUS_PILL: Record<RESaleStatus, string> = {
-  DISPONIBLE: "pill-neutral",
-  RESERVADO: "pill-info",
-  SENALADO: "pill-info",
-  APALABRADO: "pill-warning",
-  VENDIDO: "pill-positive",
+const STATUS_COLOR: Record<RESaleStatus, string> = {
+  DISPONIBLE: "var(--ink-subtle)",
+  RESERVADO: "#6366f1",
+  SENALADO: "#0ea5e9",
+  APALABRADO: "var(--warning, #b45309)",
+  VENDIDO: "var(--positive)",
 };
 
 export function VentasPanel({
@@ -49,17 +48,7 @@ export function VentasPanel({
   const update = (id: string, patch: Partial<RESale>) =>
     onChange(sales.map((s) => (s.id === id ? { ...s, ...patch, updatedAt: new Date().toISOString() } : s)));
 
-  const addRow = () => {
-    const nowIso = new Date().toISOString();
-    const row: RESale = {
-      id: newTrackingId("sale"),
-      title: "",
-      status: "DISPONIBLE",
-      createdAt: nowIso,
-      updatedAt: nowIso,
-    };
-    onChange([...sales, row]);
-  };
+  const addRow = () => onChange([...sales, makeSale()]);
 
   const remove = (row: RESale) => onChange(sales.filter((s) => s.id !== row.id));
 
@@ -134,36 +123,42 @@ export function VentasPanel({
 
   return (
     <div className="space-y-5">
-      {/* Distribución por estado */}
-      <div className="flex flex-wrap gap-2">
-        {RE_SALE_STATUSES.map((s) => (
-          <span key={s} className={`pill ${STATUS_PILL[s]}`}>
-            {RE_SALE_STATUS_LABEL[s]}: <span className="tabular-nums font-bold ml-1">{stats.byStatus[s]}</span>
-          </span>
-        ))}
-      </div>
-
-      {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <StatTile label="Venta estimada" value={fmtEUR(stats.totalEstimated)} />
-        <StatTile label="Venta real (cerradas)" value={stats.soldCount > 0 ? fmtEUR(stats.totalReal) : "—"} tone="positive" />
-        <StatTile label="Cobrado" value={stats.hasData ? fmtEUR(stats.collected) : "—"} tone="positive" />
-        <StatTile label="Pendiente cobro" value={stats.hasData ? fmtEUR(stats.pendingIncome) : "—"} tone="accent" />
-      </div>
-
-      {/* Impacto en rentabilidad */}
-      <div className="re-card p-4 flex items-center justify-between">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-wide text-ink-subtle">Impacto en rentabilidad</p>
-          <p className="text-sm text-ink-muted mt-1">
-            {stats.hasData
-              ? `${stats.soldCount}/${stats.count} vendidas · ${fmtPct(stats.soldPct ?? 0)} cerrado`
-              : "Añade ventas para ver el impacto"}
+      {/* Pipeline comercial: barra apilada por estado + leyenda con conteos */}
+      <div className="re-card p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-bold uppercase tracking-wide text-ink-subtle">Pipeline comercial</p>
+          <p className="text-sm text-ink-muted">
+            {stats.hasData ? `${stats.soldCount}/${stats.count} vendidas · ${fmtPct(stats.soldPct ?? 0)} cerrado` : "Sin ventas"}
           </p>
         </div>
-        <div className="text-right">
-          <p className="text-[10px] uppercase tracking-wide font-bold text-ink-subtle">Venta prevista (motor)</p>
-          <p className="text-base font-extrabold tabular-nums text-ink">{fmtEUR(results.totalSales)}</p>
+        <div className="flex h-3 w-full overflow-hidden rounded-full border border-line bg-[var(--surface-alt)]">
+          {stats.count > 0
+            ? RE_SALE_STATUSES.map((s) =>
+                stats.byStatus[s] > 0 ? (
+                  <div
+                    key={s}
+                    style={{ width: `${(stats.byStatus[s] / stats.count) * 100}%`, background: STATUS_COLOR[s] }}
+                    title={`${RE_SALE_STATUS_LABEL[s]}: ${stats.byStatus[s]}`}
+                  />
+                ) : null,
+              )
+            : null}
+        </div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+          {RE_SALE_STATUSES.map((s) => (
+            <span key={s} className="inline-flex items-center gap-1.5 text-xs">
+              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: STATUS_COLOR[s] }} />
+              <span className="text-ink-muted">{RE_SALE_STATUS_LABEL[s]}</span>
+              <span className="tabular-nums font-bold text-ink">{stats.byStatus[s]}</span>
+            </span>
+          ))}
+        </div>
+        {/* Impacto económico */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1.5 border-t border-line pt-3 text-sm">
+          <Fig label="Cobrado" value={stats.hasData ? fmtEUR(stats.collected) : "—"} color="var(--positive)" />
+          <Fig label="Pendiente cobro" value={stats.hasData ? fmtEUR(stats.pendingIncome) : "—"} color="var(--brand)" />
+          <Fig label="Venta real (cerradas)" value={stats.soldCount > 0 ? fmtEUR(stats.totalReal) : "—"} />
+          <Fig label="Venta prevista (motor)" value={fmtEUR(results.totalSales)} />
         </div>
       </div>
 
@@ -176,6 +171,15 @@ export function VentasPanel({
         onDeleteRow={remove}
         emptyText="Sin ventas. Añade unidades o activos y su estado comercial."
       />
+    </div>
+  );
+}
+
+function Fig({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px] uppercase tracking-wide font-bold text-ink-subtle truncate">{label}</p>
+      <p className="font-extrabold tabular-nums truncate" style={color ? { color } : undefined}>{value}</p>
     </div>
   );
 }

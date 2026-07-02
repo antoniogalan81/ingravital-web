@@ -39,6 +39,19 @@ export function DataTable<T>({
 
   return (
     <div className="flex flex-col gap-2">
+      {onAddRow ? (
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={onAddRow}
+            className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-white transition-colors"
+            style={{ background: "var(--brand)" }}
+          >
+            <span className="text-base leading-none">+</span> {addLabel}
+          </button>
+          <span className="text-xs text-ink-subtle tabular-nums">{rows.length} filas</span>
+        </div>
+      ) : null}
       <div className="overflow-x-auto rounded-xl border border-line">
         <table className="w-full border-collapse text-sm">
           <thead>
@@ -96,15 +109,6 @@ export function DataTable<T>({
           {footer ? <tfoot>{footer}</tfoot> : null}
         </table>
       </div>
-      {onAddRow ? (
-        <button
-          type="button"
-          onClick={onAddRow}
-          className="self-start inline-flex items-center gap-1.5 rounded-lg border border-dashed border-line px-3 py-1.5 text-sm font-semibold text-brand hover:bg-[var(--brand-soft)] transition-colors"
-        >
-          <span className="text-base leading-none">+</span> {addLabel}
-        </button>
-      ) : null}
     </div>
   );
 }

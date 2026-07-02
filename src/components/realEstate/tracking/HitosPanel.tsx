@@ -9,7 +9,7 @@ import {
   RE_MILESTONE_STATUS_LABEL,
   RE_MILESTONE_STATUSES,
   RE_MILESTONE_TEMPLATES,
-  newTrackingId,
+  makeMilestone,
   type REMilestone,
   type REMilestoneStatus,
 } from "@/src/lib/realEstateTracking";
@@ -49,17 +49,7 @@ export function HitosPanel({
   const update = (id: string, patch: Partial<REMilestone>) =>
     onChange(milestones.map((m) => (m.id === id ? { ...m, ...patch, updatedAt: new Date().toISOString() } : m)));
 
-  const add = (title: string) => {
-    const nowIso = new Date().toISOString();
-    const row: REMilestone = {
-      id: newTrackingId("ms"),
-      title,
-      status: "PENDIENTE",
-      createdAt: nowIso,
-      updatedAt: nowIso,
-    };
-    onChange([...milestones, row]);
-  };
+  const add = (title: string) => onChange([...milestones, makeMilestone(title)]);
 
   const remove = (row: REMilestone) => onChange(milestones.filter((m) => m.id !== row.id));
 

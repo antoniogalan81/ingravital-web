@@ -863,7 +863,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
             <span className="flex-1 min-w-0">
               <span className="block text-sm font-bold leading-tight">Seguimiento y gestión</span>
               <span className="block text-xs text-white/85 leading-tight mt-0.5">
-                Gastos · Ventas · Hitos · Rentabilidad · Media · Compartir · Informe
+                Panel · Económico · Ventas · Planificación · Inversores · Informe
               </span>
             </span>
             <span className="text-xl font-light opacity-80 transition-transform group-hover:translate-x-0.5">›</span>

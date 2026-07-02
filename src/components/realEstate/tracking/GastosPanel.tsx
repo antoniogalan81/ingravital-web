@@ -9,7 +9,7 @@ import {
   RE_EXPENSE_CATEGORIES,
   RE_EXPENSE_CATEGORY_LABEL,
   RE_EXPENSE_STATUS_LABEL,
-  newTrackingId,
+  makeExpense,
   type REExpense,
   type REExpenseCategory,
   type REExpenseStatus,
@@ -24,7 +24,6 @@ import {
   DateCellInput,
   type DataTableColumn,
 } from "@/src/components/ui/DataTable";
-import { StatTile } from "@/src/components/ui/StatTile";
 
 const CATEGORY_OPTS = RE_EXPENSE_CATEGORIES.map((c) => ({ value: c.key, label: c.label }));
 const STATUS_OPTS = (Object.keys(RE_EXPENSE_STATUS_LABEL) as REExpenseStatus[]).map((k) => ({
@@ -50,18 +49,7 @@ export function GastosPanel({
       expenses.map((e) => (e.id === id ? { ...e, ...patch, updatedAt: new Date().toISOString() } : e)),
     );
 
-  const addRow = () => {
-    const nowIso = new Date().toISOString();
-    const row: REExpense = {
-      id: newTrackingId("exp"),
-      category: "OTROS",
-      concept: "",
-      status: "PENDIENTE",
-      createdAt: nowIso,
-      updatedAt: nowIso,
-    };
-    onChange([...expenses, row]);
-  };
+  const addRow = () => onChange([...expenses, makeExpense()]);
 
   const remove = (row: REExpense) => onChange(expenses.filter((e) => e.id !== row.id));
 
@@ -182,16 +170,17 @@ export function GastosPanel({
 
   return (
     <div className="space-y-5">
-      {/* Totales */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <StatTile label="Estimado total" value={fmtEUR(totals.estimated)} />
-        <StatTile label="Real total" value={fmtEUR(totals.real)} />
-        <StatTile
+      {/* Totales compactos (los KPIs generales están en la barra-resumen fija) */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+        <Total label="Estimado" value={fmtEUR(totals.estimated)} />
+        <Total label="Real" value={fmtEUR(totals.real)} />
+        <Total
           label="Diferencia"
           value={totals.hasData ? fmtEUR(totals.diff) : "—"}
-          tone={!totals.hasData ? "default" : totals.diff <= 0 ? "positive" : "negative"}
+          color={!totals.hasData ? undefined : totals.diff <= 0 ? "var(--positive)" : "var(--negative)"}
         />
-        <StatTile label="Pendiente pago" value={totals.hasData ? fmtEUR(totals.pending) : "—"} tone="accent" />
+        <Total label="Pagado" value={fmtEUR(totals.paid)} />
+        <Total label="Pendiente" value={totals.hasData ? fmtEUR(totals.pending) : "—"} color="var(--brand)" />
       </div>
 
       {/* Tabla editable */}
@@ -232,6 +221,15 @@ export function GastosPanel({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function Total({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <span className="inline-flex items-baseline gap-1.5">
+      <span className="text-xs uppercase tracking-wide font-bold text-ink-subtle">{label}</span>
+      <span className="font-extrabold tabular-nums" style={color ? { color } : undefined}>{value}</span>
+    </span>
   );
 }
 

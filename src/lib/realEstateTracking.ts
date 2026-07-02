@@ -305,3 +305,20 @@ export function newTrackingId(prefix: string): string {
   const rnd = Math.random().toString(36).slice(2, 8);
   return `${prefix}_${Date.now().toString(36)}_${rnd}`;
 }
+
+// ── Fábricas de filas nuevas (compartidas por paneles y acciones rápidas del hub) ─
+
+export function makeExpense(): REExpense {
+  const now = new Date().toISOString();
+  return { id: newTrackingId("exp"), category: "OTROS", concept: "", status: "PENDIENTE", createdAt: now, updatedAt: now };
+}
+
+export function makeSale(): RESale {
+  const now = new Date().toISOString();
+  return { id: newTrackingId("sale"), title: "", status: "DISPONIBLE", createdAt: now, updatedAt: now };
+}
+
+export function makeMilestone(title = ""): REMilestone {
+  const now = new Date().toISOString();
+  return { id: newTrackingId("ms"), title, status: "PENDIENTE", createdAt: now, updatedAt: now };
+}
