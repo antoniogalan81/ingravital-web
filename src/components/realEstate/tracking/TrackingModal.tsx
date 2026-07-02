@@ -12,9 +12,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { REOperation } from "@/src/lib/realEstate";
 import { calcResults } from "@/src/lib/realEstateCalc";
 import {
-  makeExpense,
-  makeMilestone,
-  makeSale,
   type REExpense,
   type REInvestorSplit,
   type REMediaItem,
@@ -26,6 +23,7 @@ import {
 import { stageOf } from "@/src/lib/pipeline";
 import { StageBadge } from "../pipeline/StageBadge";
 import { SummaryBar } from "./SummaryBar";
+import { InicioPanel } from "./InicioPanel";
 import { ResumenPanel } from "./ResumenPanel";
 import { GastosPanel } from "./GastosPanel";
 import { VentasPanel } from "./VentasPanel";
@@ -33,10 +31,12 @@ import { HitosPanel } from "./HitosPanel";
 import { InversoresPanel } from "./InversoresPanel";
 import { InformePanel } from "./InformePanel";
 import { InvestorView } from "./InvestorView";
+import { QuickEntryModal, type QuickKind } from "./QuickEntryModal";
 
-type TabKey = "resumen" | "economico" | "ventas" | "planificacion" | "inversores" | "informe";
+type TabKey = "inicio" | "resumen" | "economico" | "ventas" | "planificacion" | "inversores" | "informe";
 
 const TABS: { key: TabKey; label: string }[] = [
+  { key: "inicio", label: "Inicio" },
   { key: "resumen", label: "Resumen" },
   { key: "economico", label: "Económico" },
   { key: "ventas", label: "Ventas" },
@@ -69,8 +69,9 @@ export function TrackingModal({
   onPersist: (patch: Partial<REOperation>) => void;
   onClose: () => void;
 }) {
-  const [tab, setTab] = useState<TabKey>("resumen");
+  const [tab, setTab] = useState<TabKey>("inicio");
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [quick, setQuick] = useState<QuickKind | null>(null);
 
   const results = useMemo(() => calcResults(op), [op]);
   const now = useMemo(() => new Date().toISOString(), []);
@@ -82,7 +83,8 @@ export function TrackingModal({
   // Escape para cerrar + bloqueo de scroll del fondo mientras el workspace está abierto.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !previewOpen) onClose();
+      // Esc cierra primero el modal de entrada rápida / preview (gestionados aparte).
+      if (e.key === "Escape" && !previewOpen && !quick) onClose();
     };
     document.addEventListener("keydown", onKey);
     const prevOverflow = document.body.style.overflow;
@@ -91,21 +93,24 @@ export function TrackingModal({
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [onClose, previewOpen]);
+  }, [onClose, previewOpen, quick]);
 
-  // Acciones rápidas: añaden fila y saltan a la pestaña correspondiente.
-  const addGasto = useCallback(() => {
-    onPersist({ expenses: [...(op.expenses ?? []), makeExpense()] });
-    setTab("economico");
-  }, [op.expenses, onPersist]);
-  const addVenta = useCallback(() => {
-    onPersist({ sales: [...(op.sales ?? []), makeSale()] });
-    setTab("ventas");
-  }, [op.sales, onPersist]);
-  const addHito = useCallback(() => {
-    onPersist({ milestones: [...(op.milestones ?? []), makeMilestone()] });
-    setTab("planificacion");
-  }, [op.milestones, onPersist]);
+  // Guardado desde la entrada rápida → añade al MISMO array de la operación (JSON sync).
+  const saveExpense = useCallback(
+    (e: REExpense) => onPersist({ expenses: [...(op.expenses ?? []), e] }),
+    [op.expenses, onPersist],
+  );
+  const saveSale = useCallback(
+    (s: RESale) => onPersist({ sales: [...(op.sales ?? []), s] }),
+    [op.sales, onPersist],
+  );
+  const saveMilestone = useCallback(
+    (m: REMilestone) => onPersist({ milestones: [...(op.milestones ?? []), m] }),
+    [op.milestones, onPersist],
+  );
+
+  // Navegación desde el Inicio rápido a la pestaña avanzada correspondiente.
+  const navigate = useCallback((target: TabKey) => setTab(target), []);
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-white">
@@ -134,11 +139,11 @@ export function TrackingModal({
                 Cerrar
               </button>
             </div>
-            {/* Acciones rápidas: crear (primarias) · ver (secundarias) */}
+            {/* Acciones rápidas: crear (primarias, abren entrada rápida) · ver (secundarias) */}
             <div className="flex flex-wrap items-center gap-2">
-              <QuickAction label="+ Gasto" onClick={addGasto} primary />
-              <QuickAction label="+ Venta" onClick={addVenta} primary />
-              <QuickAction label="+ Hito" onClick={addHito} primary />
+              <QuickAction label="+ Gasto" onClick={() => setQuick("gasto")} primary />
+              <QuickAction label="+ Venta" onClick={() => setQuick("venta")} primary />
+              <QuickAction label="+ Hito" onClick={() => setQuick("hito")} primary />
               <span className="mx-0.5 h-5 w-px bg-[var(--line)]" aria-hidden />
               <QuickAction label="Media" onClick={() => setTab("resumen")} />
               <QuickAction label="Vista inversor" onClick={() => setPreviewOpen(true)} />
@@ -174,6 +179,9 @@ export function TrackingModal({
 
         {/* Body */}
         <div key={tab} className="reveal-fast flex-1 overflow-y-auto px-4 sm:px-6 py-5 bg-[var(--surface-alt)]">
+          {tab === "inicio" && (
+            <InicioPanel op={op} onQuick={(k) => setQuick(k)} onNavigate={(target) => navigate(target)} />
+          )}
           {tab === "resumen" && (
             <ResumenPanel
               op={op}
@@ -184,9 +192,9 @@ export function TrackingModal({
               onChangeManagement={(patch) => onPersist(patch)}
             />
           )}
-          {tab === "economico" && <GastosPanel op={op} onChange={(expenses: REExpense[]) => onPersist({ expenses })} />}
-          {tab === "ventas" && <VentasPanel op={op} results={results} onChange={(sales: RESale[]) => onPersist({ sales })} />}
-          {tab === "planificacion" && <HitosPanel op={op} onChange={(milestones: REMilestone[]) => onPersist({ milestones })} />}
+          {tab === "economico" && <GastosPanel op={op} onChange={(expenses: REExpense[]) => onPersist({ expenses })} onQuickAdd={() => setQuick("gasto")} />}
+          {tab === "ventas" && <VentasPanel op={op} results={results} onChange={(sales: RESale[]) => onPersist({ sales })} onQuickAdd={() => setQuick("venta")} />}
+          {tab === "planificacion" && <HitosPanel op={op} onChange={(milestones: REMilestone[]) => onPersist({ milestones })} onQuickAdd={() => setQuick("hito")} />}
           {tab === "inversores" && (
             <InversoresPanel
               op={op}
@@ -199,6 +207,17 @@ export function TrackingModal({
           {tab === "informe" && <InformePanel op={op} generatedAt={generatedAt} onPreviewInvestor={() => setPreviewOpen(true)} />}
         </div>
       </div>
+
+      {quick ? (
+        <QuickEntryModal
+          key={quick}
+          kind={quick}
+          onSaveExpense={saveExpense}
+          onSaveSale={saveSale}
+          onSaveMilestone={saveMilestone}
+          onClose={() => setQuick(null)}
+        />
+      ) : null}
 
       {previewOpen ? <InvestorView op={op} results={results} now={now} onClose={() => setPreviewOpen(false)} /> : null}
     </div>
