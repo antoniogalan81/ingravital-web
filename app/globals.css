@@ -34,6 +34,15 @@
   --accent-soft: #f6efdf;
 
   --backdrop-deep: #0e1726; /* hero oscuro del dashboard */
+
+  /* Elevación en capas (Fase 2 — sistema visual premium). */
+  --shadow-xs: 0 1px 2px rgba(14, 23, 38, 0.04);
+  --shadow-sm: 0 1px 2px rgba(14, 23, 38, 0.04), 0 6px 16px -10px rgba(14, 23, 38, 0.14);
+  --shadow-md: 0 2px 4px rgba(14, 23, 38, 0.05), 0 14px 32px -16px rgba(14, 23, 38, 0.20);
+  --shadow-lg: 0 10px 24px -10px rgba(14, 23, 38, 0.18), 0 28px 56px -28px rgba(14, 23, 38, 0.30);
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --re-zebra-bg: #f6f8fb; /* zebra opaca (surface-alt sobre blanco) para columna fija */
 }
 
 @theme inline {
@@ -72,9 +81,54 @@ body {
   .re-card {
     background: var(--surface);
     border: 1px solid var(--line);
-    border-radius: 16px;
-    box-shadow: 0 6px 16px rgba(14, 23, 38, 0.05);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
   }
+
+  /* Cifra héroe: número dominante de una tarjeta/KPI. */
+  .kpi-hero {
+    font-size: 1.875rem;
+    line-height: 1.05;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+
+  /* Chip de variación/delta junto a un KPI (positivo/negativo/neutro). */
+  .stat-delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+    border-radius: 9999px;
+    padding: 0.05rem 0.4rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-delta-up { background: var(--positive-soft); color: var(--positive); }
+  .stat-delta-down { background: var(--negative-soft); color: var(--negative); }
+  .stat-delta-flat { background: #f1f4f8; color: var(--ink-muted); }
+
+  /* Tabla premium: cabecera pegajosa con hairline, filas con hover y zebra sutil. */
+  .re-th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--surface-alt);
+    box-shadow: inset 0 -1px 0 var(--line);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-subtle);
+    white-space: nowrap;
+  }
+  .re-tr { transition: background 0.12s ease; }
+  .re-zebra { background: var(--re-zebra-bg); }
+  .re-tr:hover { background: var(--brand-soft); }
+  /* Primera columna fija: hereda el fondo de la fila (zebra/hover incluidos). */
+  .re-sticky-cell { position: sticky; left: 0; z-index: 1; background: inherit; }
 
   .section-label {
     font-size: 0.6875rem;
@@ -305,9 +359,22 @@ body {
 .in-delay-4 { animation-delay: 0.24s; }
 .in-delay-5 { animation-delay: 0.30s; }
 
+/* Entrada rápida para tarjetas/KPIs (Fase 1: cockpit de inversiones). El delay
+   de cascada se aplica inline por índice. Mismo easing del sistema.            */
+.reveal-fast { opacity: 0; animation: in-rise 0.24s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Barra que crece al renderizar (scaleX → sin reflow, apto compositor). El ancho
+   real lo fija el contenedor; esta animación solo escala el relleno.            */
+@keyframes bar-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.bar-anim { transform-origin: left center; animation: bar-grow 0.55s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
 @media (prefers-reduced-motion: reduce) {
   .re-card-interactive, .action-card, .btn-primary, .btn-secondary { transition: none; }
-  .in-reveal { animation: none; opacity: 1; transform: none; }
+  .in-reveal, .reveal-fast { animation: none; opacity: 1; transform: none; }
+  .bar-anim { animation: none; transform: none; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

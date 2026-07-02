@@ -6,8 +6,19 @@ import { useSync } from "@/src/sync/SyncContext";
 import { calcResults, fmtEUR, fmtPct, CATEGORY_INFO, type RealEstateCategory } from "@/src/lib/realEstateCalc";
 import type { REOperation, REResults } from "@/src/lib/realEstate";
 import { DEFAULT_TASAS } from "@/src/lib/realEstate";
+import { formatShortDate } from "@/src/lib/date";
 import { RealEstateModal } from "./RealEstateModal";
 import { RealEstateWizard } from "./RealEstateWizard";
+import { stageOf, stagePriority, type PipelineStage, type StageFilter, PIPELINE_STAGES, stageDef } from "@/src/lib/pipeline";
+import { StageSelect } from "./pipeline/StageSelect";
+import { StageBadge } from "./pipeline/StageBadge";
+import { PipelineFilters, type StageCounts } from "./pipeline/PipelineFilters";
+import { ViewModeToggle, type ViewMode } from "./pipeline/ViewModeToggle";
+import { OperationsTable, type OperationRow } from "./OperationsTable";
+import { PortfolioHeader } from "./PortfolioHeader";
+import { KanbanBoard } from "./KanbanBoard";
+import { priorityDef, temperatureDef } from "@/src/lib/management";
+import { expenseTotals, salesStats } from "@/src/lib/realEstateTrackingCalc";
 
 function generateId(): string {
   return crypto.randomUUID();
@@ -505,16 +516,34 @@ interface RECardProps {
   onToggleExpand?: () => void;
   // Variant card: action to convert back to independent operation
   onExtract?: () => void;
+  // Cambio rápido de etapa del pipeline
+  onChangeStage?: (stage: PipelineStage) => void;
+  // Momento actual (ISO) para calcular vencimientos sin impureza en render
+  now: string;
 }
 
 function RECard({
   op, onOpen, onDuplicate, onDelete,
   compareMode, selected, onToggleSelect,
   isGroupCard, isExpanded, onToggleExpand,
-  onExtract,
+  onExtract, onChangeStage, now,
 }: RECardProps) {
   const res = useMemo(() => calcResults(op), [op]);
+  const exp = useMemo(() => expenseTotals(op), [op]);
+  const sales = useMemo(() => salesStats(op), [op]);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const stage = stageOf(op);
+  const tipo = CATEGORY_INFO[(op._cat ?? "vivienda") as RealEstateCategory]?.label ?? null;
+  // KPI héroe: rentabilidad de venta si hay venta prevista; si no, inversión total.
+  const heroIsYield = res.totalSales > 0;
+  // Indicador útil (solo con datos reales de seguimiento; si no, sin barra).
+  const bar =
+    exp.paidPct != null
+      ? { label: "Gastos pagados", value: exp.paidPct, color: "var(--positive)" }
+      : sales.soldPct != null
+      ? { label: "Ventas cerradas", value: sales.soldPct, color: "var(--brand)" }
+      : null;
 
   const handleClick = () => {
     if (compareMode) {
@@ -527,19 +556,17 @@ function RECard({
   return (
     <div
       onClick={handleClick}
-      className={`bg-surface rounded-2xl border p-4 cursor-pointer transition-all shadow-[0_6px_16px_rgba(14,23,38,0.05)] ${
-        compareMode
-          ? selected
-            ? "border-brand ring-2 ring-[var(--brand-soft)] shadow-md"
-            : "border-line hover:border-brand hover:shadow-md"
-          : "border-line hover:border-[var(--line-strong)] hover:shadow-md"
+      className={`re-card re-card-interactive p-4 cursor-pointer ${
+        compareMode && selected ? "!border-brand ring-2 ring-[var(--brand-soft)]" : ""
       }`}
+      style={{ borderLeft: `3px solid ${stageDef(stage).color}` }}
     >
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-start gap-2 flex-1 min-w-0">
+      {/* Fila superior: etapa + tipo + acciones */}
+      <div className="flex items-start justify-between gap-2 mb-2.5">
+        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
           {compareMode && (
-            <div
-              className={`mt-0.5 w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
+            <span
+              className={`w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
                 selected ? "bg-blue-600 border-blue-600" : "border-slate-300"
               }`}
             >
@@ -548,22 +575,17 @@ function RECard({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                 </svg>
               )}
-            </div>
+            </span>
           )}
-          <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-bold text-ink leading-tight tracking-tight">
-              {op.name}
-            </h3>
-            {op.isDraft && (
-              <span className="text-[10px] font-medium text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded mt-1 inline-block">
-                Incompleta
-              </span>
-            )}
-          </div>
+          {!compareMode && onChangeStage ? (
+            <StageSelect stage={stage} onChange={(s) => onChangeStage(s)} />
+          ) : (
+            <StageBadge stage={stage} />
+          )}
+          {tipo && <span className="text-[11px] text-ink-subtle truncate">{tipo}</span>}
         </div>
 
-        <div className="flex items-center gap-1 flex-shrink-0 ml-2">
-          {/* Expand/collapse toggle for group cards */}
+        <div className="flex items-center gap-1 flex-shrink-0">
           {isGroupCard && onToggleExpand && (
             <button
               data-no-drag
@@ -572,59 +594,33 @@ function RECard({
               title={isExpanded ? "Contraer variantes" : "Expandir variantes"}
               className="p-1 text-slate-400 hover:text-blue-500 transition-colors rounded"
             >
-              <svg
-                className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-90" : ""}`}
-                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-              >
+              <svg className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
               </svg>
             </button>
           )}
-
           {!compareMode && (
             <div data-no-drag onClick={(e) => e.stopPropagation()} className="flex items-center gap-1">
               {confirmDelete ? (
                 <>
-                  <button
-                    onClick={() => onDelete()}
-                    className="text-[10px] font-medium text-white bg-red-500 hover:bg-red-600 px-2 py-0.5 rounded transition-colors"
-                  >
-                    Eliminar
-                  </button>
-                  <button
-                    onClick={() => setConfirmDelete(false)}
-                    className="text-[10px] font-medium text-slate-500 hover:text-slate-700 px-2 py-0.5 rounded transition-colors"
-                  >
-                    Cancelar
-                  </button>
+                  <button onClick={() => onDelete()} className="text-[10px] font-medium text-white bg-red-500 hover:bg-red-600 px-2 py-0.5 rounded transition-colors">Eliminar</button>
+                  <button onClick={() => setConfirmDelete(false)} className="text-[10px] font-medium text-slate-500 hover:text-slate-700 px-2 py-0.5 rounded transition-colors">Cancelar</button>
                 </>
               ) : (
                 <>
                   {onExtract && (
-                    <button
-                      onClick={() => onExtract()}
-                      title="Convertir en operación independiente"
-                      className="p-1 text-slate-400 hover:text-orange-500 transition-colors rounded"
-                    >
+                    <button onClick={() => onExtract()} title="Convertir en operación independiente" className="p-1 text-slate-400 hover:text-orange-500 transition-colors rounded">
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                       </svg>
                     </button>
                   )}
-                  <button
-                    onClick={() => onDuplicate()}
-                    title="Duplicar operación"
-                    className="p-1 text-slate-400 hover:text-blue-500 transition-colors rounded"
-                  >
+                  <button onClick={() => onDuplicate()} title="Duplicar operación" className="p-1 text-slate-400 hover:text-blue-500 transition-colors rounded">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                     </svg>
                   </button>
-                  <button
-                    onClick={() => setConfirmDelete(true)}
-                    title="Eliminar operación"
-                    className="p-1 text-slate-400 hover:text-red-500 transition-colors rounded"
-                  >
+                  <button onClick={() => setConfirmDelete(true)} title="Eliminar operación" className="p-1 text-slate-400 hover:text-red-500 transition-colors rounded">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                     </svg>
@@ -636,18 +632,82 @@ function RECard({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-xl p-3" style={{ background: "var(--positive-soft)" }}>
-          <div className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: "var(--positive)" }}>Alquiler</div>
-          <div className="text-lg font-extrabold tabular-nums" style={{ color: "var(--positive)" }}>{fmtPct(res.rentYield)}</div>
-          <div className="text-xs tabular-nums" style={{ color: "var(--positive)" }}>{fmtEUR(res.monthlyRentBenefit)}/mes</div>
-        </div>
-        <div className="rounded-xl p-3" style={{ background: "var(--brand-soft)" }}>
-          <div className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: "var(--brand)" }}>Venta</div>
-          <div className="text-lg font-extrabold tabular-nums" style={{ color: "var(--brand)" }}>{fmtPct(res.saleYield)}</div>
-          <div className="text-xs tabular-nums" style={{ color: "var(--brand)" }}>{fmtEUR(res.saleBenefit)}</div>
+      {/* Título + ubicación + fecha */}
+      <div className="min-w-0 mb-3">
+        <h3 className="text-base font-extrabold text-ink leading-tight tracking-tight truncate">{op.name || "Operación"}</h3>
+        <div className="flex items-center gap-1.5 text-xs text-ink-subtle mt-0.5 min-w-0">
+          {op.address ? <span className="truncate">{op.address}</span> : null}
+          {op.address && formatShortDate(op.updatedAt) ? <span aria-hidden>·</span> : null}
+          {formatShortDate(op.updatedAt) ? <span className="whitespace-nowrap">{formatShortDate(op.updatedAt)}</span> : null}
+          {op.isDraft ? <span className="pill pill-warning ml-0.5">Incompleta</span> : null}
         </div>
       </div>
+
+      {/* Gestión: prioridad · temperatura · próxima acción (solo si hay dato real) */}
+      {(() => {
+        const prio = priorityDef(op.priority);
+        const temp = temperatureDef(op.temperature);
+        const hasAny = prio || temp || (op.nextActionText && op.nextActionText.trim());
+        if (!hasAny) return null;
+        const dd = op.nextActionDueDate ? Math.round((Date.parse(op.nextActionDueDate) - Date.parse(now.slice(0, 10))) / 86_400_000) : null;
+        return (
+          <div className="mb-3 flex flex-wrap items-center gap-1.5">
+            {prio ? <span className="pill" style={{ background: prio.soft, color: prio.color }}>{prio.label}</span> : null}
+            {temp ? <span className="pill" style={{ background: temp.soft, color: temp.color }}>{temp.icon} {temp.label}</span> : null}
+            {op.nextActionText && op.nextActionText.trim() ? (
+              <span className="text-[11px] text-ink-muted truncate max-w-full">→ {op.nextActionText}</span>
+            ) : null}
+            {dd != null && dd < 0 ? <span className="pill pill-negative">Vencida</span> : null}
+          </div>
+        );
+      })()}
+
+      {/* KPI héroe dominante */}
+      <div className="mb-3 flex items-end gap-2">
+        <div className="min-w-0">
+          <p className="kpi-label">{heroIsYield ? "Rentab. venta est." : "Inversión estimada"}</p>
+          <p
+            className="kpi-hero"
+            style={{ color: heroIsYield ? (res.saleYield >= 0 ? "var(--positive)" : "var(--negative)") : "var(--ink)" }}
+          >
+            {heroIsYield ? fmtPct(res.saleYield) : fmtEUR(res.totalInvestment)}
+          </p>
+        </div>
+        {heroIsYield ? (
+          <span className={`stat-delta mb-1 ${res.saleBenefit >= 0 ? "stat-delta-up" : "stat-delta-down"}`}>
+            {res.saleBenefit >= 0 ? "▲" : "▼"} {fmtEUR(res.saleBenefit)}
+          </span>
+        ) : null}
+      </div>
+
+      {/* Trío secundario */}
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        <RECardMini label="Inversión" value={fmtEUR(res.totalInvestment)} />
+        <RECardMini label="Venta est." value={fmtEUR(res.totalSales)} />
+        <RECardMini label="Beneficio" value={fmtEUR(res.saleBenefit)} color={res.saleBenefit >= 0 ? "var(--positive)" : "var(--negative)"} />
+      </div>
+
+      {/* Indicador (solo con datos reales de seguimiento) */}
+      {bar ? (
+        <div>
+          <div className="flex items-center justify-between text-[11px] mb-1">
+            <span className="text-ink-subtle">{bar.label}</span>
+            <span className="tabular-nums font-semibold text-ink">{Math.round(bar.value * 100)}%</span>
+          </div>
+          <div className="h-1.5 w-full rounded-full bg-[var(--surface-alt)] overflow-hidden border border-line">
+            <div className="bar-anim h-full rounded-full" style={{ width: `${Math.round(bar.value * 100)}%`, background: bar.color }} />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RECardMini({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px] uppercase tracking-wide font-bold text-ink-subtle truncate">{label}</p>
+      <p className="text-sm font-bold tabular-nums truncate" style={color ? { color } : { color: "var(--ink)" }}>{value}</p>
     </div>
   );
 }
@@ -703,7 +763,12 @@ function REVariantRow({
           </div>
         )}
         <div className="flex-1 min-w-0 flex items-center gap-2 justify-between">
-          <span className="text-sm font-bold text-ink truncate">{op.name}</span>
+          <span className="min-w-0 truncate text-sm font-bold text-ink">
+            {op.name}
+            {formatShortDate(op.updatedAt) && (
+              <span className="ml-1.5 font-normal text-ink-subtle">· {formatShortDate(op.updatedAt)}</span>
+            )}
+          </span>
           {unitSummary !== "—" && (
             <span className="text-xs text-ink-subtle tabular-nums whitespace-nowrap flex-shrink-0">{unitSummary}</span>
           )}
@@ -773,11 +838,13 @@ function buildWebListItems(ops: REOperation[], expandedGroups: Set<string>): Web
     if (seen.has(op.variantGroupId)) continue;
     seen.add(op.variantGroupId);
     const groupOps = ops.filter((o) => o.variantGroupId === op.variantGroupId);
-    const mainOp = groupOps[0]; // first by order is always the principal
+    // Principal = variante marcada como main; si ninguna, la primera del orden.
+    const mainOp = groupOps.find((o) => o.isMainVariant) ?? groupOps[0];
+    const variants = groupOps.filter((o) => o.id !== mainOp.id);
     items.push({ kind: "group-card", groupId: op.variantGroupId, groupName: op.variantGroupName ?? op.variantGroupId, mainOp, count: groupOps.length });
     if (expandedGroups.has(op.variantGroupId)) {
-      // slice(1) → exclude the main (shown in group-card); fixes cardRef conflict
-      items.push({ kind: "group-expanded", groupId: op.variantGroupId, variants: groupOps.slice(1) });
+      // Excluye el main (mostrado en la group-card) para no duplicar cardRef.
+      items.push({ kind: "group-expanded", groupId: op.variantGroupId, variants });
     }
   }
   return items;
@@ -808,17 +875,41 @@ export function RealEstateSection() {
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const suppressClickRef = useRef(false);
 
+  // Pipeline / vista: filtro de etapa, búsqueda y modo (tarjetas/tabla, persistido).
+  const [stageFilter, setStageFilter] = useState<StageFilter>("all");
+  const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window === "undefined") return "cards";
+    const v = localStorage.getItem("re_viewMode");
+    return v === "table" || v === "kanban" ? v : "cards";
+  });
+  const changeViewMode = useCallback((m: ViewMode) => {
+    setViewMode(m);
+    if (typeof window !== "undefined") localStorage.setItem("re_viewMode", m);
+  }, []);
+  const now = useMemo(() => new Date().toISOString(), []);
+
   const activeOps = useMemo(
     () => realEstateOperations.filter((op) => !op.deleted),
     [realEstateOperations]
   );
 
+  // Orden: prioridad de etapa (Comprado→Captación) y, dentro de cada etapa, las más
+  // nuevas primero. "Más nueva" = updatedAt (client_updated_at del sync) desc; fallback
+  // createdAt desc; fallback `order` desc (documentado). Sin fechas inventadas.
   const orderedOps = useMemo(() => {
+    const recency = (op: REOperation) => op.updatedAt || op.createdAt || "";
     return [...activeOps].sort((a, b) => {
-      const ao = a.order ?? 0;
-      const bo = b.order ?? 0;
-      if (ao !== bo) return ao - bo;
-      return (a.createdAt ?? "") < (b.createdAt ?? "") ? -1 : 1;
+      const pa = stagePriority(a);
+      const pb = stagePriority(b);
+      if (pa !== pb) return pa - pb;
+      const ra = recency(a);
+      const rb = recency(b);
+      if (ra !== rb) return ra < rb ? 1 : -1;
+      const ca = a.createdAt ?? "";
+      const cb = b.createdAt ?? "";
+      if (ca !== cb) return ca < cb ? 1 : -1;
+      return (b.order ?? 0) - (a.order ?? 0);
     });
   }, [activeOps]);
 
@@ -835,6 +926,108 @@ export function RealEstateSection() {
       return next;
     });
   }, []);
+
+  // Representante de cada item de lista (op suelta o principal del grupo).
+  const repOf = (item: WebListItem): REOperation | null =>
+    item.kind === "op" ? item.op : item.kind === "group-card" ? item.mainOp : null;
+
+  // Contadores por etapa (sobre representantes, no variantes) — vista global estable.
+  const stageCounts = useMemo<StageCounts>(() => {
+    const c: StageCounts = { all: 0 };
+    for (const s of PIPELINE_STAGES) c[s.key] = 0;
+    for (const item of webListItems) {
+      const rep = repOf(item);
+      if (!rep) continue;
+      c.all += 1;
+      const key = stageOf(rep); // sin etapa → "captacion"
+      c[key] = (c[key] ?? 0) + 1;
+    }
+    return c;
+  }, [webListItems]);
+
+  // Predicado de filtro (etapa + búsqueda por nombre/dirección, local).
+  const matchOp = useCallback(
+    (op: REOperation): boolean => {
+      const stageOk = stageFilter === "all" || stageOf(op) === stageFilter;
+      if (!stageOk) return false;
+      const q = search.trim().toLowerCase();
+      if (!q) return true;
+      return `${op.name ?? ""} ${op.address ?? ""}`.toLowerCase().includes(q);
+    },
+    [stageFilter, search]
+  );
+
+  // Items de tarjetas filtrados (conserva las variantes expandidas de un grupo visible).
+  const displayedItems = useMemo(() => {
+    const out: WebListItem[] = [];
+    const includedGroups = new Set<string>();
+    for (const item of webListItems) {
+      if (item.kind === "group-expanded") {
+        if (includedGroups.has(item.groupId)) out.push(item);
+        continue;
+      }
+      const rep = repOf(item);
+      if (rep && matchOp(rep)) {
+        out.push(item);
+        if (item.kind === "group-card") includedGroups.add(item.groupId);
+      }
+    }
+    return out;
+  }, [webListItems, matchOp]);
+
+  // Representantes (una entrada por operación/grupo) para la cabecera de cartera.
+  const deals = useMemo(
+    () => webListItems.map(repOf).filter((o): o is REOperation => o != null),
+    [webListItems]
+  );
+
+  // ¿Algún representante coincide con el filtro/búsqueda activos?
+  const hasMatches = useMemo(
+    () => webListItems.some((i) => { const r = repOf(i); return r != null && matchOp(r); }),
+    [webListItems, matchOp]
+  );
+
+  // Filas para la vista tabla (principal + variantes de cada grupo visible).
+  const tableRows = useMemo<OperationRow[]>(() => {
+    const rows: OperationRow[] = [];
+    for (const item of webListItems) {
+      if (item.kind === "op") {
+        if (matchOp(item.op)) rows.push({ key: item.op.id, op: item.op, variants: [] });
+      } else if (item.kind === "group-card") {
+        if (!matchOp(item.mainOp)) continue;
+        const members = orderedOps.filter((o) => o.variantGroupId === item.groupId);
+        rows.push({ key: item.groupId, op: item.mainOp, groupId: item.groupId, variants: members.filter((o) => o.id !== item.mainOp.id) });
+      }
+    }
+    return rows;
+  }, [webListItems, orderedOps, matchOp]);
+
+  // Cambio de etapa. Si la operación pertenece a un grupo de variantes, se aplica
+  // a TODOS los miembros del grupo (el mismo negocio no debe partirse entre etapas).
+  const handleChangeStage = useCallback(
+    (op: REOperation, stage: PipelineStage) => {
+      const members = op.variantGroupId
+        ? activeOps.filter((o) => o.variantGroupId === op.variantGroupId)
+        : [op];
+      const nowIso = new Date().toISOString();
+      let changed = false;
+      for (const m of members) {
+        if (stageOf(m) !== stage) {
+          setRealEstateOperation({ ...m, pipelineStage: stage, updatedAt: nowIso });
+          changed = true;
+        }
+      }
+      if (changed) toast.success("Etapa actualizada", { description: stageDef(stage).label });
+    },
+    [activeOps, setRealEstateOperation]
+  );
+
+  // Búsqueda (sin etapa) para Kanban: muestra todas las columnas, filtra por texto.
+  const kanbanDeals = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return deals;
+    return deals.filter((op) => `${op.name ?? ""} ${op.address ?? ""}`.toLowerCase().includes(q));
+  }, [deals, search]);
 
   // ── Variant group actions ────────────────────────────────────────────────
 
@@ -1232,6 +1425,8 @@ export function RealEstateSection() {
   return (
     <>
       <section>
+        {activeOps.length > 0 && <PortfolioHeader ops={deals} />}
+
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <button
@@ -1309,6 +1504,37 @@ export function RealEstateSection() {
 
         {expanded && (
           <>
+            {activeOps.length > 0 && !compareMode && (
+              <div className="flex flex-col gap-2 mb-3">
+                {viewMode !== "kanban" ? (
+                  <PipelineFilters counts={stageCounts} active={stageFilter} onChange={setStageFilter} />
+                ) : null}
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1 max-w-xs">
+                    <input
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Buscar por nombre o dirección…"
+                      className="w-full rounded-lg border border-line pl-3 pr-8 py-1.5 text-sm text-ink placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                    />
+                    {search && (
+                      <button
+                        type="button"
+                        onClick={() => setSearch("")}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm"
+                        title="Limpiar búsqueda"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                  <div className="ml-auto">
+                    <ViewModeToggle mode={viewMode} onChange={changeViewMode} />
+                  </div>
+                </div>
+              </div>
+            )}
+
             {activeOps.length === 0 ? (
               <div className="empty-state">
                 <span className="empty-state-icon">
@@ -1324,9 +1550,57 @@ export function RealEstateSection() {
                   + Nueva operación
                 </button>
               </div>
+            ) : viewMode === "kanban" ? (
+              kanbanDeals.length === 0 ? (
+                <div className="empty-state">
+                  <p className="text-lg font-extrabold text-ink tracking-tight mb-1">Sin resultados</p>
+                  <p className="text-sm text-ink-muted max-w-md mx-auto mb-5">
+                    {search.trim() ? `Ninguna operación coincide con “${search.trim()}”.` : "No hay operaciones."}
+                  </p>
+                  {search.trim() ? (
+                    <button type="button" onClick={() => setSearch("")} className="btn-secondary">Limpiar búsqueda</button>
+                  ) : null}
+                </div>
+              ) : (
+                <div key="view-kanban" className="reveal-fast">
+                  <KanbanBoard
+                    deals={kanbanDeals}
+                    now={now}
+                    onChangeStage={handleChangeStage}
+                    onOpen={(op) => { if (op.isDraft) setWizardOp(op); else setSelectedId(op.id); }}
+                  />
+                </div>
+              )
+            ) : !hasMatches ? (
+              <div className="empty-state">
+                <span className="empty-state-icon">
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z" />
+                  </svg>
+                </span>
+                <p className="text-lg font-extrabold text-ink tracking-tight mb-1">Sin resultados</p>
+                <p className="text-sm text-ink-muted max-w-md mx-auto leading-relaxed mb-5">
+                  {search.trim()
+                    ? `Ninguna operación coincide con “${search.trim()}”.`
+                    : "Ninguna operación en esta etapa del pipeline."}
+                </p>
+                <button type="button" onClick={() => { setStageFilter("all"); setSearch(""); }} className="btn-secondary">
+                  Limpiar filtros
+                </button>
+              </div>
+            ) : viewMode === "table" ? (
+              <div key="view-table" className="reveal-fast">
+                <OperationsTable
+                  rows={tableRows}
+                  onOpen={(op) => { if (op.isDraft) setWizardOp(op); else setSelectedId(op.id); }}
+                  onChangeStage={handleChangeStage}
+                  expandedGroups={expandedGroups}
+                  onToggleGroup={toggleGroup}
+                />
+              </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
-                {webListItems.map((item) => {
+              <div key="view-cards" className="reveal-fast grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
+                {displayedItems.map((item) => {
 
                   // ── Group expanded variants — compact rows ──────────────────
                   if (item.kind === "group-expanded") {
@@ -1420,6 +1694,8 @@ export function RealEstateSection() {
                         isGroupCard={isGroupCard}
                         isExpanded={isGroupExpanded}
                         onToggleExpand={groupId ? () => toggleGroup(groupId) : undefined}
+                        onChangeStage={(s) => handleChangeStage(op, s)}
+                        now={now}
                       />
                     </div>
                   );

@@ -1,5 +1,17 @@
 // src/lib/realEstate.ts — Tipos Inversión Inmobiliaria (idénticos a APP/models/realEstate.ts)
 
+import type {
+  REExpense,
+  REInvestorSplit,
+  REMediaItem,
+  REMilestone,
+  REProgress,
+  RESale,
+  REShareSettings,
+} from "./realEstateTracking";
+import type { PipelineStage } from "./pipeline";
+import type { Priority, Temperature } from "./management";
+
 export type UnitType = "VIVIENDA" | "GARAJE" | "TRASTERO";
 
 export type REUnit = {
@@ -103,6 +115,26 @@ export type REOperation = {
   variantGroupName?: string;
   variantName?: string;
   isMainVariant?: boolean;
+
+  // Etapa del pipeline/embudo (opcional; ausente = "Sin clasificar"). Ver ./pipeline.
+  pipelineStage?: PipelineStage;
+
+  // Gestión operativa (opcional, JSON, sin migración). Ver ./management.
+  priority?: Priority;
+  temperature?: Temperature;
+  probability?: number; // 0-100
+  nextActionText?: string;
+  nextActionDueDate?: string; // ISO yyyy-mm-dd
+
+  // ── Capa de SEGUIMIENTO Y GESTIÓN (anidada, persiste en el JSON de la operación;
+  //    no requiere migración). Shapes en ./realEstateTracking. Compatible con APP. ──
+  expenses?: REExpense[];
+  sales?: RESale[];
+  milestones?: REMilestone[];
+  media?: REMediaItem[];
+  progress?: REProgress;
+  investorSplit?: REInvestorSplit;
+  share?: REShareSettings;
 };
 
 export const DEFAULT_TASAS: RETasa[] = [
