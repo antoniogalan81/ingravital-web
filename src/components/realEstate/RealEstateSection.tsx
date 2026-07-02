@@ -11,9 +11,12 @@ import { RealEstateModal } from "./RealEstateModal";
 import { RealEstateWizard } from "./RealEstateWizard";
 import { stageOf, stagePriority, type PipelineStage, type StageFilter, PIPELINE_STAGES, stageDef } from "@/src/lib/pipeline";
 import { StageSelect } from "./pipeline/StageSelect";
+import { StageBadge } from "./pipeline/StageBadge";
 import { PipelineFilters, type StageCounts } from "./pipeline/PipelineFilters";
 import { ViewModeToggle, type ViewMode } from "./pipeline/ViewModeToggle";
 import { OperationsTable, type OperationRow } from "./OperationsTable";
+import { PortfolioHeader } from "./PortfolioHeader";
+import { expenseTotals, salesStats } from "@/src/lib/realEstateTrackingCalc";
 
 function generateId(): string {
   return crypto.randomUUID();
@@ -522,7 +525,21 @@ function RECard({
   onExtract, onChangeStage,
 }: RECardProps) {
   const res = useMemo(() => calcResults(op), [op]);
+  const exp = useMemo(() => expenseTotals(op), [op]);
+  const sales = useMemo(() => salesStats(op), [op]);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const stage = stageOf(op);
+  const tipo = CATEGORY_INFO[(op._cat ?? "vivienda") as RealEstateCategory]?.label ?? null;
+  // KPI héroe: rentabilidad de venta si hay venta prevista; si no, inversión total.
+  const heroIsYield = res.totalSales > 0;
+  // Indicador útil (solo con datos reales de seguimiento; si no, sin barra).
+  const bar =
+    exp.paidPct != null
+      ? { label: "Gastos pagados", value: exp.paidPct, color: "var(--positive)" }
+      : sales.soldPct != null
+      ? { label: "Ventas cerradas", value: sales.soldPct, color: "var(--brand)" }
+      : null;
 
   const handleClick = () => {
     if (compareMode) {
@@ -535,19 +552,17 @@ function RECard({
   return (
     <div
       onClick={handleClick}
-      className={`bg-surface rounded-2xl border p-4 cursor-pointer transition-all shadow-[0_6px_16px_rgba(14,23,38,0.05)] ${
-        compareMode
-          ? selected
-            ? "border-brand ring-2 ring-[var(--brand-soft)] shadow-md"
-            : "border-line hover:border-brand hover:shadow-md"
-          : "border-line hover:border-[var(--line-strong)] hover:shadow-md"
+      className={`re-card re-card-interactive p-4 cursor-pointer ${
+        compareMode && selected ? "!border-brand ring-2 ring-[var(--brand-soft)]" : ""
       }`}
+      style={{ borderLeft: `3px solid ${stageDef(stage).color}` }}
     >
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-start gap-2 flex-1 min-w-0">
+      {/* Fila superior: etapa + tipo + acciones */}
+      <div className="flex items-start justify-between gap-2 mb-2.5">
+        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
           {compareMode && (
-            <div
-              className={`mt-0.5 w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
+            <span
+              className={`w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
                 selected ? "bg-blue-600 border-blue-600" : "border-slate-300"
               }`}
             >
@@ -556,30 +571,17 @@ function RECard({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                 </svg>
               )}
-            </div>
+            </span>
           )}
-          <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-bold text-ink leading-tight tracking-tight">
-              {op.name}
-              {formatShortDate(op.updatedAt) && (
-                <span className="ml-1.5 font-normal text-ink-subtle">· {formatShortDate(op.updatedAt)}</span>
-              )}
-            </h3>
-            {op.isDraft && (
-              <span className="text-[10px] font-medium text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded mt-1 inline-block">
-                Incompleta
-              </span>
-            )}
-            {!compareMode && onChangeStage && (
-              <div className="mt-1.5">
-                <StageSelect stage={stageOf(op)} onChange={(s) => onChangeStage(s)} />
-              </div>
-            )}
-          </div>
+          {!compareMode && onChangeStage ? (
+            <StageSelect stage={stage} onChange={(s) => onChangeStage(s)} />
+          ) : (
+            <StageBadge stage={stage} />
+          )}
+          {tipo && <span className="text-[11px] text-ink-subtle truncate">{tipo}</span>}
         </div>
 
-        <div className="flex items-center gap-1 flex-shrink-0 ml-2">
-          {/* Expand/collapse toggle for group cards */}
+        <div className="flex items-center gap-1 flex-shrink-0">
           {isGroupCard && onToggleExpand && (
             <button
               data-no-drag
@@ -588,59 +590,33 @@ function RECard({
               title={isExpanded ? "Contraer variantes" : "Expandir variantes"}
               className="p-1 text-slate-400 hover:text-blue-500 transition-colors rounded"
             >
-              <svg
-                className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-90" : ""}`}
-                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-              >
+              <svg className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
               </svg>
             </button>
           )}
-
           {!compareMode && (
             <div data-no-drag onClick={(e) => e.stopPropagation()} className="flex items-center gap-1">
               {confirmDelete ? (
                 <>
-                  <button
-                    onClick={() => onDelete()}
-                    className="text-[10px] font-medium text-white bg-red-500 hover:bg-red-600 px-2 py-0.5 rounded transition-colors"
-                  >
-                    Eliminar
-                  </button>
-                  <button
-                    onClick={() => setConfirmDelete(false)}
-                    className="text-[10px] font-medium text-slate-500 hover:text-slate-700 px-2 py-0.5 rounded transition-colors"
-                  >
-                    Cancelar
-                  </button>
+                  <button onClick={() => onDelete()} className="text-[10px] font-medium text-white bg-red-500 hover:bg-red-600 px-2 py-0.5 rounded transition-colors">Eliminar</button>
+                  <button onClick={() => setConfirmDelete(false)} className="text-[10px] font-medium text-slate-500 hover:text-slate-700 px-2 py-0.5 rounded transition-colors">Cancelar</button>
                 </>
               ) : (
                 <>
                   {onExtract && (
-                    <button
-                      onClick={() => onExtract()}
-                      title="Convertir en operación independiente"
-                      className="p-1 text-slate-400 hover:text-orange-500 transition-colors rounded"
-                    >
+                    <button onClick={() => onExtract()} title="Convertir en operación independiente" className="p-1 text-slate-400 hover:text-orange-500 transition-colors rounded">
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                       </svg>
                     </button>
                   )}
-                  <button
-                    onClick={() => onDuplicate()}
-                    title="Duplicar operación"
-                    className="p-1 text-slate-400 hover:text-blue-500 transition-colors rounded"
-                  >
+                  <button onClick={() => onDuplicate()} title="Duplicar operación" className="p-1 text-slate-400 hover:text-blue-500 transition-colors rounded">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                     </svg>
                   </button>
-                  <button
-                    onClick={() => setConfirmDelete(true)}
-                    title="Eliminar operación"
-                    className="p-1 text-slate-400 hover:text-red-500 transition-colors rounded"
-                  >
+                  <button onClick={() => setConfirmDelete(true)} title="Eliminar operación" className="p-1 text-slate-400 hover:text-red-500 transition-colors rounded">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                     </svg>
@@ -652,18 +628,56 @@ function RECard({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-xl p-3" style={{ background: "var(--positive-soft)" }}>
-          <div className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: "var(--positive)" }}>Alquiler</div>
-          <div className="text-lg font-extrabold tabular-nums" style={{ color: "var(--positive)" }}>{fmtPct(res.rentYield)}</div>
-          <div className="text-xs tabular-nums" style={{ color: "var(--positive)" }}>{fmtEUR(res.monthlyRentBenefit)}/mes</div>
-        </div>
-        <div className="rounded-xl p-3" style={{ background: "var(--brand-soft)" }}>
-          <div className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: "var(--brand)" }}>Venta</div>
-          <div className="text-lg font-extrabold tabular-nums" style={{ color: "var(--brand)" }}>{fmtPct(res.saleYield)}</div>
-          <div className="text-xs tabular-nums" style={{ color: "var(--brand)" }}>{fmtEUR(res.saleBenefit)}</div>
+      {/* Título + ubicación + fecha */}
+      <div className="min-w-0 mb-3">
+        <h3 className="text-base font-extrabold text-ink leading-tight tracking-tight truncate">{op.name || "Operación"}</h3>
+        <div className="flex items-center gap-1.5 text-xs text-ink-subtle mt-0.5 min-w-0">
+          {op.address ? <span className="truncate">{op.address}</span> : null}
+          {op.address && formatShortDate(op.updatedAt) ? <span aria-hidden>·</span> : null}
+          {formatShortDate(op.updatedAt) ? <span className="whitespace-nowrap">{formatShortDate(op.updatedAt)}</span> : null}
+          {op.isDraft ? <span className="pill pill-warning ml-0.5">Incompleta</span> : null}
         </div>
       </div>
+
+      {/* KPI héroe dominante */}
+      <div className="mb-3">
+        <p className="kpi-label">{heroIsYield ? "Rentab. venta est." : "Inversión estimada"}</p>
+        <p
+          className="text-3xl font-extrabold tabular-nums tracking-tight leading-none"
+          style={{ color: heroIsYield ? (res.saleYield >= 0 ? "var(--positive)" : "var(--negative)") : "var(--ink)" }}
+        >
+          {heroIsYield ? fmtPct(res.saleYield) : fmtEUR(res.totalInvestment)}
+        </p>
+      </div>
+
+      {/* Trío secundario */}
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        <RECardMini label="Inversión" value={fmtEUR(res.totalInvestment)} />
+        <RECardMini label="Venta est." value={fmtEUR(res.totalSales)} />
+        <RECardMini label="Beneficio" value={fmtEUR(res.saleBenefit)} color={res.saleBenefit >= 0 ? "var(--positive)" : "var(--negative)"} />
+      </div>
+
+      {/* Indicador (solo con datos reales de seguimiento) */}
+      {bar ? (
+        <div>
+          <div className="flex items-center justify-between text-[11px] mb-1">
+            <span className="text-ink-subtle">{bar.label}</span>
+            <span className="tabular-nums font-semibold text-ink">{Math.round(bar.value * 100)}%</span>
+          </div>
+          <div className="h-1.5 w-full rounded-full bg-[var(--surface-alt)] overflow-hidden border border-line">
+            <div className="bar-anim h-full rounded-full" style={{ width: `${Math.round(bar.value * 100)}%`, background: bar.color }} />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RECardMini({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px] uppercase tracking-wide font-bold text-ink-subtle truncate">{label}</p>
+      <p className="text-sm font-bold tabular-nums truncate" style={color ? { color } : { color: "var(--ink)" }}>{value}</p>
     </div>
   );
 }
@@ -928,6 +942,18 @@ export function RealEstateSection() {
     }
     return out;
   }, [webListItems, matchOp]);
+
+  // Representantes (una entrada por operación/grupo) para la cabecera de cartera.
+  const deals = useMemo(
+    () => webListItems.map(repOf).filter((o): o is REOperation => o != null),
+    [webListItems]
+  );
+
+  // ¿Algún representante coincide con el filtro/búsqueda activos?
+  const hasMatches = useMemo(
+    () => webListItems.some((i) => { const r = repOf(i); return r != null && matchOp(r); }),
+    [webListItems, matchOp]
+  );
 
   // Filas para la vista tabla (principal + variantes de cada grupo visible).
   const tableRows = useMemo<OperationRow[]>(() => {
@@ -1349,6 +1375,8 @@ export function RealEstateSection() {
   return (
     <>
       <section>
+        {activeOps.length > 0 && <PortfolioHeader ops={deals} />}
+
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <button
@@ -1470,20 +1498,35 @@ export function RealEstateSection() {
                   + Nueva operación
                 </button>
               </div>
+            ) : !hasMatches ? (
+              <div className="empty-state">
+                <span className="empty-state-icon">
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z" />
+                  </svg>
+                </span>
+                <p className="text-lg font-extrabold text-ink tracking-tight mb-1">Sin resultados</p>
+                <p className="text-sm text-ink-muted max-w-md mx-auto leading-relaxed mb-5">
+                  {search.trim()
+                    ? `Ninguna operación coincide con “${search.trim()}”.`
+                    : "Ninguna operación en esta etapa del pipeline."}
+                </p>
+                <button type="button" onClick={() => { setStageFilter("all"); setSearch(""); }} className="btn-secondary">
+                  Limpiar filtros
+                </button>
+              </div>
             ) : viewMode === "table" ? (
-              <OperationsTable
-                rows={tableRows}
-                onOpen={(op) => { if (op.isDraft) setWizardOp(op); else setSelectedId(op.id); }}
-                onChangeStage={handleChangeStage}
-                expandedGroups={expandedGroups}
-                onToggleGroup={toggleGroup}
-              />
-            ) : displayedItems.length === 0 ? (
-              <p className="text-sm text-ink-subtle py-10 text-center">
-                No hay operaciones que coincidan con el filtro. <button type="button" onClick={() => { setStageFilter("all"); setSearch(""); }} className="font-semibold text-brand hover:underline">Limpiar filtros</button>
-              </p>
+              <div key="view-table" className="reveal-fast">
+                <OperationsTable
+                  rows={tableRows}
+                  onOpen={(op) => { if (op.isDraft) setWizardOp(op); else setSelectedId(op.id); }}
+                  onChangeStage={handleChangeStage}
+                  expandedGroups={expandedGroups}
+                  onToggleGroup={toggleGroup}
+                />
+              </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
+              <div key="view-cards" className="reveal-fast grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
                 {displayedItems.map((item) => {
 
                   // ── Group expanded variants — compact rows ──────────────────

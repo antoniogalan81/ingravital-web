@@ -305,9 +305,22 @@ body {
 .in-delay-4 { animation-delay: 0.24s; }
 .in-delay-5 { animation-delay: 0.30s; }
 
+/* Entrada rápida para tarjetas/KPIs (Fase 1: cockpit de inversiones). El delay
+   de cascada se aplica inline por índice. Mismo easing del sistema.            */
+.reveal-fast { opacity: 0; animation: in-rise 0.24s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Barra que crece al renderizar (scaleX → sin reflow, apto compositor). El ancho
+   real lo fija el contenedor; esta animación solo escala el relleno.            */
+@keyframes bar-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.bar-anim { transform-origin: left center; animation: bar-grow 0.55s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
 @media (prefers-reduced-motion: reduce) {
   .re-card-interactive, .action-card, .btn-primary, .btn-secondary { transition: none; }
-  .in-reveal { animation: none; opacity: 1; transform: none; }
+  .in-reveal, .reveal-fast { animation: none; opacity: 1; transform: none; }
+  .bar-anim { animation: none; transform: none; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
