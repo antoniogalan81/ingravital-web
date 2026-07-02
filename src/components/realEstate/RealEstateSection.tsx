@@ -6,6 +6,7 @@ import { useSync } from "@/src/sync/SyncContext";
 import { calcResults, fmtEUR, fmtPct, CATEGORY_INFO, type RealEstateCategory } from "@/src/lib/realEstateCalc";
 import type { REOperation, REResults } from "@/src/lib/realEstate";
 import { DEFAULT_TASAS } from "@/src/lib/realEstate";
+import { formatShortDate } from "@/src/lib/date";
 import { RealEstateModal } from "./RealEstateModal";
 import { RealEstateWizard } from "./RealEstateWizard";
 
@@ -553,6 +554,9 @@ function RECard({
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-bold text-ink leading-tight tracking-tight">
               {op.name}
+              {formatShortDate(op.updatedAt) && (
+                <span className="ml-1.5 font-normal text-ink-subtle">· {formatShortDate(op.updatedAt)}</span>
+              )}
             </h3>
             {op.isDraft && (
               <span className="text-[10px] font-medium text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded mt-1 inline-block">
@@ -703,7 +707,12 @@ function REVariantRow({
           </div>
         )}
         <div className="flex-1 min-w-0 flex items-center gap-2 justify-between">
-          <span className="text-sm font-bold text-ink truncate">{op.name}</span>
+          <span className="min-w-0 truncate text-sm font-bold text-ink">
+            {op.name}
+            {formatShortDate(op.updatedAt) && (
+              <span className="ml-1.5 font-normal text-ink-subtle">· {formatShortDate(op.updatedAt)}</span>
+            )}
+          </span>
           {unitSummary !== "—" && (
             <span className="text-xs text-ink-subtle tabular-nums whitespace-nowrap flex-shrink-0">{unitSummary}</span>
           )}
