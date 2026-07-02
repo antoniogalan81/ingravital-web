@@ -43,9 +43,11 @@ function daysDeviation(due?: string, real?: string): number | null {
 export function HitosPanel({
   op,
   onChange,
+  onQuickAdd,
 }: {
   op: REOperation;
   onChange: (milestones: REMilestone[]) => void;
+  onQuickAdd?: () => void;
 }) {
   const milestones = useMemo(() => (Array.isArray(op.milestones) ? op.milestones : []), [op.milestones]);
 
@@ -162,6 +164,20 @@ export function HitosPanel({
         </div>
       ) : null}
 
+      {onQuickAdd ? (
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-ink-subtle">Planifica hitos con formulario guiado, con plantillas o en la tabla.</p>
+          <button
+            type="button"
+            onClick={onQuickAdd}
+            className="rounded-lg px-3.5 py-2 text-sm font-semibold text-white whitespace-nowrap transition-colors shrink-0"
+            style={{ background: "var(--brand)" }}
+          >
+            ⚡ Hito rápido
+          </button>
+        </div>
+      ) : null}
+
       <DataTable
         columns={columns}
         rows={milestones}
@@ -169,7 +185,7 @@ export function HitosPanel({
         onAddRow={() => add("")}
         addLabel="Añadir hito"
         onDeleteRow={remove}
-        emptyText="Sin hitos. Usa las plantillas o añade uno."
+        emptyText="Añade el primer hito (licencias, obra, entrega…) para detectar desviaciones de plazo."
       />
 
       {availableTemplates.length > 0 ? (

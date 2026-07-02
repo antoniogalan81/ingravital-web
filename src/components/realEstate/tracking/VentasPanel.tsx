@@ -37,10 +37,12 @@ export function VentasPanel({
   op,
   results,
   onChange,
+  onQuickAdd,
 }: {
   op: REOperation;
   results: REResults;
   onChange: (sales: RESale[]) => void;
+  onQuickAdd?: () => void;
 }) {
   const sales = useMemo(() => (Array.isArray(op.sales) ? op.sales : []), [op.sales]);
   const stats = useMemo(() => salesStats(op), [op]);
@@ -163,6 +165,20 @@ export function VentasPanel({
         </div>
       </div>
 
+      {onQuickAdd ? (
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-ink-subtle">Registra unidades con formulario guiado o directamente en la tabla.</p>
+          <button
+            type="button"
+            onClick={onQuickAdd}
+            className="rounded-lg px-3.5 py-2 text-sm font-semibold text-white whitespace-nowrap transition-colors shrink-0"
+            style={{ background: "var(--brand)" }}
+          >
+            ⚡ Venta rápida
+          </button>
+        </div>
+      ) : null}
+
       <DataTable
         columns={columns}
         rows={sales}
@@ -170,7 +186,7 @@ export function VentasPanel({
         onAddRow={addRow}
         addLabel="Añadir venta / unidad"
         onDeleteRow={remove}
-        emptyText="Sin ventas. Añade unidades o activos y su estado comercial."
+        emptyText="Añade la primera unidad o activo y su estado comercial para seguir los ingresos."
       />
     </div>
   );

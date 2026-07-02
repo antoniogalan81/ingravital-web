@@ -38,9 +38,11 @@ const isHttp = (s?: string) => !!s && /^https?:\/\//i.test(s);
 export function GastosPanel({
   op,
   onChange,
+  onQuickAdd,
 }: {
   op: REOperation;
   onChange: (expenses: REExpense[]) => void;
+  onQuickAdd?: () => void;
 }) {
   const expenses = useMemo(() => (Array.isArray(op.expenses) ? op.expenses : []), [op.expenses]);
   const totals = useMemo(() => expenseTotals(op), [op]);
@@ -194,6 +196,21 @@ export function GastosPanel({
         </div>
       </div>
 
+      {/* Barra de acción: entrada rápida guiada (formulario con todos los campos) */}
+      {onQuickAdd ? (
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-ink-subtle">Introduce gastos con formulario guiado o directamente en la tabla.</p>
+          <button
+            type="button"
+            onClick={onQuickAdd}
+            className="rounded-lg px-3.5 py-2 text-sm font-semibold text-white whitespace-nowrap transition-colors shrink-0"
+            style={{ background: "var(--brand)" }}
+          >
+            ⚡ Gasto rápido
+          </button>
+        </div>
+      ) : null}
+
       {/* Filtros rápidos */}
       {expenses.length > 0 ? (
         <div className="flex flex-wrap items-center gap-2">
@@ -237,7 +254,7 @@ export function GastosPanel({
         onDeleteRow={remove}
         onDuplicateRow={duplicate}
         rowAccent={rowAccent}
-        emptyText={expenses.length === 0 ? "Sin gastos. Añade el primero para empezar el control tipo Excel." : "Ningún gasto coincide con el filtro."}
+        emptyText={expenses.length === 0 ? "Añade el primer gasto para comparar estimado vs real." : "Ningún gasto coincide con el filtro."}
       />
 
       {/* Resumen por categoría con barras estimado vs real */}

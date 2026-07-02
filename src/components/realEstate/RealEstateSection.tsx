@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { useSync } from "@/src/sync/SyncContext";
-import { calcResults, fmtEUR, fmtPct, CATEGORY_INFO, type RealEstateCategory } from "@/src/lib/realEstateCalc";
+import { calcResults, fmtEUR, fmtPct, CATEGORY_INFO, convertRealEstateOperationType, type RealEstateCategory } from "@/src/lib/realEstateCalc";
 import type { REOperation, REResults } from "@/src/lib/realEstate";
 import { DEFAULT_TASAS } from "@/src/lib/realEstate";
 import { formatShortDate } from "@/src/lib/date";
@@ -99,6 +99,66 @@ function formatUnitSummaryWeb(op: REOperation, res: REResults): string {
   if (nGarajes > 0) parts.push(`${nGarajes} aparc`);
   if (nTrasteros > 0) parts.push(`${nTrasteros} trast`);
   return parts.length > 0 ? parts.join(" + ") : "—";
+}
+
+const RE_TYPE_ORDER: RealEstateCategory[] = ["vivienda", "local", "suelo", "adaptacion"];
+
+/**
+ * Selector de tipo rápido. Al pulsar una tarjeta se crea la operación con ese
+ * tipo y se abre el editor inmediatamente (sin wizard multipaso).
+ */
+function TypePickerModal({ onPick, onClose }: { onPick: (cat: RealEstateCategory) => void; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative w-full max-w-2xl max-h-full bg-white shadow-2xl flex flex-col overflow-hidden sm:mt-16 sm:rounded-2xl in-reveal">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0 gap-4">
+          <div>
+            <h2 className="text-base font-extrabold text-ink tracking-tight">Nueva operación</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Elige el tipo y empieza a rellenar al instante.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors shrink-0"
+            aria-label="Cerrar"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="p-4 sm:p-6 overflow-y-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {RE_TYPE_ORDER.map((cat) => {
+              const info = CATEGORY_INFO[cat];
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => onPick(cat)}
+                  className="re-card re-card-interactive text-left flex items-start gap-3 p-4 group"
+                >
+                  <span className="text-2xl leading-none shrink-0" aria-hidden>{info.icon}</span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-bold text-ink tracking-tight">{info.label}</span>
+                    <span className="block text-xs text-slate-500 mt-0.5">{info.desc}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function CompareModal({ ops, onClose, onOpenOp }: { ops: REOperation[]; onClose: () => void; onOpenOp?: (op: REOperation) => void }) {
@@ -858,6 +918,7 @@ export function RealEstateSection() {
   const { realEstateOperations, setRealEstateOperation, deleteRealEstateOperation } = useSync();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [wizardOp, setWizardOp] = useState<REOperation | null>(null);
+  const [typePickerOpen, setTypePickerOpen] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
@@ -1261,11 +1322,25 @@ export function RealEstateSection() {
     [orderedOps, selectedIds]
   );
 
-  const handleNew = useCallback(() => {
-    const op = createDefaultOperation();
-    setRealEstateOperation(op);
-    setWizardOp(op);
-  }, [setRealEstateOperation]);
+  // "+ Nueva" ahora abre un selector de tipo rápido. Elegir tipo = crear + abrir el
+  // editor al instante (sin wizard multipaso). El wizard se conserva solo para
+  // reanudar borradores antiguos (op.isDraft).
+  const handleNew = useCallback(() => setTypePickerOpen(true), []);
+
+  const handleQuickCreate = useCallback(
+    (cat: RealEstateCategory) => {
+      // Reutiliza el motor de conversión de tipo (misma semántica financiera).
+      const op: REOperation = {
+        ...convertRealEstateOperationType(createDefaultOperation(), cat),
+        _cat: cat,
+        updatedAt: new Date().toISOString(),
+      };
+      setRealEstateOperation(op);
+      setTypePickerOpen(false);
+      setSelectedId(op.id); // abre el editor inmediatamente
+    },
+    [setRealEstateOperation]
+  );
 
   const handleWizardDone = useCallback((op: REOperation) => {
     setRealEstateOperation(op);
@@ -1720,6 +1795,13 @@ export function RealEstateSection() {
         >
           {reDragGhost.label}
         </div>
+      )}
+
+      {typePickerOpen && (
+        <TypePickerModal
+          onPick={handleQuickCreate}
+          onClose={() => setTypePickerOpen(false)}
+        />
       )}
 
       {wizardOp && (
