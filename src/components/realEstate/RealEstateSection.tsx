@@ -9,7 +9,7 @@ import { DEFAULT_TASAS } from "@/src/lib/realEstate";
 import { formatShortDate } from "@/src/lib/date";
 import { RealEstateModal } from "./RealEstateModal";
 import { RealEstateWizard } from "./RealEstateWizard";
-import { stageOf, type PipelineStage, type StageFilter, PIPELINE_STAGES, stageDef } from "@/src/lib/pipeline";
+import { stageOf, stagePriority, type PipelineStage, type StageFilter, PIPELINE_STAGES, stageDef } from "@/src/lib/pipeline";
 import { StageSelect } from "./pipeline/StageSelect";
 import { PipelineFilters, type StageCounts } from "./pipeline/PipelineFilters";
 import { ViewModeToggle, type ViewMode } from "./pipeline/ViewModeToggle";
@@ -794,11 +794,13 @@ function buildWebListItems(ops: REOperation[], expandedGroups: Set<string>): Web
     if (seen.has(op.variantGroupId)) continue;
     seen.add(op.variantGroupId);
     const groupOps = ops.filter((o) => o.variantGroupId === op.variantGroupId);
-    const mainOp = groupOps[0]; // first by order is always the principal
+    // Principal = variante marcada como main; si ninguna, la primera del orden.
+    const mainOp = groupOps.find((o) => o.isMainVariant) ?? groupOps[0];
+    const variants = groupOps.filter((o) => o.id !== mainOp.id);
     items.push({ kind: "group-card", groupId: op.variantGroupId, groupName: op.variantGroupName ?? op.variantGroupId, mainOp, count: groupOps.length });
     if (expandedGroups.has(op.variantGroupId)) {
-      // slice(1) → exclude the main (shown in group-card); fixes cardRef conflict
-      items.push({ kind: "group-expanded", groupId: op.variantGroupId, variants: groupOps.slice(1) });
+      // Excluye el main (mostrado en la group-card) para no duplicar cardRef.
+      items.push({ kind: "group-expanded", groupId: op.variantGroupId, variants });
     }
   }
   return items;
@@ -846,12 +848,22 @@ export function RealEstateSection() {
     [realEstateOperations]
   );
 
+  // Orden: prioridad de etapa (Comprado→Captación) y, dentro de cada etapa, las más
+  // nuevas primero. "Más nueva" = updatedAt (client_updated_at del sync) desc; fallback
+  // createdAt desc; fallback `order` desc (documentado). Sin fechas inventadas.
   const orderedOps = useMemo(() => {
+    const recency = (op: REOperation) => op.updatedAt || op.createdAt || "";
     return [...activeOps].sort((a, b) => {
-      const ao = a.order ?? 0;
-      const bo = b.order ?? 0;
-      if (ao !== bo) return ao - bo;
-      return (a.createdAt ?? "") < (b.createdAt ?? "") ? -1 : 1;
+      const pa = stagePriority(a);
+      const pb = stagePriority(b);
+      if (pa !== pb) return pa - pb;
+      const ra = recency(a);
+      const rb = recency(b);
+      if (ra !== rb) return ra < rb ? 1 : -1;
+      const ca = a.createdAt ?? "";
+      const cb = b.createdAt ?? "";
+      if (ca !== cb) return ca < cb ? 1 : -1;
+      return (b.order ?? 0) - (a.order ?? 0);
     });
   }, [activeOps]);
 
@@ -875,13 +887,13 @@ export function RealEstateSection() {
 
   // Contadores por etapa (sobre representantes, no variantes) — vista global estable.
   const stageCounts = useMemo<StageCounts>(() => {
-    const c: StageCounts = { all: 0, none: 0 };
+    const c: StageCounts = { all: 0 };
     for (const s of PIPELINE_STAGES) c[s.key] = 0;
     for (const item of webListItems) {
       const rep = repOf(item);
       if (!rep) continue;
       c.all += 1;
-      const key = stageOf(rep) ?? "none";
+      const key = stageOf(rep); // sin etapa → "captacion"
       c[key] = (c[key] ?? 0) + 1;
     }
     return c;
@@ -890,8 +902,7 @@ export function RealEstateSection() {
   // Predicado de filtro (etapa + búsqueda por nombre/dirección, local).
   const matchOp = useCallback(
     (op: REOperation): boolean => {
-      const stageOk =
-        stageFilter === "all" || (stageFilter === "none" ? stageOf(op) === null : stageOf(op) === stageFilter);
+      const stageOk = stageFilter === "all" || stageOf(op) === stageFilter;
       if (!stageOk) return false;
       const q = search.trim().toLowerCase();
       if (!q) return true;
@@ -927,7 +938,7 @@ export function RealEstateSection() {
       } else if (item.kind === "group-card") {
         if (!matchOp(item.mainOp)) continue;
         const members = orderedOps.filter((o) => o.variantGroupId === item.groupId);
-        rows.push({ key: item.groupId, op: item.mainOp, groupId: item.groupId, variants: members.slice(1) });
+        rows.push({ key: item.groupId, op: item.mainOp, groupId: item.groupId, variants: members.filter((o) => o.id !== item.mainOp.id) });
       }
     }
     return rows;

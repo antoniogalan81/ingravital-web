@@ -3,9 +3,9 @@
 // Filtros de etapa tipo chips, con contador por etapa y opción de limpiar.
 // "Sin clasificar" solo aparece si hay operaciones sin etapa (no se inventa).
 
-import { PIPELINE_STAGES, UNCLASSIFIED_DEF, type StageFilter } from "@/src/lib/pipeline";
+import { PIPELINE_STAGES, type StageFilter } from "@/src/lib/pipeline";
 
-export type StageCounts = Record<string, number>; // claves: "all" | "none" | PipelineStage
+export type StageCounts = Record<string, number>; // claves: "all" | PipelineStage
 
 export function PipelineFilters({
   counts,
@@ -20,9 +20,6 @@ export function PipelineFilters({
     { key: "all", label: "Todas" },
     ...PIPELINE_STAGES.map((s) => ({ key: s.key as StageFilter, label: s.short, color: s.color, soft: s.soft })),
   ];
-  if ((counts.none ?? 0) > 0) {
-    chips.push({ key: "none", label: UNCLASSIFIED_DEF.short, color: UNCLASSIFIED_DEF.color, soft: UNCLASSIFIED_DEF.soft });
-  }
 
   return (
     <div className="flex items-center gap-1.5 overflow-x-auto">

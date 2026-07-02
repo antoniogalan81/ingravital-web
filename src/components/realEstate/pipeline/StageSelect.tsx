@@ -12,7 +12,7 @@ export function StageSelect({
   onChange,
   align = "left",
 }: {
-  stage: PipelineStage | null;
+  stage: PipelineStage;
   onChange: (stage: PipelineStage) => void;
   align?: "left" | "right";
 }) {

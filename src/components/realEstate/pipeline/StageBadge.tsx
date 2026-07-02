@@ -8,7 +8,7 @@ export function StageBadge({
   stage,
   className = "",
 }: {
-  stage: PipelineStage | null;
+  stage: PipelineStage;
   className?: string;
 }) {
   const def = stageDef(stage);
