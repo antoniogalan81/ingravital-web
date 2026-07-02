@@ -1,15 +1,46 @@
 "use client";
 
-// Panel MEDIA (fotos / vídeos del estado y evolución). AÑADIR POR ENLACE (URL):
-// no se implementa subida real de ficheros porque el proyecto NO tiene aún un
-// bucket de Supabase Storage configurado. La subida real queda documentada como
-// pendiente (requiere Supabase Storage). Persiste `media` en la operación.
+// Panel MEDIA (fotos / vídeos). Subida REAL a Supabase Storage (bucket privado
+// investment-media) + alta por enlace externo. Los archivos privados se ven con
+// signed URL temporal. Errores propagados (sin fallback silencioso). Persiste
+// `media` en la operación (metadata: storagePath/bucket) — el archivo va a Storage.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { REOperation } from "@/src/lib/realEstate";
 import { newTrackingId, type REMediaItem, type REMediaType } from "@/src/lib/realEstateTracking";
+import { BUCKET_MEDIA, currentUserId, mediaPath, removeFile, signedUrl, uploadFile } from "@/src/lib/storage";
 
 const isHttp = (s: string) => /^https?:\/\//i.test(s.trim());
+
+function MediaThumb({ item }: { item: REMediaItem }) {
+  const [url, setUrl] = useState<string | null>(item.storagePath ? null : item.uri || null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    if (item.storagePath && item.bucket) {
+      signedUrl(item.bucket, item.storagePath).then((u) => {
+        if (!active) return;
+        if (u) setUrl(u);
+        else setFailed(true);
+      });
+    }
+    return () => { active = false; };
+  }, [item.storagePath, item.bucket]);
+
+  if (failed) return <span className="text-[11px] text-ink-subtle">No disponible</span>;
+  if (!url) return <span className="text-[11px] text-ink-subtle">Cargando…</span>;
+  if (item.type === "FOTO") {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={url} alt={item.caption ?? "Foto"} className="h-full w-full object-cover" />;
+  }
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" className="flex flex-col items-center gap-1 text-brand">
+      <span className="text-2xl">▶</span>
+      <span className="text-xs font-semibold">Ver vídeo</span>
+    </a>
+  );
+}
 
 export function MediaPanel({
   op,
@@ -24,11 +55,13 @@ export function MediaPanel({
   const [uri, setUri] = useState("");
   const [caption, setCaption] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  const add = () => {
+  const addByLink = () => {
     const url = uri.trim();
     if (!isHttp(url)) {
-      setError("Introduce un enlace válido (https://…). La subida de archivos requiere Supabase Storage (pendiente).");
+      setError("Introduce un enlace válido (https://…) o sube un archivo.");
       return;
     }
     const item: REMediaItem = {
@@ -45,19 +78,78 @@ export function MediaPanel({
     setError(null);
   };
 
-  const remove = (id: string) => onChange(media.filter((m) => m.id !== id));
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const uid = await currentUserId();
+      const path = mediaPath(uid, op.id, file.name);
+      const up = await uploadFile(BUCKET_MEDIA, path, file);
+      const item: REMediaItem = {
+        id: newTrackingId("media"),
+        type: file.type.startsWith("video") ? "VIDEO" : "FOTO",
+        uri: "",
+        storagePath: up.path,
+        bucket: up.bucket,
+        mime: up.mime,
+        size: up.size,
+        caption: caption.trim() || undefined,
+        date: new Date().toISOString().slice(0, 10),
+        createdAt: new Date().toISOString(),
+      };
+      onChange([...media, item]);
+      setCaption("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al subir el archivo.");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const remove = async (m: REMediaItem) => {
+    // Si es archivo subido, intenta borrarlo del bucket (best-effort); luego desvincula.
+    if (m.storagePath && m.bucket) {
+      try { await removeFile(m.bucket, m.storagePath); } catch (err) {
+        setError(err instanceof Error ? `No se pudo borrar del almacenamiento: ${err.message}` : "No se pudo borrar del almacenamiento.");
+        return;
+      }
+    }
+    onChange(media.filter((x) => x.id !== m.id));
+  };
 
   return (
     <div className="space-y-5">
-      {/* Aviso de storage */}
-      <div className="rounded-xl border border-line bg-[var(--surface-alt)] p-3">
-        <p className="text-sm text-ink-muted">
-          Añade fotos y vídeos por <b>enlace (URL)</b>. La <b>subida de archivos desde el dispositivo</b> requiere
-          configurar <b>Supabase Storage</b> (bucket + políticas) y queda pendiente — no se realiza ninguna subida real.
+      {/* Subir archivo (real) */}
+      <div className="re-card p-4 space-y-3">
+        <p className="text-xs font-bold uppercase tracking-wide text-ink-subtle">Subir archivo</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            value={caption}
+            onChange={(e) => setCaption(e.target.value)}
+            placeholder="Descripción (opcional)"
+            className="flex-1 min-w-[10rem] rounded-lg border border-line px-3 py-2 text-sm text-ink placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+          />
+          <input ref={fileRef} type="file" accept="image/*,video/*" onChange={onFile} className="hidden" />
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors disabled:opacity-60"
+            style={{ background: "var(--brand)" }}
+          >
+            {uploading ? "Subiendo…" : "Subir foto/vídeo"}
+          </button>
+        </div>
+        <p className="text-[11px] text-ink-subtle">
+          Archivo privado en Supabase Storage; solo tú y los inversores autorizados podrán verlo.
         </p>
       </div>
 
-      {/* Alta por enlace */}
+      {/* Alta por enlace externo */}
       <div className="re-card p-4 space-y-3">
         <p className="text-xs font-bold uppercase tracking-wide text-ink-subtle">Añadir por enlace</p>
         <div className="flex flex-col sm:flex-row gap-2">
@@ -76,24 +168,18 @@ export function MediaPanel({
             placeholder="https://…"
             className="flex-1 rounded-lg border border-line px-3 py-2 text-sm text-ink placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
           />
-          <input
-            type="text"
-            value={caption}
-            onChange={(e) => setCaption(e.target.value)}
-            placeholder="Descripción (opcional)"
-            className="flex-1 rounded-lg border border-line px-3 py-2 text-sm text-ink placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
-          />
           <button
             type="button"
-            onClick={add}
-            className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--brand-dark)] transition-colors"
+            onClick={addByLink}
+            className="rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors"
             style={{ background: "var(--brand)" }}
           >
-            Añadir
+            Añadir enlace
           </button>
         </div>
-        {error ? <p className="text-xs text-[var(--negative)]">{error}</p> : null}
       </div>
+
+      {error ? <p className="text-sm text-[var(--negative)]">{error}</p> : null}
 
       {/* Galería */}
       {media.length === 0 ? (
@@ -103,18 +189,10 @@ export function MediaPanel({
           {media.map((m) => (
             <figure key={m.id} className="re-card overflow-hidden">
               <div className="relative aspect-video bg-[var(--surface-alt)] flex items-center justify-center">
-                {m.type === "FOTO" ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={m.uri} alt={m.caption ?? "Foto"} className="h-full w-full object-cover" />
-                ) : (
-                  <a href={m.uri} target="_blank" rel="noopener noreferrer" className="flex flex-col items-center gap-1 text-brand">
-                    <span className="text-2xl">▶</span>
-                    <span className="text-xs font-semibold">Ver vídeo</span>
-                  </a>
-                )}
+                <MediaThumb item={m} />
                 <button
                   type="button"
-                  onClick={() => remove(m.id)}
+                  onClick={() => remove(m)}
                   title="Quitar"
                   className="absolute top-1.5 right-1.5 rounded-md bg-white/90 p-1 text-slate-500 hover:text-red-500 shadow-sm"
                 >
@@ -125,7 +203,7 @@ export function MediaPanel({
               </div>
               <figcaption className="px-2.5 py-2">
                 <p className="text-xs text-ink truncate">{m.caption ?? (m.type === "FOTO" ? "Foto" : "Vídeo")}</p>
-                {m.date ? <p className="text-[11px] text-ink-subtle">{m.date}</p> : null}
+                <p className="text-[11px] text-ink-subtle">{m.storagePath ? "Archivo" : "Enlace"}{m.date ? ` · ${m.date}` : ""}</p>
               </figcaption>
             </figure>
           ))}

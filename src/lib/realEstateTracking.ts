@@ -86,8 +86,12 @@ export type REExpense = {
   paid?: number; // cantidad ya pagada (para calcular pendiente)
   status: REExpenseStatus;
   date?: string; // ISO (yyyy-mm-dd)
-  invoiceUri?: string; // factura asociada (url storage o enlace)
+  invoiceUri?: string; // factura por enlace externo (http)
   invoiceName?: string; // nombre visible de la factura
+  invoiceStoragePath?: string; // ruta en Storage cuando la factura es un archivo subido
+  invoiceBucket?: string;
+  invoiceMime?: string;
+  invoiceSize?: number;
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -192,7 +196,11 @@ export type REMediaType = "FOTO" | "VIDEO";
 export type REMediaItem = {
   id: string;
   type: REMediaType;
-  uri: string; // url de storage o enlace externo (subida real requiere Supabase Storage)
+  uri: string; // enlace externo (http) — vacío cuando es un archivo subido a Storage
+  storagePath?: string; // ruta en el bucket cuando es archivo subido (Supabase Storage)
+  bucket?: string; // bucket del archivo subido
+  mime?: string;
+  size?: number;
   caption?: string;
   date?: string; // ISO — fecha del estado capturado
   createdAt: string;

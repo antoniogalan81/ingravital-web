@@ -3,8 +3,9 @@
 // Panel GASTOS estilo hoja de cálculo. Tabla editable + resumen por categoría con
 // barras estimado vs real. Persiste el array `expenses` en la operación (JSON sync).
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { REOperation } from "@/src/lib/realEstate";
+import { BUCKET_DOCS, currentUserId, invoicePath, removeFile, signedUrl, uploadFile } from "@/src/lib/storage";
 import {
   RE_EXPENSE_CATEGORIES,
   RE_EXPENSE_CATEGORY_LABEL,
@@ -171,26 +172,8 @@ export function GastosPanel({
     {
       key: "invoice",
       header: "Factura",
-      width: "11rem",
-      cell: (r) => (
-        <div className="flex items-center gap-1.5">
-          <TextCellInput
-            value={r.invoiceName ?? r.invoiceUri}
-            placeholder="Enlace o nombre"
-            onChange={(v) => update(r.id, { invoiceName: v, invoiceUri: isHttp(v) ? v : r.invoiceUri })}
-          />
-          {isHttp(r.invoiceUri) || isHttp(r.invoiceName) ? (
-            <a
-              href={(isHttp(r.invoiceUri) ? r.invoiceUri : r.invoiceName) as string}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="shrink-0 text-xs font-semibold text-brand hover:underline"
-            >
-              Ver
-            </a>
-          ) : null}
-        </div>
-      ),
+      width: "13rem",
+      cell: (r) => <InvoiceCell expense={r} operationId={op.id} onUpdate={(patch) => update(r.id, patch)} />,
     },
   ];
 
@@ -283,6 +266,86 @@ export function GastosPanel({
           <p className="text-[11px] text-ink-subtle">Barra superior: estimado · inferior: real.</p>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function InvoiceCell({
+  expense,
+  operationId,
+  onUpdate,
+}: {
+  expense: REExpense;
+  operationId: string;
+  onUpdate: (patch: Partial<REExpense>) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const hasFile = !!expense.invoiceStoragePath && !!expense.invoiceBucket;
+  const linkHref = isHttp(expense.invoiceUri) ? expense.invoiceUri : isHttp(expense.invoiceName) ? expense.invoiceName : null;
+
+  const upload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const uid = await currentUserId();
+      const up = await uploadFile(BUCKET_DOCS, invoicePath(uid, operationId, expense.id, file.name), file);
+      onUpdate({ invoiceStoragePath: up.path, invoiceBucket: up.bucket, invoiceName: file.name, invoiceMime: up.mime, invoiceSize: up.size, invoiceUri: undefined });
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Error al subir la factura.");
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const viewFile = async () => {
+    const u = await signedUrl(expense.invoiceBucket as string, expense.invoiceStoragePath as string);
+    if (u) window.open(u, "_blank", "noopener");
+    else setErr("No se pudo abrir la factura (permiso o archivo).");
+  };
+
+  const clearFile = async () => {
+    setErr(null);
+    try {
+      await removeFile(expense.invoiceBucket as string, expense.invoiceStoragePath as string);
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "No se pudo borrar la factura.");
+      return;
+    }
+    onUpdate({ invoiceStoragePath: undefined, invoiceBucket: undefined, invoiceMime: undefined, invoiceSize: undefined });
+  };
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      {hasFile ? (
+        <div className="flex items-center gap-1.5">
+          <button type="button" onClick={viewFile} className="text-xs font-semibold text-brand hover:underline truncate max-w-[8rem]">
+            {expense.invoiceName || "Factura"}
+          </button>
+          <button type="button" onClick={clearFile} title="Quitar factura" className="shrink-0 text-slate-400 hover:text-red-500 text-sm leading-none">×</button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1">
+          <TextCellInput
+            value={expense.invoiceName ?? expense.invoiceUri}
+            placeholder="Enlace o nombre"
+            onChange={(v) => onUpdate({ invoiceName: v, invoiceUri: isHttp(v) ? v : expense.invoiceUri })}
+          />
+          {linkHref ? (
+            <a href={linkHref} target="_blank" rel="noopener noreferrer" className="shrink-0 text-xs font-semibold text-brand hover:underline">Ver</a>
+          ) : null}
+          <input ref={fileRef} type="file" onChange={upload} className="hidden" />
+          <button type="button" onClick={() => fileRef.current?.click()} disabled={busy} title="Subir factura" className="shrink-0 p-1 text-slate-400 hover:text-brand disabled:opacity-50">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+          </button>
+        </div>
+      )}
+      {err ? <span className="text-[10px] text-[var(--negative)]">{err}</span> : null}
     </div>
   );
 }
