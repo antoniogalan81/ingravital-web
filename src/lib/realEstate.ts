@@ -9,6 +9,7 @@ import type {
   RESale,
   REShareSettings,
 } from "./realEstateTracking";
+import type { PipelineStage } from "./pipeline";
 
 export type UnitType = "VIVIENDA" | "GARAJE" | "TRASTERO";
 
@@ -113,6 +114,9 @@ export type REOperation = {
   variantGroupName?: string;
   variantName?: string;
   isMainVariant?: boolean;
+
+  // Etapa del pipeline/embudo (opcional; ausente = "Sin clasificar"). Ver ./pipeline.
+  pipelineStage?: PipelineStage;
 
   // ── Capa de SEGUIMIENTO Y GESTIÓN (anidada, persiste en el JSON de la operación;
   //    no requiere migración). Shapes en ./realEstateTracking. Compatible con APP. ──

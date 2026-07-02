@@ -9,6 +9,11 @@ import { DEFAULT_TASAS } from "@/src/lib/realEstate";
 import { formatShortDate } from "@/src/lib/date";
 import { RealEstateModal } from "./RealEstateModal";
 import { RealEstateWizard } from "./RealEstateWizard";
+import { stageOf, type PipelineStage, type StageFilter, PIPELINE_STAGES, stageDef } from "@/src/lib/pipeline";
+import { StageSelect } from "./pipeline/StageSelect";
+import { PipelineFilters, type StageCounts } from "./pipeline/PipelineFilters";
+import { ViewModeToggle, type ViewMode } from "./pipeline/ViewModeToggle";
+import { OperationsTable, type OperationRow } from "./OperationsTable";
 
 function generateId(): string {
   return crypto.randomUUID();
@@ -506,13 +511,15 @@ interface RECardProps {
   onToggleExpand?: () => void;
   // Variant card: action to convert back to independent operation
   onExtract?: () => void;
+  // Cambio rápido de etapa del pipeline
+  onChangeStage?: (stage: PipelineStage) => void;
 }
 
 function RECard({
   op, onOpen, onDuplicate, onDelete,
   compareMode, selected, onToggleSelect,
   isGroupCard, isExpanded, onToggleExpand,
-  onExtract,
+  onExtract, onChangeStage,
 }: RECardProps) {
   const res = useMemo(() => calcResults(op), [op]);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -562,6 +569,11 @@ function RECard({
               <span className="text-[10px] font-medium text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded mt-1 inline-block">
                 Incompleta
               </span>
+            )}
+            {!compareMode && onChangeStage && (
+              <div className="mt-1.5">
+                <StageSelect stage={stageOf(op)} onChange={(s) => onChangeStage(s)} />
+              </div>
             )}
           </div>
         </div>
@@ -817,6 +829,18 @@ export function RealEstateSection() {
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const suppressClickRef = useRef(false);
 
+  // Pipeline / vista: filtro de etapa, búsqueda y modo (tarjetas/tabla, persistido).
+  const [stageFilter, setStageFilter] = useState<StageFilter>("all");
+  const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    if (typeof window === "undefined") return "cards";
+    return localStorage.getItem("re_viewMode") === "table" ? "table" : "cards";
+  });
+  const changeViewMode = useCallback((m: ViewMode) => {
+    setViewMode(m);
+    if (typeof window !== "undefined") localStorage.setItem("re_viewMode", m);
+  }, []);
+
   const activeOps = useMemo(
     () => realEstateOperations.filter((op) => !op.deleted),
     [realEstateOperations]
@@ -844,6 +868,79 @@ export function RealEstateSection() {
       return next;
     });
   }, []);
+
+  // Representante de cada item de lista (op suelta o principal del grupo).
+  const repOf = (item: WebListItem): REOperation | null =>
+    item.kind === "op" ? item.op : item.kind === "group-card" ? item.mainOp : null;
+
+  // Contadores por etapa (sobre representantes, no variantes) — vista global estable.
+  const stageCounts = useMemo<StageCounts>(() => {
+    const c: StageCounts = { all: 0, none: 0 };
+    for (const s of PIPELINE_STAGES) c[s.key] = 0;
+    for (const item of webListItems) {
+      const rep = repOf(item);
+      if (!rep) continue;
+      c.all += 1;
+      const key = stageOf(rep) ?? "none";
+      c[key] = (c[key] ?? 0) + 1;
+    }
+    return c;
+  }, [webListItems]);
+
+  // Predicado de filtro (etapa + búsqueda por nombre/dirección, local).
+  const matchOp = useCallback(
+    (op: REOperation): boolean => {
+      const stageOk =
+        stageFilter === "all" || (stageFilter === "none" ? stageOf(op) === null : stageOf(op) === stageFilter);
+      if (!stageOk) return false;
+      const q = search.trim().toLowerCase();
+      if (!q) return true;
+      return `${op.name ?? ""} ${op.address ?? ""}`.toLowerCase().includes(q);
+    },
+    [stageFilter, search]
+  );
+
+  // Items de tarjetas filtrados (conserva las variantes expandidas de un grupo visible).
+  const displayedItems = useMemo(() => {
+    const out: WebListItem[] = [];
+    const includedGroups = new Set<string>();
+    for (const item of webListItems) {
+      if (item.kind === "group-expanded") {
+        if (includedGroups.has(item.groupId)) out.push(item);
+        continue;
+      }
+      const rep = repOf(item);
+      if (rep && matchOp(rep)) {
+        out.push(item);
+        if (item.kind === "group-card") includedGroups.add(item.groupId);
+      }
+    }
+    return out;
+  }, [webListItems, matchOp]);
+
+  // Filas para la vista tabla (principal + variantes de cada grupo visible).
+  const tableRows = useMemo<OperationRow[]>(() => {
+    const rows: OperationRow[] = [];
+    for (const item of webListItems) {
+      if (item.kind === "op") {
+        if (matchOp(item.op)) rows.push({ key: item.op.id, op: item.op, variants: [] });
+      } else if (item.kind === "group-card") {
+        if (!matchOp(item.mainOp)) continue;
+        const members = orderedOps.filter((o) => o.variantGroupId === item.groupId);
+        rows.push({ key: item.groupId, op: item.mainOp, groupId: item.groupId, variants: members.slice(1) });
+      }
+    }
+    return rows;
+  }, [webListItems, orderedOps, matchOp]);
+
+  const handleChangeStage = useCallback(
+    (op: REOperation, stage: PipelineStage) => {
+      if (stageOf(op) === stage) return;
+      setRealEstateOperation({ ...op, pipelineStage: stage, updatedAt: new Date().toISOString() });
+      toast.success("Etapa actualizada", { description: stageDef(stage).label });
+    },
+    [setRealEstateOperation]
+  );
 
   // ── Variant group actions ────────────────────────────────────────────────
 
@@ -1318,6 +1415,35 @@ export function RealEstateSection() {
 
         {expanded && (
           <>
+            {activeOps.length > 0 && !compareMode && (
+              <div className="flex flex-col gap-2 mb-3">
+                <PipelineFilters counts={stageCounts} active={stageFilter} onChange={setStageFilter} />
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1 max-w-xs">
+                    <input
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Buscar por nombre o dirección…"
+                      className="w-full rounded-lg border border-line pl-3 pr-8 py-1.5 text-sm text-ink placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+                    />
+                    {search && (
+                      <button
+                        type="button"
+                        onClick={() => setSearch("")}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm"
+                        title="Limpiar búsqueda"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                  <div className="ml-auto">
+                    <ViewModeToggle mode={viewMode} onChange={changeViewMode} />
+                  </div>
+                </div>
+              </div>
+            )}
+
             {activeOps.length === 0 ? (
               <div className="empty-state">
                 <span className="empty-state-icon">
@@ -1333,9 +1459,21 @@ export function RealEstateSection() {
                   + Nueva operación
                 </button>
               </div>
+            ) : viewMode === "table" ? (
+              <OperationsTable
+                rows={tableRows}
+                onOpen={(op) => { if (op.isDraft) setWizardOp(op); else setSelectedId(op.id); }}
+                onChangeStage={handleChangeStage}
+                expandedGroups={expandedGroups}
+                onToggleGroup={toggleGroup}
+              />
+            ) : displayedItems.length === 0 ? (
+              <p className="text-sm text-ink-subtle py-10 text-center">
+                No hay operaciones que coincidan con el filtro. <button type="button" onClick={() => { setStageFilter("all"); setSearch(""); }} className="font-semibold text-brand hover:underline">Limpiar filtros</button>
+              </p>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
-                {webListItems.map((item) => {
+                {displayedItems.map((item) => {
 
                   // ── Group expanded variants — compact rows ──────────────────
                   if (item.kind === "group-expanded") {
@@ -1429,6 +1567,7 @@ export function RealEstateSection() {
                         isGroupCard={isGroupCard}
                         isExpanded={isGroupExpanded}
                         onToggleExpand={groupId ? () => toggleGroup(groupId) : undefined}
+                        onChangeStage={(s) => handleChangeStage(op, s)}
                       />
                     </div>
                   );
