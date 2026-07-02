@@ -34,7 +34,7 @@ export function RentabilidadPanel({
   return (
     <div className="space-y-5">
       {/* Total de la operación */}
-      <Block title="Rentabilidad total de la operación">
+      <Block title="Rentabilidad total de la operación" accent="var(--brand)">
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
           <StatTile label="Beneficio estimado" value={eur(prof.estimatedBenefit)} tone={prof.estimatedBenefit >= 0 ? "positive" : "negative"} />
           <StatTile label="Beneficio real" value={eur(prof.realBenefit)} tone={prof.realBenefit == null ? "default" : prof.realBenefit >= 0 ? "positive" : "negative"} />
@@ -61,7 +61,7 @@ export function RentabilidadPanel({
       </Block>
 
       {/* Promotor */}
-      <Block title="Rentabilidad del promotor">
+      <Block title="Rentabilidad del promotor" accent="#0f766e">
         <div className="grid grid-cols-2 gap-2.5">
           <StatTile label="Beneficio estimado" value={eur(prof.estimatedPromoterBenefit)} tone={prof.estimatedPromoterBenefit == null ? "default" : "positive"} />
           <StatTile label="Beneficio real" value={eur(prof.realPromoterBenefit)} tone={prof.realPromoterBenefit == null ? "default" : "positive"} />
@@ -69,7 +69,7 @@ export function RentabilidadPanel({
       </Block>
 
       {/* Inversor */}
-      <Block title="Rentabilidad del inversor">
+      <Block title="Rentabilidad del inversor" accent="var(--accent)">
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
           <StatTile label="Beneficio estimado" value={eur(prof.estimatedInvestorBenefit)} tone={prof.estimatedInvestorBenefit == null ? "default" : "positive"} />
           <StatTile label="Beneficio real" value={eur(prof.realInvestorBenefit)} tone={prof.realInvestorBenefit == null ? "default" : "positive"} />
@@ -80,10 +80,13 @@ export function RentabilidadPanel({
   );
 }
 
-function Block({ title, children }: { title: string; children: React.ReactNode }) {
+function Block({ title, children, accent }: { title: string; children: React.ReactNode; accent?: string }) {
   return (
-    <div className="re-card p-4 space-y-3">
-      <p className="text-xs font-bold uppercase tracking-wide text-ink-subtle">{title}</p>
+    <div className="re-card p-4 space-y-3" style={accent ? { borderLeft: `3px solid ${accent}` } : undefined}>
+      <p className="text-xs font-bold uppercase tracking-wide text-ink-subtle flex items-center gap-1.5">
+        {accent ? <span className="inline-block h-2 w-2 rounded-full" style={{ background: accent }} /> : null}
+        {title}
+      </p>
       {children}
     </div>
   );

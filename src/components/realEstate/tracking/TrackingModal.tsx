@@ -23,6 +23,8 @@ import {
   type RESale,
   type REShareSettings,
 } from "@/src/lib/realEstateTracking";
+import { stageOf } from "@/src/lib/pipeline";
+import { StageBadge } from "../pipeline/StageBadge";
 import { SummaryBar } from "./SummaryBar";
 import { ResumenPanel } from "./ResumenPanel";
 import { GastosPanel } from "./GastosPanel";
@@ -108,63 +110,70 @@ export function TrackingModal({
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-white">
       <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col min-h-0">
-        {/* Header + acciones rápidas */}
-        <div className="flex flex-col gap-3 border-b border-line px-4 sm:px-6 py-3 flex-shrink-0">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[10px] uppercase tracking-widest font-bold text-ink-subtle">Seguimiento y gestión</p>
-              <h2 className="text-xl font-extrabold text-ink tracking-tight truncate">{op.name || "Operación"}</h2>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex items-center gap-1.5 rounded-lg border border-line px-3 py-2 text-sm font-semibold text-ink hover:bg-[var(--surface-alt)] transition-colors flex-shrink-0"
-              title="Cerrar (Esc)"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-              Cerrar
-            </button>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[10px] uppercase tracking-wide font-bold text-ink-subtle mr-1">Acciones rápidas</span>
-            <QuickAction label="+ Gasto" onClick={addGasto} primary />
-            <QuickAction label="+ Venta" onClick={addVenta} primary />
-            <QuickAction label="+ Hito" onClick={addHito} primary />
-            <QuickAction label="Media" onClick={() => setTab("resumen")} />
-            <QuickAction label="Vista inversor" onClick={() => setPreviewOpen(true)} />
-            <QuickAction label="Informe" onClick={() => setTab("informe")} />
-          </div>
-        </div>
-
-        {/* Barra-resumen persistente */}
-        <div className="border-b border-line flex-shrink-0">
-          <SummaryBar op={op} results={results} />
-        </div>
-
-        {/* Tabs */}
-        <div className="flex overflow-x-auto gap-1.5 px-4 sm:px-6 py-2 border-b border-line bg-white flex-shrink-0">
-          {TABS.map((t) => {
-            const active = t.key === tab;
-            return (
+        {/* Zona superior fija (cabecera + resumen + tabs) con elevación */}
+        <div className="flex-shrink-0 bg-white relative z-10" style={{ boxShadow: "var(--shadow-sm)" }}>
+          {/* Header + acciones rápidas */}
+          <div className="flex flex-col gap-3 border-b border-line px-4 sm:px-6 py-3.5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase tracking-[0.16em] font-bold text-ink-subtle">Seguimiento y gestión</p>
+                <div className="flex items-center gap-2.5 mt-1 min-w-0">
+                  <h2 className="text-2xl font-extrabold text-ink tracking-tight truncate">{op.name || "Operación"}</h2>
+                  <StageBadge stage={stageOf(op)} />
+                </div>
+              </div>
               <button
-                key={t.key}
                 type="button"
-                onClick={() => setTab(t.key)}
-                className={`px-3.5 py-1.5 text-sm font-semibold rounded-full whitespace-nowrap border transition-colors flex-shrink-0 ${
-                  active ? "border-transparent text-white" : "border-line text-ink-muted hover:text-brand hover:border-brand hover:bg-[var(--brand-soft)]"
-                }`}
-                style={active ? { background: "var(--brand)" } : undefined}
+                onClick={onClose}
+                className="flex items-center gap-1.5 rounded-lg border border-line px-3 py-2 text-sm font-semibold text-ink hover:bg-[var(--surface-alt)] transition-colors flex-shrink-0"
+                title="Cerrar (Esc)"
               >
-                {t.label}
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Cerrar
               </button>
-            );
-          })}
+            </div>
+            {/* Acciones rápidas: crear (primarias) · ver (secundarias) */}
+            <div className="flex flex-wrap items-center gap-2">
+              <QuickAction label="+ Gasto" onClick={addGasto} primary />
+              <QuickAction label="+ Venta" onClick={addVenta} primary />
+              <QuickAction label="+ Hito" onClick={addHito} primary />
+              <span className="mx-0.5 h-5 w-px bg-[var(--line)]" aria-hidden />
+              <QuickAction label="Media" onClick={() => setTab("resumen")} />
+              <QuickAction label="Vista inversor" onClick={() => setPreviewOpen(true)} />
+              <QuickAction label="Informe" onClick={() => setTab("informe")} />
+            </div>
+          </div>
+
+          {/* Barra-resumen persistente */}
+          <div className="border-b border-line">
+            <SummaryBar op={op} results={results} />
+          </div>
+
+          {/* Tabs */}
+          <div className="flex overflow-x-auto gap-1.5 px-4 sm:px-6 py-2.5 bg-[var(--surface-alt)]">
+            {TABS.map((t) => {
+              const active = t.key === tab;
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setTab(t.key)}
+                  className={`px-3.5 py-1.5 text-sm font-semibold rounded-full whitespace-nowrap border transition-colors flex-shrink-0 ${
+                    active ? "border-transparent text-white shadow-sm" : "border-line bg-white text-ink-muted hover:text-brand hover:border-brand hover:bg-[var(--brand-soft)]"
+                  }`}
+                  style={active ? { background: "var(--brand)" } : undefined}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-5 bg-[var(--surface-alt)]">
+        <div key={tab} className="reveal-fast flex-1 overflow-y-auto px-4 sm:px-6 py-5 bg-[var(--surface-alt)]">
           {tab === "resumen" && (
             <ResumenPanel
               op={op}

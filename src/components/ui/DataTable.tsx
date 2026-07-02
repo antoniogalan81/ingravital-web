@@ -52,22 +52,20 @@ export function DataTable<T>({
           <span className="text-xs text-ink-subtle tabular-nums">{rows.length} filas</span>
         </div>
       ) : null}
-      <div className="overflow-x-auto rounded-xl border border-line">
+      <div className="overflow-x-auto rounded-xl border border-line" style={{ boxShadow: "var(--shadow-xs)" }}>
         <table className="w-full border-collapse text-sm">
           <thead>
-            <tr className="bg-[var(--surface-alt)]">
+            <tr>
               {columns.map((c) => (
                 <th
                   key={c.key}
                   style={c.width ? { width: c.width, minWidth: c.width } : undefined}
-                  className={`px-2.5 py-2 text-[11px] font-bold uppercase tracking-wide text-ink-subtle whitespace-nowrap ${alignCls(
-                    c.align,
-                  )}`}
+                  className={`re-th px-2.5 py-2.5 ${alignCls(c.align)}`}
                 >
                   {c.header}
                 </th>
               ))}
-              {onDeleteRow ? <th className="w-10 px-2 py-2" /> : null}
+              {onDeleteRow ? <th className="re-th w-10 px-2 py-2.5" /> : null}
             </tr>
           </thead>
           <tbody>
@@ -82,7 +80,7 @@ export function DataTable<T>({
               </tr>
             ) : (
               rows.map((row, i) => (
-                <tr key={getRowId(row)} className="border-t border-line align-middle">
+                <tr key={getRowId(row)} className={`re-tr border-t border-line align-middle ${i % 2 === 1 ? "re-zebra" : ""}`}>
                   {columns.map((c) => (
                     <td key={c.key} className={`px-2 py-1.5 ${alignCls(c.align)}`}>
                       {c.cell(row, i)}

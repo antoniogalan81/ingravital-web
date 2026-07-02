@@ -24,9 +24,12 @@ export function StatTile({
   hint?: string;
 }) {
   return (
-    <div className="rounded-xl border border-line bg-[var(--surface-alt)] p-3">
-      <p className="text-[10px] uppercase tracking-wide font-bold text-ink-subtle">{label}</p>
-      <p className="text-base font-extrabold tabular-nums mt-0.5" style={{ color: COLOR[tone] }}>
+    <div
+      className="rounded-[var(--radius-md)] border border-line bg-[var(--surface)] px-3.5 py-3"
+      style={{ boxShadow: "var(--shadow-xs)" }}
+    >
+      <p className="text-[10px] uppercase tracking-[0.06em] font-bold text-ink-subtle">{label}</p>
+      <p className="text-xl font-extrabold tabular-nums tracking-tight leading-tight mt-1" style={{ color: COLOR[tone] }}>
         {value}
       </p>
       {hint ? <p className="text-[11px] text-ink-subtle mt-0.5">{hint}</p> : null}

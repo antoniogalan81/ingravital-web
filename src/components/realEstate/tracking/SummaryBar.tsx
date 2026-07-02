@@ -26,7 +26,7 @@ function Cell({
   return (
     <div className="min-w-0 px-3.5 py-2.5 border-r border-line last:border-r-0">
       <p className="text-[10px] uppercase tracking-wide font-bold text-ink-subtle whitespace-nowrap">{label}</p>
-      <p className="text-lg font-extrabold tabular-nums leading-tight truncate" style={{ color }}>
+      <p className="text-xl font-extrabold tabular-nums tracking-tight leading-tight truncate" style={{ color }}>
         {value}
       </p>
       {sub ? <p className="text-[11px] text-ink-subtle truncate">{sub}</p> : null}
@@ -85,7 +85,7 @@ export function SummaryBar({ op, results }: { op: REOperation; results: REResult
         </div>
         <div className="relative h-2.5 w-full rounded-full bg-[var(--surface-alt)] overflow-hidden border border-line">
           <div className="absolute inset-y-0 left-0 rounded-full opacity-40" style={{ width: `${estPct}%`, background: "var(--ink-subtle)" }} />
-          <div className="absolute inset-y-0 left-0 rounded-full" style={{ width: `${realPct}%`, background: overBudget ? "var(--negative)" : "var(--positive)" }} />
+          <div className="bar-anim absolute inset-y-0 left-0 rounded-full" style={{ width: `${realPct}%`, background: overBudget ? "var(--negative)" : "var(--positive)" }} />
         </div>
       </div>
     </div>

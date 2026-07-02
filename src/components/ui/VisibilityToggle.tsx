@@ -32,9 +32,9 @@ export function VisibilityToggle({
         {sensitive ? <span className="pill pill-warning shrink-0">Sensible</span> : null}
       </span>
       <span
-        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
-          visible ? "bg-[var(--brand)]" : "bg-slate-300"
-        }`}
+        className="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors"
+        style={{ background: visible ? (sensitive ? "var(--warning)" : "var(--brand)") : "#cbd5e1" }}
+        title={visible ? (sensitive ? "Visible para el inversor (dato sensible)" : "Visible para el inversor") : "Oculto"}
       >
         <span
           className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${

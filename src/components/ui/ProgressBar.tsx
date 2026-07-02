@@ -36,7 +36,7 @@ export function ProgressBar({
       <div className="h-2 w-full rounded-full bg-[var(--surface-alt)] overflow-hidden border border-line">
         {pct == null ? null : (
           <div
-            className="h-full rounded-full transition-[width] duration-500"
+            className="bar-anim h-full rounded-full transition-[width] duration-500"
             style={{ width: `${pct}%`, background: TONE_VAR[tone] }}
           />
         )}

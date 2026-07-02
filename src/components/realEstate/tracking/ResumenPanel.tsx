@@ -72,18 +72,24 @@ export function ResumenPanel({
       <div className="re-card p-4">
         <p className="text-xs font-bold uppercase tracking-wide text-ink-subtle mb-2.5">Desviaciones y avisos</p>
         {alerts.length === 0 ? (
-          <p className="text-sm text-ink-muted">Sin desviaciones detectadas. La operación va según lo previsto.</p>
+          <div className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ background: "var(--positive-soft)" }}>
+            <svg className="w-4 h-4 shrink-0" style={{ color: "var(--positive)" }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.4}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+            <span className="text-sm font-medium" style={{ color: "var(--positive)" }}>Todo en orden — la operación va según lo previsto.</span>
+          </div>
         ) : (
-          <ul className="space-y-1.5">
-            {alerts.map((al, i) => (
-              <li key={i} className="flex items-center gap-2 text-sm">
-                <span
-                  className="inline-block h-2 w-2 rounded-full shrink-0"
-                  style={{ background: al.tone === "negative" ? "var(--negative)" : al.tone === "accent" ? "var(--brand)" : "var(--ink-subtle)" }}
-                />
-                <span className="text-ink">{al.text}</span>
-              </li>
-            ))}
+          <ul className="space-y-2">
+            {alerts.map((al, i) => {
+              const c = al.tone === "negative" ? "var(--negative)" : al.tone === "accent" ? "var(--brand)" : "var(--ink-muted)";
+              const soft = al.tone === "negative" ? "var(--negative-soft)" : al.tone === "accent" ? "var(--brand-soft)" : "#f1f4f8";
+              return (
+                <li key={i} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm" style={{ background: soft }}>
+                  <span className="inline-block h-2 w-2 rounded-full shrink-0" style={{ background: c }} />
+                  <span className="font-medium" style={{ color: c }}>{al.text}</span>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

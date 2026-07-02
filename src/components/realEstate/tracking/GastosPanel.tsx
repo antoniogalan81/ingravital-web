@@ -170,17 +170,19 @@ export function GastosPanel({
 
   return (
     <div className="space-y-5">
-      {/* Totales compactos (los KPIs generales están en la barra-resumen fija) */}
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
-        <Total label="Estimado" value={fmtEUR(totals.estimated)} />
-        <Total label="Real" value={fmtEUR(totals.real)} />
-        <Total
-          label="Diferencia"
-          value={totals.hasData ? fmtEUR(totals.diff) : "—"}
-          color={!totals.hasData ? undefined : totals.diff <= 0 ? "var(--positive)" : "var(--negative)"}
-        />
-        <Total label="Pagado" value={fmtEUR(totals.paid)} />
-        <Total label="Pendiente" value={totals.hasData ? fmtEUR(totals.pending) : "—"} color="var(--brand)" />
+      {/* Totales (control económico) */}
+      <div className="re-card p-4">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+          <Total label="Estimado" value={fmtEUR(totals.estimated)} />
+          <Total label="Real" value={fmtEUR(totals.real)} />
+          <Total
+            label="Diferencia"
+            value={totals.hasData ? fmtEUR(totals.diff) : "—"}
+            color={!totals.hasData ? undefined : totals.diff <= 0 ? "var(--positive)" : "var(--negative)"}
+          />
+          <Total label="Pagado" value={fmtEUR(totals.paid)} />
+          <Total label="Pendiente" value={totals.hasData ? fmtEUR(totals.pending) : "—"} color="var(--brand)" />
+        </div>
       </div>
 
       {/* Tabla editable */}
@@ -226,10 +228,10 @@ export function GastosPanel({
 
 function Total({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
-    <span className="inline-flex items-baseline gap-1.5">
-      <span className="text-xs uppercase tracking-wide font-bold text-ink-subtle">{label}</span>
-      <span className="font-extrabold tabular-nums" style={color ? { color } : undefined}>{value}</span>
-    </span>
+    <div className="min-w-0">
+      <p className="kpi-label">{label}</p>
+      <p className="text-lg font-extrabold tabular-nums tracking-tight leading-tight mt-0.5" style={color ? { color } : { color: "var(--ink)" }}>{value}</p>
+    </div>
   );
 }
 
@@ -237,7 +239,7 @@ function Bar({ value, color }: { value: number; color: string }) {
   const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
   return (
     <div className="h-2 w-full rounded-full bg-[var(--surface-alt)] overflow-hidden border border-line">
-      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+      <div className="bar-anim h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
     </div>
   );
 }

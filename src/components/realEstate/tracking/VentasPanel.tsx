@@ -137,6 +137,7 @@ export function VentasPanel({
                 stats.byStatus[s] > 0 ? (
                   <div
                     key={s}
+                    className="bar-anim h-full"
                     style={{ width: `${(stats.byStatus[s] / stats.count) * 100}%`, background: STATUS_COLOR[s] }}
                     title={`${RE_SALE_STATUS_LABEL[s]}: ${stats.byStatus[s]}`}
                   />
@@ -179,7 +180,7 @@ function Fig({ label, value, color }: { label: string; value: string; color?: st
   return (
     <div className="min-w-0">
       <p className="text-[10px] uppercase tracking-wide font-bold text-ink-subtle truncate">{label}</p>
-      <p className="font-extrabold tabular-nums truncate" style={color ? { color } : undefined}>{value}</p>
+      <p className="text-base font-extrabold tabular-nums tracking-tight truncate" style={color ? { color } : { color: "var(--ink)" }}>{value}</p>
     </div>
   );
 }

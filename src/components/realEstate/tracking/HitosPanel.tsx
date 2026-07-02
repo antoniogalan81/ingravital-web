@@ -25,6 +25,13 @@ import { ProgressBar } from "@/src/components/ui/ProgressBar";
 
 const STATUS_OPTS = RE_MILESTONE_STATUSES.map((s) => ({ value: s, label: RE_MILESTONE_STATUS_LABEL[s] }));
 
+const MS_STYLE: Record<REMilestoneStatus, { color: string; soft: string }> = {
+  PENDIENTE: { color: "var(--ink-subtle)", soft: "#f1f4f8" },
+  EN_CURSO: { color: "var(--brand)", soft: "var(--brand-soft)" },
+  COMPLETADO: { color: "var(--positive)", soft: "var(--positive-soft)" },
+  DESVIADO: { color: "var(--negative)", soft: "var(--negative-soft)" },
+};
+
 function daysDeviation(due?: string, real?: string): number | null {
   if (!due || !real) return null;
   const a = Date.parse(due);
@@ -122,6 +129,38 @@ export function HitosPanel({
           }
         />
       </div>
+
+      {/* Cronología (timeline ligero, solo lectura) */}
+      {milestones.length > 0 ? (
+        <div className="re-card p-4">
+          <p className="text-xs font-bold uppercase tracking-wide text-ink-subtle mb-3">Cronología</p>
+          <ol className="relative ml-1 border-l border-line space-y-4">
+            {milestones.map((m) => {
+              const dev = daysDeviation(m.dueDate, m.realDate);
+              const st = MS_STYLE[m.status];
+              return (
+                <li key={m.id} className="relative pl-5">
+                  <span className="absolute -left-[6.5px] top-1 h-3 w-3 rounded-full border-2 border-white" style={{ background: st.color }} />
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-ink truncate">{m.title || "Hito"}</span>
+                    <span className="pill" style={{ background: st.soft, color: st.color }}>{RE_MILESTONE_STATUS_LABEL[m.status]}</span>
+                  </div>
+                  <div className="text-xs text-ink-subtle mt-0.5">
+                    {m.dueDate ? `Prev. ${m.dueDate}` : "Sin fecha prevista"}
+                    {m.realDate ? ` · Real ${m.realDate}` : ""}
+                    {dev != null ? (
+                      <span style={{ color: dev <= 0 ? "var(--positive)" : "var(--negative)" }}>
+                        {" · "}
+                        {dev === 0 ? "En fecha" : dev > 0 ? `+${dev} d` : `${dev} d`}
+                      </span>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      ) : null}
 
       <DataTable
         columns={columns}

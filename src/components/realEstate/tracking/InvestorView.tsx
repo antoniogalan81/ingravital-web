@@ -68,7 +68,7 @@ export function InvestorView({
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/40 flex justify-center overflow-y-auto">
-      <div className="min-h-full w-full max-w-3xl bg-white">
+      <div className="reveal-fast min-h-full w-full max-w-3xl bg-white shadow-2xl">
         {/* Header */}
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-white px-5 py-3">
           <button type="button" onClick={onClose} className="p-2 -ml-2 text-slate-500 hover:text-ink rounded-lg hover:bg-slate-100">
@@ -88,19 +88,23 @@ export function InvestorView({
         </div>
 
         <div className="px-5 py-5 space-y-5">
-          {/* Hero */}
-          <div>
-            <h1 className="text-2xl font-extrabold tracking-tight text-ink">{op.name || "Operación"}</h1>
-            {op.address ? <p className="text-sm text-ink-subtle">{op.address}</p> : null}
-          </div>
-
-          {!share.enabled ? (
-            <div className="rounded-xl border border-line bg-[var(--surface-alt)] p-3">
-              <p className="text-sm text-ink-muted">
-                Previsualización. La compartición está <b>desactivada</b>: actívala en el panel de Compartir para publicar esta vista.
-              </p>
+          {/* Portada premium */}
+          <div
+            className="rounded-2xl overflow-hidden border border-line relative"
+            style={{ background: "linear-gradient(135deg, var(--backdrop-deep) 0%, var(--brand-dark) 68%, var(--brand) 100%)" }}
+          >
+            <div className="absolute inset-x-0 top-0 h-1" style={{ background: "linear-gradient(90deg, var(--accent), transparent)" }} />
+            <div className="px-5 py-6 text-white">
+              <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-white/60">Informe para el inversor</p>
+              <h1 className="text-2xl font-extrabold tracking-tight mt-1.5 leading-tight">{op.name || "Operación"}</h1>
+              {op.address ? <p className="text-sm text-white/70 mt-1">{op.address}</p> : null}
+              {!share.enabled ? (
+                <span className="pill mt-3 inline-flex" style={{ background: "rgba(255,255,255,0.16)", color: "#fff" }}>
+                  Previsualización · compartición desactivada
+                </span>
+              ) : null}
             </div>
-          ) : null}
+          </div>
 
           {/* Resumen financiero (gated) */}
           {anyFinance ? (

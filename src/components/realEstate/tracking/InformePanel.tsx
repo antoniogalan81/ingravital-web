@@ -42,37 +42,44 @@ export function InformePanel({
 
   return (
     <div className="space-y-4">
-      {/* Acciones (no salen en la impresión) */}
-      <div className="no-print flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={print}
-          className="rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors"
-          style={{ background: "var(--brand)" }}
-        >
-          Imprimir / Guardar PDF
-        </button>
-        <button
-          type="button"
-          onClick={onPreviewInvestor}
-          className="rounded-lg border border-line px-4 py-2 text-sm font-semibold text-ink hover:bg-[var(--surface-alt)] transition-colors"
-        >
-          Vista inversor
-        </button>
-        <button
-          type="button"
-          onClick={shareSummary}
-          className="rounded-lg border border-line px-4 py-2 text-sm font-semibold text-ink hover:bg-[var(--surface-alt)] transition-colors"
-        >
-          Compartir resumen
-        </button>
+      {/* Barra de acciones del informe (no sale en la impresión) */}
+      <div className="no-print re-card p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-extrabold text-ink">Informe de la operación</p>
+            <p className="text-xs text-ink-subtle mt-0.5">Vista previa lista para imprimir o compartir.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={print}
+              className="rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors"
+              style={{ background: "var(--brand)" }}
+            >
+              Imprimir / Guardar PDF
+            </button>
+            <button
+              type="button"
+              onClick={onPreviewInvestor}
+              className="rounded-lg border border-line px-4 py-2 text-sm font-semibold text-ink hover:bg-[var(--surface-alt)] transition-colors"
+            >
+              Vista inversor
+            </button>
+            <button
+              type="button"
+              onClick={shareSummary}
+              className="rounded-lg border border-line px-4 py-2 text-sm font-semibold text-ink hover:bg-[var(--surface-alt)] transition-colors"
+            >
+              Compartir resumen
+            </button>
+          </div>
+        </div>
+        <p className="text-xs text-ink-subtle mt-3">
+          Usa los datos reales de esta operación (resumen, avance, gastos, ventas, hitos, rentabilidad,
+          desviaciones y próximos pasos). La <b>vista inversor</b> muestra solo lo permitido en Compartir.
+          La exportación a PDF se hace con la impresión del navegador (sin dependencias nuevas).
+        </p>
       </div>
-
-      <p className="no-print text-xs text-ink-subtle">
-        El informe usa los datos reales de esta operación (resumen, avance, gastos, ventas, hitos,
-        rentabilidad, desviaciones y próximos pasos). La <b>vista inversor</b> muestra solo lo permitido
-        en Compartir. La exportación a PDF se hace con la impresión del navegador (sin dependencias nuevas).
-      </p>
 
       <ReportDocument op={op} generatedAt={generatedAt} />
     </div>
