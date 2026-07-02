@@ -1,18 +1,110 @@
 // ==================== SYNC ENGINE ====================
+// Transporte (pull/push contra Supabase) + estado local (watermark, dirty, borrados
+// pendientes y caché offline del store). La lógica pura de fusión vive en `merge.ts`.
 
 import { supabase } from "@/src/lib/supabaseClient";
 import { ENTITY_CONFIGS, EntityKey, SupabaseRow, SyncableEntity } from "./types";
 
-// ==================== HELPERS ====================
+// Re-export de la lógica de fusión pura (mantiene la API previa de este módulo).
+export { isRemoteNewer, rowToEntity, mergeRemoteRows } from "./merge";
+
+// ==================== ALMACENAMIENTO LOCAL (aislado por usuario, a prueba de fallos) ====================
+// TODAS las claves se aíslan por userId para NO mezclar datos entre cuentas en el
+// mismo navegador (antes eran globales → fuga entre cuentas). Las escrituras se
+// protegen: una QuotaExceededError o el modo privado de Safari no deben romper la app.
+
+let syncUserId: string | null = null;
+
+/** Fija el usuario activo para el aislamiento de claves. Llamar en login/logout. */
+export function setSyncUser(userId: string | null) {
+  syncUserId = userId;
+}
+
+function scopedKey(base: string): string {
+  return syncUserId ? `${base}::${syncUserId}` : base;
+}
+
+function safeGet(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSet(key: string, value: string) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(key, value);
+  } catch (e) {
+    console.warn(`[sync] no se pudo escribir ${key} (quota / modo privado):`, e);
+  }
+}
+
+function safeRemove(key: string) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* noop */
+  }
+}
+
+const LAST_PULLED_KEY = "sync_lastPulledAt";
+const DIRTY_STORAGE_KEY = "sync_dirtyIds";
+const DELETED_STORAGE_KEY = "sync_deletedIds";
+const CACHE_PREFIX = "sync_cache";
+
+/**
+ * Migración única: claves antiguas SIN aislar → aisladas por el usuario actual.
+ * Preserva ediciones pendientes en el caso común (mismo usuario reabre) y elimina
+ * las claves globales que provocaban fuga de datos entre cuentas. Es idempotente.
+ */
+export function migrateLegacyKeys() {
+  if (typeof window === "undefined" || !syncUserId) return;
+  for (const base of [LAST_PULLED_KEY, DIRTY_STORAGE_KEY]) {
+    const legacy = safeGet(base);
+    if (legacy !== null) {
+      const scoped = scopedKey(base);
+      if (safeGet(scoped) === null) safeSet(scoped, legacy);
+      safeRemove(base);
+    }
+  }
+}
+
+// ==================== WATERMARK ====================
 
 function getLastPulledAt(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("sync_lastPulledAt");
+  return safeGet(scopedKey(LAST_PULLED_KEY));
 }
 
 function setLastPulledAt(iso: string) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem("sync_lastPulledAt", iso);
+  safeSet(scopedKey(LAST_PULLED_KEY), iso);
+}
+
+// ==================== CACHÉ LOCAL DEL STORE (offline real) ====================
+// Persistimos la copia local de cada entidad para que las ediciones sobrevivan a un
+// refresco SIN conexión. Antes el dato solo vivía en memoria: al refrescar se perdía
+// mientras el "dirty" persistía apuntando a datos ya inexistentes (pérdida/borrado).
+
+function cacheKey(entityKey: EntityKey): string {
+  return `${CACHE_PREFIX}::${entityKey}::${syncUserId ?? "anon"}`;
+}
+
+export function loadEntityCache(entityKey: EntityKey): unknown[] | null {
+  const raw = safeGet(cacheKey(entityKey));
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveEntityCache(entityKey: EntityKey, items: unknown[]) {
+  safeSet(cacheKey(entityKey), JSON.stringify(items));
 }
 
 // ==================== PULL ====================
@@ -110,16 +202,13 @@ export async function pushItem(
     deleted_at: item.deleted ? now : null,
   };
 
-  console.log(`[syncEngine] pushItem table=${config.tableName} id=${item.id}`, record);
-
   const { error } = await supabase.from(config.tableName).upsert(record, { onConflict: "id" });
 
   if (error) {
-    console.error(`[syncEngine] pushItem FAILED table=${config.tableName} id=${item.id}:`, error.message, error);
+    console.error(`[syncEngine] pushItem FAILED table=${config.tableName} id=${item.id}:`, error.message);
     return { error: error.message };
   }
 
-  console.log(`[syncEngine] pushItem OK table=${config.tableName} id=${item.id}`);
   return { error: null };
 }
 
@@ -154,110 +243,69 @@ export async function pushDelete(
   return { error: null };
 }
 
-// ==================== MERGE LOGIC ====================
-
-/**
- * Determina si el registro remoto es más nuevo que el local
- */
-export function isRemoteNewer(
-  remoteRow: SupabaseRow,
-  localItem: SyncableEntity | undefined
-): boolean {
-  if (!localItem) return true;
-
-  const remoteUpdated = remoteRow.client_updated_at || remoteRow.server_updated_at;
-  const localUpdated = localItem.updatedAt;
-
-  if (!remoteUpdated) return false;
-  if (!localUpdated) return true;
-
-  return new Date(remoteUpdated) > new Date(localUpdated);
-}
-
-/**
- * Convierte SupabaseRow a entidad local
- */
-export function rowToEntity(row: SupabaseRow): SyncableEntity {
-  const data = row.data || {};
-
-  return {
-    id: row.id,
-    ...data,
-    updatedAt: row.client_updated_at || (data.updatedAt as string),
-    deleted: row.deleted_at !== null,
-  } as SyncableEntity;
-}
-
-/**
- * Aplica rows remotos a un array local y retorna el nuevo array
- * Respeta last-write-wins por client_updated_at
- */
-export function mergeRemoteRows<T extends SyncableEntity>(
-  localItems: T[],
-  remoteRows: SupabaseRow[]
-): T[] {
-  const localMap = new Map(localItems.map((item) => [item.id, item]));
-  const resultMap = new Map(localMap);
-
-  for (const row of remoteRows) {
-    const localItem = localMap.get(row.id);
-
-    // Si está borrado remotamente, eliminar local
-    if (row.deleted_at !== null) {
-      resultMap.delete(row.id);
-      continue;
-    }
-
-    // Si remoto es más nuevo o no existe local, usar remoto
-    if (isRemoteNewer(row, localItem)) {
-      resultMap.set(row.id, rowToEntity(row) as T);
-    }
-    // Si local es más nuevo, mantener local (quedará dirty para push)
-  }
-
-  return Array.from(resultMap.values());
-}
-
 // ==================== DIRTY TRACKING ====================
 
-const DIRTY_STORAGE_KEY = "sync_dirtyIds";
-
-export function getDirtyIds(): Record<string, string[]> {
-  if (typeof window === "undefined") return {};
+function getIdMap(base: string): Record<string, string[]> {
+  const stored = safeGet(scopedKey(base));
+  if (!stored) return {};
   try {
-    const stored = localStorage.getItem(DIRTY_STORAGE_KEY);
-    return stored ? JSON.parse(stored) : {};
+    const parsed = JSON.parse(stored);
+    return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return {};
   }
 }
 
-export function setDirtyIds(dirty: Record<string, string[]>) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(DIRTY_STORAGE_KEY, JSON.stringify(dirty));
+function setIdMap(base: string, map: Record<string, string[]>) {
+  safeSet(scopedKey(base), JSON.stringify(map));
 }
 
+function addId(base: string, entityKey: EntityKey, itemId: string) {
+  const map = getIdMap(base);
+  if (!map[entityKey]) map[entityKey] = [];
+  if (!map[entityKey].includes(itemId)) map[entityKey].push(itemId);
+  setIdMap(base, map);
+}
+
+function removeId(base: string, entityKey: EntityKey, itemId: string) {
+  const map = getIdMap(base);
+  if (map[entityKey]) {
+    map[entityKey] = map[entityKey].filter((id) => id !== itemId);
+    if (map[entityKey].length === 0) delete map[entityKey];
+    setIdMap(base, map);
+  }
+}
+
+export function getDirtyIds(): Record<string, string[]> {
+  return getIdMap(DIRTY_STORAGE_KEY);
+}
 export function markDirty(entityKey: EntityKey, itemId: string) {
-  const dirty = getDirtyIds();
-  if (!dirty[entityKey]) dirty[entityKey] = [];
-  if (!dirty[entityKey].includes(itemId)) {
-    dirty[entityKey].push(itemId);
-  }
-  setDirtyIds(dirty);
+  addId(DIRTY_STORAGE_KEY, entityKey, itemId);
 }
-
 export function clearDirty(entityKey: EntityKey, itemId: string) {
-  const dirty = getDirtyIds();
-  if (dirty[entityKey]) {
-    dirty[entityKey] = dirty[entityKey].filter((id) => id !== itemId);
-    if (dirty[entityKey].length === 0) delete dirty[entityKey];
-  }
-  setDirtyIds(dirty);
+  removeId(DIRTY_STORAGE_KEY, entityKey, itemId);
+}
+export function clearAllDirty() {
+  setIdMap(DIRTY_STORAGE_KEY, {});
 }
 
-export function clearAllDirty() {
-  setDirtyIds({});
+// ==================== DELETED TRACKING (borrados explícitos) ====================
+// Registro EXPLÍCITO de qué ids ha borrado el usuario. Antes, "id dirty sin item en
+// memoria" se interpretaba como borrado y se enviaba un tombstone — lo que, tras un
+// refresco que vacía la memoria, BORRABA operaciones vivas en la nube. Ahora solo se
+// envía tombstone si el id está marcado explícitamente como borrado.
+
+export function getDeletedIds(): Record<string, string[]> {
+  return getIdMap(DELETED_STORAGE_KEY);
+}
+export function markDeleted(entityKey: EntityKey, itemId: string) {
+  addId(DELETED_STORAGE_KEY, entityKey, itemId);
+}
+export function clearDeleted(entityKey: EntityKey, itemId: string) {
+  removeId(DELETED_STORAGE_KEY, entityKey, itemId);
+}
+export function isDeletedId(entityKey: EntityKey, itemId: string): boolean {
+  return (getDeletedIds()[entityKey] || []).includes(itemId);
 }
 
 export { getLastPulledAt };
-

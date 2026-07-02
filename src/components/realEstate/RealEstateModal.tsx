@@ -593,6 +593,13 @@ interface RealEstateModalProps {
 
 export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: RealEstateModalProps) {
   const [draft, setDraft] = useState<REOperation>(() => JSON.parse(JSON.stringify(op)));
+  // Ref con el draft SIEMPRE actual. Un `commit` disparado tras un `await` (subida de
+  // archivo, etc.) debe fusionar su patch sobre el estado MÁS RECIENTE, no sobre el
+  // snapshot capturado al iniciar la operación asíncrona; si no, se descartaban en
+  // silencio las ediciones hechas durante la subida (p.ej. un gasto añadido mientras
+  // se subía un vídeo).
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isManualTasasTotal, setIsManualTasasTotal] = useState(false);
   const [showTypeChanger, setShowTypeChanger] = useState(false);
@@ -652,12 +659,14 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
 
   const commit = useCallback(
     (patch: Partial<REOperation>) => {
-      const updated = { ...draft, ...patch, updatedAt: new Date().toISOString() };
+      // Fusiona sobre draftRef.current (estado más reciente), no sobre el `draft` del
+      // closure. `onSave` se mantiene síncrono (mismo comportamiento que antes).
+      const updated = { ...draftRef.current, ...patch, updatedAt: new Date().toISOString() };
       setDraft(updated);
       onSave(updated);
       dirtyRef.current = true;
     },
-    [draft, onSave]
+    [onSave]
   );
 
   const setCosts = useCallback(
