@@ -98,18 +98,23 @@ export function ReportDocument({ op, generatedAt }: { op: REOperation; generated
 
   return (
     <div id="report-print-area" className="report-doc bg-white text-ink rounded-2xl border border-line overflow-hidden">
-      {/* ── Cabecera ── */}
-      <header className="px-8 pt-8 pb-5 border-b border-line">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[11px] font-bold tracking-[0.18em] text-brand">INVERGRAVITAL · INFORME DE INVERSIÓN</p>
-            <h1 className="text-2xl font-extrabold tracking-tight text-ink mt-2">{op.name || "Operación sin nombre"}</h1>
-            {op.address && <p className="text-sm text-ink-subtle mt-1">{op.address}</p>}
-            <p className="text-sm text-ink-muted mt-1">{tipo}</p>
+      {/* ── Portada premium ── */}
+      <header
+        className="px-8 pt-8 pb-6 border-b border-line relative overflow-hidden"
+        style={{ background: "linear-gradient(135deg, var(--backdrop-deep) 0%, var(--brand-dark) 62%, var(--brand) 100%)" }}
+      >
+        {/* filete de acento superior */}
+        <div className="absolute inset-x-0 top-0 h-1" style={{ background: "linear-gradient(90deg, var(--accent), transparent)" }} />
+        <div className="flex items-start justify-between gap-4 text-white">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold tracking-[0.22em] text-white/70">INVERGRAVITAL · INFORME DE INVERSIÓN</p>
+            <h1 className="text-3xl font-extrabold tracking-tight mt-2 leading-tight">{op.name || "Operación sin nombre"}</h1>
+            {op.address && <p className="text-sm text-white/70 mt-1.5">{op.address}</p>}
+            <p className="text-sm text-white/85 mt-0.5">{tipo}</p>
           </div>
           <div className="text-right shrink-0">
-            <span className="pill pill-accent">Informe preliminar</span>
-            <p className="text-[11px] text-ink-subtle mt-2">Generado el {generatedAt ?? "—"}</p>
+            <span className="pill" style={{ background: "rgba(255,255,255,0.16)", color: "#fff" }}>Informe preliminar</span>
+            <p className="text-[11px] text-white/60 mt-2">Generado el {generatedAt ?? "—"}</p>
           </div>
         </div>
       </header>

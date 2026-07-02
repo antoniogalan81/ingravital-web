@@ -9,7 +9,7 @@ import { Fragment } from "react";
 import type { REOperation } from "@/src/lib/realEstate";
 import { calcResults, fmtEUR, fmtPct, CATEGORY_INFO, type RealEstateCategory } from "@/src/lib/realEstateCalc";
 import { expenseTotals, salesStats } from "@/src/lib/realEstateTrackingCalc";
-import { stageOf, type PipelineStage } from "@/src/lib/pipeline";
+import { stageOf, stageDef, type PipelineStage } from "@/src/lib/pipeline";
 import { formatShortDate } from "@/src/lib/date";
 import { StageSelect } from "./pipeline/StageSelect";
 
@@ -102,16 +102,14 @@ export function OperationsTable({
   }
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-line">
+    <div className="overflow-x-auto rounded-xl border border-line" style={{ boxShadow: "var(--shadow-sm)" }}>
       <table className="w-full border-collapse text-sm">
         <thead>
-          <tr className="bg-[var(--surface-alt)] sticky top-0">
+          <tr>
             {HEADERS.map((h, i) => (
               <th
                 key={i}
-                className={`px-3 py-2.5 text-[11px] font-bold uppercase tracking-wide text-ink-subtle whitespace-nowrap ${
-                  i >= 4 && i <= 9 ? "text-right" : "text-left"
-                }`}
+                className={`re-th px-3 py-2.5 ${i >= 4 && i <= 9 ? "text-right" : "text-left"} ${i === 0 ? "sticky left-0 z-[3]" : ""}`}
               >
                 {h}
               </th>
@@ -119,14 +117,14 @@ export function OperationsTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => {
+          {rows.map((row, ri) => {
             const hasVariants = row.variants.length > 0;
             const expanded = row.groupId ? expandedGroups.has(row.groupId) : false;
             return (
               <Fragment key={row.key}>
                 {/* Fila principal */}
-                <tr className="border-t border-line hover:bg-[var(--surface-alt)]/60">
-                  <td className="px-3 py-2 whitespace-nowrap">
+                <tr className={`re-tr border-t border-line ${ri % 2 === 1 ? "re-zebra" : ""}`}>
+                  <td className="re-sticky-cell px-3 py-2 whitespace-nowrap" style={{ borderLeft: `2px solid ${stageDef(stageOf(row.op)).color}` }}>
                     <div className="flex items-center gap-1.5">
                       {hasVariants && row.groupId ? (
                         <button
@@ -157,8 +155,8 @@ export function OperationsTable({
                 {/* Subfilas de variantes */}
                 {expanded &&
                   row.variants.map((v) => (
-                    <tr key={v.id} className="border-t border-line bg-[var(--surface-alt)]/40">
-                      <td className="px-3 py-2 whitespace-nowrap">
+                    <tr key={v.id} className="border-t border-line" style={{ background: "var(--surface-alt)" }}>
+                      <td className="re-sticky-cell px-3 py-2 whitespace-nowrap" style={{ borderLeft: `2px solid ${stageDef(stageOf(v)).color}` }}>
                         <div className="flex items-center gap-1.5 pl-6">
                           <span className="text-ink-subtle" style={{ color: "var(--line-strong)" }}>↳</span>
                           <button type="button" onClick={() => onOpen(v)} className="font-medium text-ink-muted hover:text-brand text-left truncate max-w-[14rem]">

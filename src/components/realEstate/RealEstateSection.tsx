@@ -640,14 +640,21 @@ function RECard({
       </div>
 
       {/* KPI héroe dominante */}
-      <div className="mb-3">
-        <p className="kpi-label">{heroIsYield ? "Rentab. venta est." : "Inversión estimada"}</p>
-        <p
-          className="text-3xl font-extrabold tabular-nums tracking-tight leading-none"
-          style={{ color: heroIsYield ? (res.saleYield >= 0 ? "var(--positive)" : "var(--negative)") : "var(--ink)" }}
-        >
-          {heroIsYield ? fmtPct(res.saleYield) : fmtEUR(res.totalInvestment)}
-        </p>
+      <div className="mb-3 flex items-end gap-2">
+        <div className="min-w-0">
+          <p className="kpi-label">{heroIsYield ? "Rentab. venta est." : "Inversión estimada"}</p>
+          <p
+            className="kpi-hero"
+            style={{ color: heroIsYield ? (res.saleYield >= 0 ? "var(--positive)" : "var(--negative)") : "var(--ink)" }}
+          >
+            {heroIsYield ? fmtPct(res.saleYield) : fmtEUR(res.totalInvestment)}
+          </p>
+        </div>
+        {heroIsYield ? (
+          <span className={`stat-delta mb-1 ${res.saleBenefit >= 0 ? "stat-delta-up" : "stat-delta-down"}`}>
+            {res.saleBenefit >= 0 ? "▲" : "▼"} {fmtEUR(res.saleBenefit)}
+          </span>
+        ) : null}
       </div>
 
       {/* Trío secundario */}
