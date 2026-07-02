@@ -113,7 +113,7 @@ export function TrackingModal({
   const navigate = useCallback((target: TabKey) => setTab(target), []);
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-white">
+    <div className="fixed inset-0 z-[60] flex flex-col bg-white" role="dialog" aria-modal="true" aria-labelledby="tracking-modal-title">
       <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col min-h-0">
         {/* Zona superior fija (cabecera + resumen + tabs) con elevación */}
         <div className="flex-shrink-0 bg-white relative z-10" style={{ boxShadow: "var(--shadow-sm)" }}>
@@ -123,7 +123,7 @@ export function TrackingModal({
               <div className="min-w-0">
                 <p className="text-[10px] uppercase tracking-[0.16em] font-bold text-ink-subtle">Seguimiento y gestión</p>
                 <div className="flex items-center gap-2.5 mt-1 min-w-0">
-                  <h2 className="text-2xl font-extrabold text-ink tracking-tight truncate">{op.name || "Operación"}</h2>
+                  <h2 id="tracking-modal-title" className="text-2xl font-extrabold text-ink tracking-tight truncate">{op.name || "Operación"}</h2>
                   <StageBadge stage={stageOf(op)} />
                 </div>
               </div>

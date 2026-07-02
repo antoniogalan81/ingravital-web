@@ -1609,15 +1609,24 @@ export function RealEstateWizard({ baseOp, onDone, onCancel }: RealEstateWizardP
 
   const isResumingDraft = !!savedDraft;
 
+  // Cerrar con Escape (guarda borrador si procede, igual que el botón/backdrop).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") handleCancelOrClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handleCancelOrClose]);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center">
+    <div className="fixed inset-0 z-50 flex items-start justify-center" role="dialog" aria-modal="true" aria-labelledby="wizard-title">
       <div className="absolute inset-0 bg-black/40" onClick={handleCancelOrClose} />
       <div className="relative w-full max-w-lg h-full bg-white shadow-2xl flex flex-col overflow-hidden">
 
         {/* Header */}
         <div className="relative flex items-center justify-between px-5 py-4 border-b border-slate-200 flex-shrink-0">
           <div>
-            <h2 className="text-base font-bold text-slate-900">
+            <h2 id="wizard-title" className="text-base font-bold text-slate-900">
               {isResumingDraft ? "Continuar borrador" : "Nueva operación"}
             </h2>
             {phase === "form" && cat && (
@@ -1632,8 +1641,8 @@ export function RealEstateWizard({ baseOp, onDone, onCancel }: RealEstateWizardP
               </button>
             )}
           </div>
-          <button type="button" onClick={handleCancelOrClose} className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <button type="button" onClick={handleCancelOrClose} aria-label="Cerrar" className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>

@@ -811,9 +811,10 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
             <button
               type="button"
               onClick={handleClose}
+              aria-label="Cerrar"
               className="p-2 text-slate-400 hover:text-slate-600 transition-colors rounded-lg hover:bg-slate-100"
             >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
@@ -1282,6 +1283,9 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
               <span className="text-sm font-medium text-slate-700">Financiación habilitada</span>
               <button
                 type="button"
+                role="switch"
+                aria-checked={draft.financing.enabled}
+                aria-label="Financiación habilitada"
                 onClick={() => setFinancing({ enabled: !draft.financing.enabled })}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${draft.financing.enabled ? "bg-brand" : "bg-slate-200"}`}
               >

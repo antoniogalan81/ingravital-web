@@ -53,7 +53,8 @@ function KanbanCard({
       onDragStart={(e) => { e.dataTransfer.setData("text/plain", op.id); e.dataTransfer.effectAllowed = "move"; onDragStart(); }}
       onDragEnd={onDragEnd}
       onClick={onOpen}
-      onKeyDown={(e) => { if (e.key === "Enter") onOpen(); }}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
+      aria-label={`Abrir operación ${op.name || "sin nombre"}`}
       className={`re-card p-3 cursor-grab active:cursor-grabbing hover:border-[var(--line-strong)] transition-colors ${dragging ? "opacity-40" : ""}`}
     >
       <div className="flex items-start justify-between gap-2">
