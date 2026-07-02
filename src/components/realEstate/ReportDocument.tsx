@@ -11,6 +11,8 @@ import { useMemo } from "react";
 import type { REOperation } from "@/src/lib/realEstate";
 import { calcResults, fmtEUR, fmtNum, fmtPct } from "@/src/lib/realEstateCalc";
 import { buildScenarioSet } from "./ScenariosPanel";
+import { RE_MILESTONE_STATUS_LABEL, RE_SALE_STATUS_LABEL, RE_SALE_STATUSES } from "@/src/lib/realEstateTracking";
+import { expenseTotals, expensesByCategory, progressMetrics, profitability, salesStats } from "@/src/lib/realEstateTrackingCalc";
 
 const CAT_LABEL: Record<string, string> = {
   vivienda: "Vivienda convencional",
@@ -175,6 +177,9 @@ export function ReportDocument({ op, generatedAt }: { op: REOperation; generated
           </Section>
         </div>
 
+        {/* ── Seguimiento (solo si la operación tiene datos de gestión) ── */}
+        <TrackingReportSections op={op} />
+
         {/* ── Escenarios ── */}
         <Section title="Escenarios (simulación · no vinculante)">
           <div className="overflow-x-auto">
@@ -244,5 +249,104 @@ export function ReportDocument({ op, generatedAt }: { op: REOperation; generated
         </footer>
       </div>
     </div>
+  );
+}
+
+// ── Secciones de SEGUIMIENTO del informe (avance, gastos reales, ventas, hitos,
+//    desviaciones, próximos pasos). Reutilizan el cálculo puro; solo se muestran si
+//    la operación tiene datos de gestión. No inventan cifras: usan "—" si faltan. ──
+function TrackingReportSections({ op }: { op: REOperation }) {
+  const r = useMemo(() => calcResults(op), [op]);
+  const now = useMemo(() => new Date().toISOString(), []);
+  const exp = useMemo(() => expenseTotals(op), [op]);
+  const byCat = useMemo(() => expensesByCategory(op), [op]);
+  const sales = useMemo(() => salesStats(op), [op]);
+  const pm = useMemo(() => progressMetrics(op, r, now), [op, r, now]);
+  const prof = useMemo(() => profitability(op, r), [op, r]);
+
+  const milestones = Array.isArray(op.milestones) ? op.milestones : [];
+  const media = Array.isArray(op.media) ? op.media : [];
+  const hasProgress = op.progress != null && (op.progress.obraPct != null || op.progress.licenciasPct != null || op.progress.startDate != null);
+  const hasAny = exp.hasData || sales.hasData || milestones.length > 0 || media.length > 0 || hasProgress;
+  if (!hasAny) return null;
+
+  const pctTxt = (v: number | null) => (v == null ? "—" : `${Math.round(v * 100)}%`);
+  const nextSteps = milestones.filter((m) => m.status === "PENDIENTE" || m.status === "EN_CURSO");
+
+  return (
+    <>
+      {(hasProgress || sales.hasData) && (
+        <Section title="Estado de avance">
+          <div className="grid sm:grid-cols-2 gap-x-8">
+            <Row label="Obra ejecutada" value={pctTxt(pm.obraPct)} />
+            <Row label="Licencias" value={pctTxt(pm.licenciasPct)} />
+            <Row label="Ventas cerradas" value={pctTxt(pm.ventasCerradasPct)} />
+            <Row label="Tiempo transcurrido" value={pctTxt(pm.tiempoTranscurridoPct)} />
+          </div>
+        </Section>
+      )}
+
+      {exp.hasData && (
+        <Section title="Gastos (control real)">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-3">
+            <Kpi label="Estimado" value={fmtEUR(exp.estimated)} />
+            <Kpi label="Real" value={fmtEUR(exp.real)} />
+            <Kpi label="Diferencia" value={fmtEUR(exp.diff)} tone={exp.diff <= 0 ? "positive" : "negative"} />
+            <Kpi label="Pendiente pago" value={fmtEUR(exp.pending)} />
+          </div>
+          {byCat.map((c) => (
+            <Row key={c.category} label={c.label} value={`est. ${fmtEUR(c.estimated)} · real ${fmtEUR(c.real)}`} tone={c.diff <= 0 ? "positive" : "negative"} />
+          ))}
+        </Section>
+      )}
+
+      {sales.hasData && (
+        <Section title="Ventas">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-3">
+            <Kpi label="Cobrado" value={fmtEUR(sales.collected)} tone="positive" />
+            <Kpi label="Pendiente cobro" value={fmtEUR(sales.pendingIncome)} />
+            <Kpi label="Cerradas" value={`${sales.soldCount}/${sales.count}`} />
+            <Kpi label="Venta real" value={sales.soldCount > 0 ? fmtEUR(sales.totalReal) : "—"} />
+          </div>
+          {RE_SALE_STATUSES.map((s) =>
+            sales.byStatus[s] > 0 ? <Row key={s} label={RE_SALE_STATUS_LABEL[s]} value={String(sales.byStatus[s])} /> : null,
+          )}
+        </Section>
+      )}
+
+      {milestones.length > 0 && (
+        <Section title="Hitos y tiempos">
+          {milestones.map((m) => (
+            <Row key={m.id} label={`${m.title || "Hito"} — ${RE_MILESTONE_STATUS_LABEL[m.status]}`} value={m.dueDate ? `prev. ${m.dueDate}${m.realDate ? ` · real ${m.realDate}` : ""}` : "—"} />
+          ))}
+        </Section>
+      )}
+
+      <Section title="Desviaciones">
+        <Row label="Desviación de gasto (real − estimado)" value={exp.hasData ? fmtEUR(exp.diff) : "—"} tone={exp.hasData ? (exp.diff <= 0 ? "positive" : "negative") : undefined} />
+        <Row label="Desviación de beneficio (real − estimado)" value={prof.deviation == null ? "—" : fmtEUR(prof.deviation)} tone={prof.deviation == null ? undefined : prof.deviation >= 0 ? "positive" : "negative"} />
+      </Section>
+
+      <Section title="Próximos pasos">
+        {nextSteps.length > 0 ? (
+          <ul className="space-y-1.5">
+            {nextSteps.map((m) => (
+              <li key={m.id} className="flex items-center justify-between py-1 border-b border-[#f1f4f8]">
+                <span className="text-sm text-ink-muted">{m.title || "Hito"}</span>
+                <span className="pill pill-neutral">{RE_MILESTONE_STATUS_LABEL[m.status]}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-ink-subtle">Sin hitos pendientes registrados.</p>
+        )}
+      </Section>
+
+      {media.length > 0 && (
+        <Section title="Media">
+          <Row label="Elementos" value={`${media.filter((m) => m.type === "FOTO").length} fotos · ${media.filter((m) => m.type === "VIDEO").length} vídeos`} />
+        </Section>
+      )}
+    </>
   );
 }

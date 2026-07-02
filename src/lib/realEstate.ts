@@ -1,5 +1,15 @@
 // src/lib/realEstate.ts — Tipos Inversión Inmobiliaria (idénticos a APP/models/realEstate.ts)
 
+import type {
+  REExpense,
+  REInvestorSplit,
+  REMediaItem,
+  REMilestone,
+  REProgress,
+  RESale,
+  REShareSettings,
+} from "./realEstateTracking";
+
 export type UnitType = "VIVIENDA" | "GARAJE" | "TRASTERO";
 
 export type REUnit = {
@@ -103,6 +113,16 @@ export type REOperation = {
   variantGroupName?: string;
   variantName?: string;
   isMainVariant?: boolean;
+
+  // ── Capa de SEGUIMIENTO Y GESTIÓN (anidada, persiste en el JSON de la operación;
+  //    no requiere migración). Shapes en ./realEstateTracking. Compatible con APP. ──
+  expenses?: REExpense[];
+  sales?: RESale[];
+  milestones?: REMilestone[];
+  media?: REMediaItem[];
+  progress?: REProgress;
+  investorSplit?: REInvestorSplit;
+  share?: REShareSettings;
 };
 
 export const DEFAULT_TASAS: RETasa[] = [

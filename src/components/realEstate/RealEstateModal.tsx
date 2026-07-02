@@ -7,6 +7,7 @@ import type { REOperation, REUnit, UnitType } from "@/src/lib/realEstate";
 import { DEFAULT_TASAS } from "@/src/lib/realEstate";
 import { calcResults, calcNumTrasteros, calcNumPlazas, calcTINFromCuota, fmtEUR, fmtNum, fmtPct, convertRealEstateOperationType } from "@/src/lib/realEstateCalc";
 import { ScenariosPanel } from "./ScenariosPanel";
+import { TrackingModal } from "./tracking/TrackingModal";
 
 type RealEstateCategory = "vivienda" | "local" | "suelo" | "adaptacion";
 
@@ -602,6 +603,8 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
 
   // Drawer abierto al montar; al cerrar, animamos la salida antes de desmontar (onClose).
   const [drawerOpen, setDrawerOpen] = useState(true);
+  // Hub de SEGUIMIENTO Y GESTIÓN (gastos, ventas, hitos, rentabilidad, media, compartir, informe).
+  const [showTracking, setShowTracking] = useState(false);
   const handleClose = useCallback(() => {
     if (dirtyRef.current) {
       dirtyRef.current = false;
@@ -844,6 +847,27 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
               </div>
             </>
           )}
+        </div>
+
+        {/* ── SEGUIMIENTO Y GESTIÓN — acceso destacado y fijo al abrir la operación ── */}
+        <div className="px-4 py-2.5 border-b border-slate-100 bg-white flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowTracking(true)}
+            className="group flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-white transition-colors"
+            style={{ background: "var(--brand)" }}
+          >
+            <svg className="w-5 h-5 flex-shrink-0 opacity-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm font-bold leading-tight">Seguimiento y gestión</span>
+              <span className="block text-xs text-white/85 leading-tight mt-0.5">
+                Gastos · Ventas · Hitos · Rentabilidad · Media · Compartir · Informe
+              </span>
+            </span>
+            <span className="text-xl font-light opacity-80 transition-transform group-hover:translate-x-0.5">›</span>
+          </button>
         </div>
 
         {/* Section nav */}
@@ -1366,6 +1390,10 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
           </SectionBlock>
 
         </div>
+
+        {showTracking && (
+          <TrackingModal op={draft} onPersist={commit} onClose={() => setShowTracking(false)} />
+        )}
         </Vaul.Content>
       </Vaul.Portal>
     </Vaul.Root>
