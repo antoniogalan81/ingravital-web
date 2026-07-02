@@ -181,6 +181,7 @@ export function TrackingModal({
               now={now}
               onChangeProgress={(progress: REProgress) => onPersist({ progress })}
               onChangeMedia={(media: REMediaItem[]) => onPersist({ media })}
+              onChangeManagement={(patch) => onPersist(patch)}
             />
           )}
           {tab === "economico" && <GastosPanel op={op} onChange={(expenses: REExpense[]) => onPersist({ expenses })} />}

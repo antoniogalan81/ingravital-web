@@ -16,6 +16,8 @@ import { PipelineFilters, type StageCounts } from "./pipeline/PipelineFilters";
 import { ViewModeToggle, type ViewMode } from "./pipeline/ViewModeToggle";
 import { OperationsTable, type OperationRow } from "./OperationsTable";
 import { PortfolioHeader } from "./PortfolioHeader";
+import { KanbanBoard } from "./KanbanBoard";
+import { priorityDef, temperatureDef } from "@/src/lib/management";
 import { expenseTotals, salesStats } from "@/src/lib/realEstateTrackingCalc";
 
 function generateId(): string {
@@ -516,13 +518,15 @@ interface RECardProps {
   onExtract?: () => void;
   // Cambio rápido de etapa del pipeline
   onChangeStage?: (stage: PipelineStage) => void;
+  // Momento actual (ISO) para calcular vencimientos sin impureza en render
+  now: string;
 }
 
 function RECard({
   op, onOpen, onDuplicate, onDelete,
   compareMode, selected, onToggleSelect,
   isGroupCard, isExpanded, onToggleExpand,
-  onExtract, onChangeStage,
+  onExtract, onChangeStage, now,
 }: RECardProps) {
   const res = useMemo(() => calcResults(op), [op]);
   const exp = useMemo(() => expenseTotals(op), [op]);
@@ -638,6 +642,25 @@ function RECard({
           {op.isDraft ? <span className="pill pill-warning ml-0.5">Incompleta</span> : null}
         </div>
       </div>
+
+      {/* Gestión: prioridad · temperatura · próxima acción (solo si hay dato real) */}
+      {(() => {
+        const prio = priorityDef(op.priority);
+        const temp = temperatureDef(op.temperature);
+        const hasAny = prio || temp || (op.nextActionText && op.nextActionText.trim());
+        if (!hasAny) return null;
+        const dd = op.nextActionDueDate ? Math.round((Date.parse(op.nextActionDueDate) - Date.parse(now.slice(0, 10))) / 86_400_000) : null;
+        return (
+          <div className="mb-3 flex flex-wrap items-center gap-1.5">
+            {prio ? <span className="pill" style={{ background: prio.soft, color: prio.color }}>{prio.label}</span> : null}
+            {temp ? <span className="pill" style={{ background: temp.soft, color: temp.color }}>{temp.icon} {temp.label}</span> : null}
+            {op.nextActionText && op.nextActionText.trim() ? (
+              <span className="text-[11px] text-ink-muted truncate max-w-full">→ {op.nextActionText}</span>
+            ) : null}
+            {dd != null && dd < 0 ? <span className="pill pill-negative">Vencida</span> : null}
+          </div>
+        );
+      })()}
 
       {/* KPI héroe dominante */}
       <div className="mb-3 flex items-end gap-2">
@@ -857,12 +880,14 @@ export function RealEstateSection() {
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     if (typeof window === "undefined") return "cards";
-    return localStorage.getItem("re_viewMode") === "table" ? "table" : "cards";
+    const v = localStorage.getItem("re_viewMode");
+    return v === "table" || v === "kanban" ? v : "cards";
   });
   const changeViewMode = useCallback((m: ViewMode) => {
     setViewMode(m);
     if (typeof window !== "undefined") localStorage.setItem("re_viewMode", m);
   }, []);
+  const now = useMemo(() => new Date().toISOString(), []);
 
   const activeOps = useMemo(
     () => realEstateOperations.filter((op) => !op.deleted),
@@ -977,14 +1002,32 @@ export function RealEstateSection() {
     return rows;
   }, [webListItems, orderedOps, matchOp]);
 
+  // Cambio de etapa. Si la operación pertenece a un grupo de variantes, se aplica
+  // a TODOS los miembros del grupo (el mismo negocio no debe partirse entre etapas).
   const handleChangeStage = useCallback(
     (op: REOperation, stage: PipelineStage) => {
-      if (stageOf(op) === stage) return;
-      setRealEstateOperation({ ...op, pipelineStage: stage, updatedAt: new Date().toISOString() });
-      toast.success("Etapa actualizada", { description: stageDef(stage).label });
+      const members = op.variantGroupId
+        ? activeOps.filter((o) => o.variantGroupId === op.variantGroupId)
+        : [op];
+      const nowIso = new Date().toISOString();
+      let changed = false;
+      for (const m of members) {
+        if (stageOf(m) !== stage) {
+          setRealEstateOperation({ ...m, pipelineStage: stage, updatedAt: nowIso });
+          changed = true;
+        }
+      }
+      if (changed) toast.success("Etapa actualizada", { description: stageDef(stage).label });
     },
-    [setRealEstateOperation]
+    [activeOps, setRealEstateOperation]
   );
+
+  // Búsqueda (sin etapa) para Kanban: muestra todas las columnas, filtra por texto.
+  const kanbanDeals = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return deals;
+    return deals.filter((op) => `${op.name ?? ""} ${op.address ?? ""}`.toLowerCase().includes(q));
+  }, [deals, search]);
 
   // ── Variant group actions ────────────────────────────────────────────────
 
@@ -1463,7 +1506,9 @@ export function RealEstateSection() {
           <>
             {activeOps.length > 0 && !compareMode && (
               <div className="flex flex-col gap-2 mb-3">
-                <PipelineFilters counts={stageCounts} active={stageFilter} onChange={setStageFilter} />
+                {viewMode !== "kanban" ? (
+                  <PipelineFilters counts={stageCounts} active={stageFilter} onChange={setStageFilter} />
+                ) : null}
                 <div className="flex items-center gap-2">
                   <div className="relative flex-1 max-w-xs">
                     <input
@@ -1505,6 +1550,27 @@ export function RealEstateSection() {
                   + Nueva operación
                 </button>
               </div>
+            ) : viewMode === "kanban" ? (
+              kanbanDeals.length === 0 ? (
+                <div className="empty-state">
+                  <p className="text-lg font-extrabold text-ink tracking-tight mb-1">Sin resultados</p>
+                  <p className="text-sm text-ink-muted max-w-md mx-auto mb-5">
+                    {search.trim() ? `Ninguna operación coincide con “${search.trim()}”.` : "No hay operaciones."}
+                  </p>
+                  {search.trim() ? (
+                    <button type="button" onClick={() => setSearch("")} className="btn-secondary">Limpiar búsqueda</button>
+                  ) : null}
+                </div>
+              ) : (
+                <div key="view-kanban" className="reveal-fast">
+                  <KanbanBoard
+                    deals={kanbanDeals}
+                    now={now}
+                    onChangeStage={handleChangeStage}
+                    onOpen={(op) => { if (op.isDraft) setWizardOp(op); else setSelectedId(op.id); }}
+                  />
+                </div>
+              )
             ) : !hasMatches ? (
               <div className="empty-state">
                 <span className="empty-state-icon">
@@ -1629,6 +1695,7 @@ export function RealEstateSection() {
                         isExpanded={isGroupExpanded}
                         onToggleExpand={groupId ? () => toggleGroup(groupId) : undefined}
                         onChangeStage={(s) => handleChangeStage(op, s)}
+                        now={now}
                       />
                     </div>
                   );

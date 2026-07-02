@@ -2,10 +2,19 @@
 
 // Alternador de vista: tarjetas / tabla. Segmentado, compacto.
 
-export type ViewMode = "cards" | "table";
+export type ViewMode = "kanban" | "cards" | "table";
 
 export function ViewModeToggle({ mode, onChange }: { mode: ViewMode; onChange: (m: ViewMode) => void }) {
   const opts: { key: ViewMode; label: string; icon: React.ReactNode }[] = [
+    {
+      key: "kanban",
+      label: "Kanban",
+      icon: (
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <rect x="3" y="4" width="5" height="16" rx="1.5" /><rect x="10" y="4" width="5" height="11" rx="1.5" /><rect x="17" y="4" width="4" height="7" rx="1.5" />
+        </svg>
+      ),
+    },
     {
       key: "cards",
       label: "Tarjetas",

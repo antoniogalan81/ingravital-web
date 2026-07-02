@@ -3,13 +3,14 @@
 // Panel GASTOS estilo hoja de cálculo. Tabla editable + resumen por categoría con
 // barras estimado vs real. Persiste el array `expenses` en la operación (JSON sync).
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { REOperation } from "@/src/lib/realEstate";
 import {
   RE_EXPENSE_CATEGORIES,
   RE_EXPENSE_CATEGORY_LABEL,
   RE_EXPENSE_STATUS_LABEL,
   makeExpense,
+  newTrackingId,
   type REExpense,
   type REExpenseCategory,
   type REExpenseStatus,
@@ -44,6 +45,20 @@ export function GastosPanel({
   const totals = useMemo(() => expenseTotals(op), [op]);
   const byCat = useMemo(() => expensesByCategory(op), [op]);
 
+  const [catFilter, setCatFilter] = useState<REExpenseCategory | "all">("all");
+  const [statusFilter, setStatusFilter] = useState<REExpenseStatus | "all">("all");
+  const [search, setSearch] = useState("");
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return expenses.filter(
+      (e) =>
+        (catFilter === "all" || e.category === catFilter) &&
+        (statusFilter === "all" || e.status === statusFilter) &&
+        (!q || `${e.concept ?? ""} ${e.provider ?? ""}`.toLowerCase().includes(q)),
+    );
+  }, [expenses, catFilter, statusFilter, search]);
+
   const update = (id: string, patch: Partial<REExpense>) =>
     onChange(
       expenses.map((e) => (e.id === id ? { ...e, ...patch, updatedAt: new Date().toISOString() } : e)),
@@ -52,6 +67,17 @@ export function GastosPanel({
   const addRow = () => onChange([...expenses, makeExpense()]);
 
   const remove = (row: REExpense) => onChange(expenses.filter((e) => e.id !== row.id));
+
+  const duplicate = (row: REExpense) => {
+    const nowIso = new Date().toISOString();
+    onChange([...expenses, { ...row, id: newTrackingId("exp"), createdAt: nowIso, updatedAt: nowIso }]);
+  };
+
+  const rowAccent = (r: REExpense): string | undefined => {
+    if (r.estimated == null && r.real == null) return undefined;
+    const diff = (r.real ?? 0) - (r.estimated ?? 0);
+    return diff > 0 ? "var(--negative)" : diff < 0 ? "var(--positive)" : undefined;
+  };
 
   const columns: DataTableColumn<REExpense>[] = [
     {
@@ -185,15 +211,50 @@ export function GastosPanel({
         </div>
       </div>
 
+      {/* Filtros rápidos */}
+      {expenses.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={catFilter}
+            onChange={(e) => setCatFilter(e.target.value as REExpenseCategory | "all")}
+            className="rounded-lg border border-line bg-white px-2.5 py-1.5 text-sm text-ink cursor-pointer"
+          >
+            <option value="all">Todas las categorías</option>
+            {RE_EXPENSE_CATEGORIES.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+          </select>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as REExpenseStatus | "all")}
+            className="rounded-lg border border-line bg-white px-2.5 py-1.5 text-sm text-ink cursor-pointer"
+          >
+            <option value="all">Todos los estados</option>
+            {(Object.keys(RE_EXPENSE_STATUS_LABEL) as REExpenseStatus[]).map((k) => <option key={k} value={k}>{RE_EXPENSE_STATUS_LABEL[k]}</option>)}
+          </select>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar concepto o proveedor…"
+            className="flex-1 min-w-[10rem] rounded-lg border border-line px-3 py-1.5 text-sm text-ink placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
+          />
+          {(catFilter !== "all" || statusFilter !== "all" || search) ? (
+            <button type="button" onClick={() => { setCatFilter("all"); setStatusFilter("all"); setSearch(""); }} className="text-xs font-semibold text-ink-subtle hover:text-ink">
+              Limpiar
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* Tabla editable */}
       <DataTable
         columns={columns}
-        rows={expenses}
+        rows={filtered}
         getRowId={(r) => r.id}
         onAddRow={addRow}
         addLabel="Añadir gasto"
         onDeleteRow={remove}
-        emptyText="Sin gastos. Añade el primero para empezar el control tipo Excel."
+        onDuplicateRow={duplicate}
+        rowAccent={rowAccent}
+        emptyText={expenses.length === 0 ? "Sin gastos. Añade el primero para empezar el control tipo Excel." : "Ningún gasto coincide con el filtro."}
       />
 
       {/* Resumen por categoría con barras estimado vs real */}

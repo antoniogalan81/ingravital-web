@@ -20,8 +20,9 @@ import {
   profitability,
 } from "@/src/lib/realEstateTrackingCalc";
 import { ProgressBar } from "@/src/components/ui/ProgressBar";
-import { NumberCellInput, DateCellInput } from "@/src/components/ui/DataTable";
+import { NumberCellInput, DateCellInput, TextCellInput } from "@/src/components/ui/DataTable";
 import { MediaPanel } from "./MediaPanel";
+import { PRIORITIES, TEMPERATURES, type Priority, type Temperature } from "@/src/lib/management";
 
 type Alert = { tone: "negative" | "accent" | "info"; text: string };
 
@@ -31,12 +32,14 @@ export function ResumenPanel({
   now,
   onChangeProgress,
   onChangeMedia,
+  onChangeManagement,
 }: {
   op: REOperation;
   results: REResults;
   now: string;
   onChangeProgress: (progress: REProgress) => void;
   onChangeMedia: (media: REMediaItem[]) => void;
+  onChangeManagement: (patch: Partial<REOperation>) => void;
 }) {
   const exp = useMemo(() => expenseTotals(op), [op]);
   const sales = useMemo(() => salesStats(op), [op]);
@@ -65,6 +68,13 @@ export function ResumenPanel({
     alerts.push({ tone: "negative", text: "Plazo estimado superado y operación no cerrada" });
   if ((op.share?.enabled ?? false) && prof.investorSharePct == null)
     alerts.push({ tone: "info", text: "Configura el reparto para separar la rentabilidad del inversor" });
+  if (op.nextActionText && op.nextActionText.trim() && op.nextActionDueDate) {
+    const dd = Math.round((Date.parse(op.nextActionDueDate) - Date.parse(today)) / 86_400_000);
+    if (Number.isFinite(dd)) {
+      if (dd < 0) alerts.push({ tone: "negative", text: `Próxima acción vencida: ${op.nextActionText}` });
+      else if (dd <= 7) alerts.push({ tone: "accent", text: `Próxima acción en ${dd} día(s): ${op.nextActionText}` });
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -92,6 +102,42 @@ export function ResumenPanel({
             })}
           </ul>
         )}
+      </div>
+
+      {/* Gestión operativa (prioridad, temperatura, probabilidad, próxima acción) */}
+      <div className="re-card p-4 space-y-3">
+        <p className="text-xs font-bold uppercase tracking-wide text-ink-subtle">Gestión operativa</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <Field label="Prioridad">
+            <select
+              value={op.priority ?? ""}
+              onChange={(e) => onChangeManagement({ priority: e.target.value === "" ? undefined : (e.target.value as Priority) })}
+              className="w-full bg-transparent px-1.5 py-1 text-sm text-ink rounded-md outline-none cursor-pointer"
+            >
+              <option value="">—</option>
+              {PRIORITIES.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+            </select>
+          </Field>
+          <Field label="Temperatura">
+            <select
+              value={op.temperature ?? ""}
+              onChange={(e) => onChangeManagement({ temperature: e.target.value === "" ? undefined : (e.target.value as Temperature) })}
+              className="w-full bg-transparent px-1.5 py-1 text-sm text-ink rounded-md outline-none cursor-pointer"
+            >
+              <option value="">—</option>
+              {TEMPERATURES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+            </select>
+          </Field>
+          <Field label="Probabilidad (%)">
+            <NumberCellInput value={op.probability} onChange={(v) => onChangeManagement({ probability: v })} align="left" />
+          </Field>
+          <Field label="Fecha límite">
+            <DateCellInput value={op.nextActionDueDate} onChange={(v) => onChangeManagement({ nextActionDueDate: v })} />
+          </Field>
+        </div>
+        <Field label="Próxima acción">
+          <TextCellInput value={op.nextActionText} placeholder="Ej. Llamar al propietario, pedir tasación…" onChange={(v) => onChangeManagement({ nextActionText: v || undefined })} />
+        </Field>
       </div>
 
       <div className="grid lg:grid-cols-2 gap-4">

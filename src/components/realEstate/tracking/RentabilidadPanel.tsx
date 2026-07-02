@@ -11,6 +11,7 @@ import { fmtEUR, fmtPct } from "@/src/lib/realEstateCalc";
 import { profitability } from "@/src/lib/realEstateTrackingCalc";
 import { StatTile } from "@/src/components/ui/StatTile";
 import { NumberCellInput } from "@/src/components/ui/DataTable";
+import { RentabilitySimulator } from "./RentabilitySimulator";
 
 const eur = (v: number | null) => (v == null ? "—" : fmtEUR(v));
 const pct = (v: number | null) => (v == null ? "—" : fmtPct(v));
@@ -76,6 +77,9 @@ export function RentabilidadPanel({
           <StatTile label="Rentab. inversor" value={pct(prof.investorYield)} tone={prof.investorYield == null ? "default" : prof.investorYield >= 0 ? "positive" : "negative"} hint="sobre su capital" />
         </div>
       </Block>
+
+      {/* Simulador (local, no persiste) */}
+      <RentabilitySimulator op={op} results={results} />
     </div>
   );
 }

@@ -7,17 +7,18 @@
 import { useMemo } from "react";
 import type { REOperation } from "@/src/lib/realEstate";
 import { calcResults, fmtEUR, fmtPct } from "@/src/lib/realEstateCalc";
-import { expenseTotals } from "@/src/lib/realEstateTrackingCalc";
 import { PIPELINE_STAGES, stageOf, stageDef, type PipelineStage } from "@/src/lib/pipeline";
+import { computeOpAlerts, ALERT_COLOR, type AlertSeverity } from "@/src/lib/alerts";
 
-const STALE_DAYS = 30; // "sin actividad reciente" (documentado, por updatedAt)
-
-function daysSince(iso?: string): number | null {
-  if (!iso) return null;
-  const t = Date.parse(iso);
-  if (!Number.isFinite(t)) return null;
-  return (Date.now() - t) / 86_400_000;
-}
+// Etiquetas agregadas por tipo de alerta (para la cabecera de cartera).
+const ALERT_AGG: Record<string, string> = {
+  action_overdue: "con acción vencida",
+  action_soon: "con acción próxima",
+  stale: "sin actividad reciente",
+  oferta_stale: "en oferta sin mover",
+  no_key_data: "sin datos clave",
+  over_cost: "con sobrecoste",
+};
 
 export function PortfolioHeader({ ops }: { ops: REOperation[] }) {
   const stats = useMemo(() => {
@@ -27,10 +28,8 @@ export function PortfolioHeader({ ops }: { ops: REOperation[] }) {
     const byStage: Record<PipelineStage, number> = {
       comprado: 0, oferta: 0, interesante: 0, base: 0, estudio: 0, captacion: 0,
     };
-    let overCost = 0; // sobrecoste (real > estimado)
-    let stale = 0; // sin actividad reciente
-    let noStage = 0; // sin pipelineStage guardado
-    let incomplete = 0; // sin datos clave
+    const alertCounts: Record<string, { count: number; severity: AlertSeverity }> = {};
+    const nowIso = new Date().toISOString();
 
     for (const op of ops) {
       const r = calcResults(op);
@@ -38,29 +37,22 @@ export function PortfolioHeader({ ops }: { ops: REOperation[] }) {
       totalSales += r.totalSales;
       totalBenefit += r.saleBenefit;
       byStage[stageOf(op)] += 1;
-
-      const exp = expenseTotals(op);
-      if (exp.hasData && exp.diff > 0) overCost += 1;
-
-      const d = daysSince(op.updatedAt);
-      if (d != null && d > STALE_DAYS) stale += 1;
-
-      if (op.pipelineStage == null) noStage += 1;
-      if (op.isDraft || !(op.purchasePrice > 0)) incomplete += 1;
+      for (const a of computeOpAlerts(op, nowIso)) {
+        const cur = alertCounts[a.key];
+        alertCounts[a.key] = { count: (cur?.count ?? 0) + 1, severity: a.severity };
+      }
     }
 
     const avgYield = totalInvestment > 0 ? totalBenefit / totalInvestment : null;
-    return { totalInvestment, totalSales, totalBenefit, byStage, overCost, stale, noStage, incomplete, avgYield };
+    return { totalInvestment, totalSales, totalBenefit, byStage, alertCounts, avgYield };
   }, [ops]);
 
   const total = ops.length;
   const maxStage = Math.max(total, 1);
 
-  const alerts: { key: string; label: string; tone: "warning" | "neutral" }[] = [];
-  if (stats.overCost > 0) alerts.push({ key: "cost", label: `${stats.overCost} con sobrecoste`, tone: "warning" });
-  if (stats.stale > 0) alerts.push({ key: "stale", label: `${stats.stale} sin actividad (+${STALE_DAYS}d)`, tone: "warning" });
-  if (stats.incomplete > 0) alerts.push({ key: "inc", label: `${stats.incomplete} sin datos clave`, tone: "warning" });
-  if (stats.noStage > 0) alerts.push({ key: "nostage", label: `${stats.noStage} sin etapa`, tone: "neutral" });
+  const alertList = Object.entries(stats.alertCounts)
+    .filter(([k]) => ALERT_AGG[k])
+    .map(([k, v]) => ({ key: k, label: `${v.count} ${ALERT_AGG[k]}`, severity: v.severity }));
 
   return (
     <div className="re-card in-reveal p-4 sm:p-5 mb-4" style={{ background: "linear-gradient(160deg, var(--brand-soft) 0%, var(--surface) 42%)" }}>
@@ -115,13 +107,13 @@ export function PortfolioHeader({ ops }: { ops: REOperation[] }) {
         </div>
       </div>
 
-      {/* Alertas (solo si aplican; sin inventar) */}
+      {/* Alertas agregadas (solo si aplican; sin inventar) */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        {alerts.length === 0 ? (
+        {alertList.length === 0 ? (
           <span className="pill pill-positive">Sin alertas</span>
         ) : (
-          alerts.map((a) => (
-            <span key={a.key} className={`pill ${a.tone === "warning" ? "pill-warning" : "pill-neutral"}`}>
+          alertList.map((a) => (
+            <span key={a.key} className="pill" style={{ background: ALERT_COLOR[a.severity].soft, color: ALERT_COLOR[a.severity].color }}>
               {a.label}
             </span>
           ))

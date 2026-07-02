@@ -22,6 +22,8 @@ export function DataTable<T>({
   onAddRow,
   addLabel = "Añadir fila",
   onDeleteRow,
+  onDuplicateRow,
+  rowAccent,
   emptyText = "Sin datos. Añade la primera fila.",
   footer,
 }: {
@@ -31,11 +33,14 @@ export function DataTable<T>({
   onAddRow?: () => void;
   addLabel?: string;
   onDeleteRow?: (row: T) => void;
+  onDuplicateRow?: (row: T) => void;
+  rowAccent?: (row: T) => string | undefined;
   emptyText?: string;
   footer?: ReactNode;
 }) {
   const alignCls = (a?: string) =>
     a === "right" ? "text-right" : a === "center" ? "text-center" : "text-left";
+  const hasActions = !!(onDeleteRow || onDuplicateRow);
 
   return (
     <div className="flex flex-col gap-2">
@@ -65,43 +70,66 @@ export function DataTable<T>({
                   {c.header}
                 </th>
               ))}
-              {onDeleteRow ? <th className="re-th w-10 px-2 py-2.5" /> : null}
+              {hasActions ? <th className="re-th w-16 px-2 py-2.5" /> : null}
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={columns.length + (onDeleteRow ? 1 : 0)}
+                  colSpan={columns.length + (hasActions ? 1 : 0)}
                   className="px-3 py-6 text-center text-sm text-ink-subtle"
                 >
                   {emptyText}
                 </td>
               </tr>
             ) : (
-              rows.map((row, i) => (
-                <tr key={getRowId(row)} className={`re-tr border-t border-line align-middle ${i % 2 === 1 ? "re-zebra" : ""}`}>
-                  {columns.map((c) => (
-                    <td key={c.key} className={`px-2 py-1.5 ${alignCls(c.align)}`}>
-                      {c.cell(row, i)}
-                    </td>
-                  ))}
-                  {onDeleteRow ? (
-                    <td className="px-1 py-1.5 text-center">
-                      <button
-                        type="button"
-                        onClick={() => onDeleteRow(row)}
-                        title="Eliminar fila"
-                        className="p-1.5 text-slate-400 hover:text-red-500 rounded-md hover:bg-red-50 transition-colors"
-                      >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </td>
-                  ) : null}
-                </tr>
-              ))
+              rows.map((row, i) => {
+                const accent = rowAccent?.(row);
+                return (
+                  <tr
+                    key={getRowId(row)}
+                    className={`re-tr border-t border-line align-middle ${i % 2 === 1 ? "re-zebra" : ""}`}
+                    style={accent ? { boxShadow: `inset 3px 0 0 ${accent}` } : undefined}
+                  >
+                    {columns.map((c) => (
+                      <td key={c.key} className={`px-2 py-1.5 ${alignCls(c.align)}`}>
+                        {c.cell(row, i)}
+                      </td>
+                    ))}
+                    {hasActions ? (
+                      <td className="px-1 py-1.5 text-center whitespace-nowrap">
+                        <div className="inline-flex items-center gap-0.5">
+                          {onDuplicateRow ? (
+                            <button
+                              type="button"
+                              onClick={() => onDuplicateRow(row)}
+                              title="Duplicar fila"
+                              className="p-1.5 text-slate-400 hover:text-brand rounded-md hover:bg-[var(--brand-soft)] transition-colors"
+                            >
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                            </button>
+                          ) : null}
+                          {onDeleteRow ? (
+                            <button
+                              type="button"
+                              onClick={() => onDeleteRow(row)}
+                              title="Eliminar fila"
+                              className="p-1.5 text-slate-400 hover:text-red-500 rounded-md hover:bg-red-50 transition-colors"
+                            >
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    ) : null}
+                  </tr>
+                );
+              })
             )}
           </tbody>
           {footer ? <tfoot>{footer}</tfoot> : null}
