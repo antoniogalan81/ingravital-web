@@ -28,6 +28,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // E2E preparado (Playwright): no forma parte del build de la app y su dependencia
+    // (@playwright/test) no se instala por defecto. Ver e2e/README.md.
+    "e2e/**",
   ]),
 ]);
 
