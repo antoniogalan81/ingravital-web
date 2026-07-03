@@ -1,86 +1,68 @@
--- Migration: RLS explícita y versionada para operaciones_inmobiliarias
--- ⚠️ NO APLICADA todavía. Requiere autorización expresa para ejecutarse (política del repo:
---    "no ejecutar migraciones sin autorización"). Es ADITIVA e IDEMPOTENTE: no borra datos,
---    no toca columnas, solo habilita RLS y crea policies owner-only SI NO EXISTEN.
+-- Migration: RLS owner-only para operaciones_inmobiliarias — NO-OP DOCUMENTADO.
 --
--- CONTEXTO (auditoría 2026-07-03):
---   `operaciones_inmobiliarias` es la tabla NÚCLEO del producto (todas las inversiones,
---   con la capa de seguimiento anidada en `data` JSONB). A diferencia de tasks/metas/
---   bank_accounts/etc. (ver 20260429_enable_rls_core_tables.sql), esta tabla NO tiene
---   ninguna migración trackeada que habilite su RLS ni cree sus policies: se creó antes
---   del control de versiones y su RLS/grants viven solo en el dashboard de Supabase.
---   `20260528_revoke_anon_excess_grants.sql` ya revoca el acceso de `anon` (verificado en
---   vivo: SELECT/INSERT anónimos → 401), pero el AISLAMIENTO entre usuarios AUTENTICADOS
---   depende de una policy `auth.uid() = user_id` que NO está versionada y que no se pudo
---   confirmar sin dos cuentas reales. El filtro `.eq("user_id", ...)` del cliente (ver
---   src/sync/syncEngine.ts) NO es una frontera de seguridad. Esta migración pone esa
---   garantía bajo control de versiones.
+-- ⚠️ ESTA MIGRACIÓN NO EJECUTA NINGÚN DDL A PROPÓSITO. Es un no-op puro (solo
+--    comentarios). Se conserva por TRAZABILIDAD del razonamiento de seguridad, no
+--    para ejecutarse. Aplicarla no debe crear ni modificar nada.
 --
 -- ─────────────────────────────────────────────────────────────────────────────
--- PASO 1 (solo lectura) — VERIFICAR el estado ACTUAL antes de aplicar nada.
--- Ejecuta esto en el SQL editor de Supabase. Si RLS ya está habilitada y las 4 policies
--- owner-only ya existen, esta migración es innecesaria (y de todos modos inocua).
+-- POR QUÉ NO HACE NADA
 --
---   -- ¿RLS habilitada?
---   SELECT relname, relrowsecurity
---   FROM pg_class
---   WHERE oid = 'public.operaciones_inmobiliarias'::regclass;
+-- Producción (proyecto Supabase `zrstaskwqwuxgelcrwxx`) FUE VERIFICADA en vivo
+-- (consultas de solo lectura, 2026-07-03) y `operaciones_inmobiliarias` YA tiene la
+-- protección owner-only completa:
 --
---   -- ¿Qué policies existen y con qué condición?
---   SELECT policyname, cmd, qual, with_check
---   FROM pg_policies
---   WHERE schemaname = 'public' AND tablename = 'operaciones_inmobiliarias';
+--   · RLS habilitada  → pg_class.relrowsecurity = true.
+--   · Policies owner-only ya existentes, TODAS con `auth.uid() = user_id`:
+--       - "Users can manage their own operaciones"  (ALL   · using + with_check)
+--       - "operaciones_select"                      (SELECT · using)
+--       - "operaciones_insert"                      (INSERT · with_check)
+--       - "operaciones_update"                      (UPDATE · using + with_check)
+--       - "operaciones_delete"                      (DELETE · using)
+--   · Índice sobre user_id ya existente: `operaciones_inmobiliarias_user_id_idx`.
+--   · Grants: `authenticated` con SELECT/INSERT/UPDATE/DELETE gateados fila a fila
+--     por las policies RLS. `anon` SIN SELECT/DML (verificado: pull/insert anónimos
+--     → 401; solo conserva REFERENCES/TRIGGER/TRUNCATE, sin acceso a datos).
 --
---   -- ¿Quién tiene grants sobre la tabla? (anon NO debe aparecer)
---   SELECT grantee, privilege_type
---   FROM information_schema.role_table_grants
---   WHERE table_schema = 'public' AND table_name = 'operaciones_inmobiliarias'
---   ORDER BY grantee, privilege_type;
+-- Es decir: el aislamiento entre usuarios autenticados YA está garantizado en la BD.
 --
 -- ─────────────────────────────────────────────────────────────────────────────
--- PASO 2 — Aplicar (solo con autorización). Mismo patrón que 20260429.
-
-ALTER TABLE public.operaciones_inmobiliarias ENABLE ROW LEVEL SECURITY;
-
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'operaciones_inmobiliarias' AND policyname = 'operaciones_inmobiliarias: select own') THEN
-    CREATE POLICY "operaciones_inmobiliarias: select own" ON public.operaciones_inmobiliarias
-      FOR SELECT USING (auth.uid() = user_id);
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'operaciones_inmobiliarias' AND policyname = 'operaciones_inmobiliarias: insert own') THEN
-    CREATE POLICY "operaciones_inmobiliarias: insert own" ON public.operaciones_inmobiliarias
-      FOR INSERT WITH CHECK (auth.uid() = user_id);
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'operaciones_inmobiliarias' AND policyname = 'operaciones_inmobiliarias: update own') THEN
-    CREATE POLICY "operaciones_inmobiliarias: update own" ON public.operaciones_inmobiliarias
-      FOR UPDATE USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-  END IF;
-END $$;
-
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'operaciones_inmobiliarias' AND policyname = 'operaciones_inmobiliarias: delete own') THEN
-    CREATE POLICY "operaciones_inmobiliarias: delete own" ON public.operaciones_inmobiliarias
-      FOR DELETE USING (auth.uid() = user_id);
-  END IF;
-END $$;
-
-CREATE INDEX IF NOT EXISTS idx_operaciones_inmobiliarias_user_id ON public.operaciones_inmobiliarias(user_id);
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.operaciones_inmobiliarias TO authenticated;
-GRANT ALL ON public.operaciones_inmobiliarias TO service_role;
-
--- ─────────────────────────────────────────────────────────────────────────────
--- PASO 3 (solo lectura) — VERIFICACIÓN post-aplicación, idealmente con dos cuentas:
---   · Inicia sesión como usuario A y crea una operación.
---   · Inicia sesión como usuario B: su pull NO debe devolver filas de A.
---   · Repite el PASO 1 y confirma relrowsecurity=true y las 4 policies presentes.
+-- POR QUÉ NO SE CREAN POLICIES AQUÍ (evitar duplicados)
 --
--- NOTA: otras tablas del revoke (app_settings, ai_meta_drafts, profile_settings) tampoco
--- tienen RLS versionada en el repo; conviene auditarlas con el mismo PASO 1. Quedan FUERA
--- del alcance de esta tarea (centrada en inversiones) y no se tocan aquí.
+-- La versión anterior de este archivo creaba 4 policies con nombres NUEVOS
+-- ("operaciones_inmobiliarias: select own", etc.). Como las policies vivas usan
+-- OTROS nombres (los listados arriba), esos `CREATE POLICY ... IF NOT EXISTS` por
+-- nombre NO detectarían las existentes y añadirían 4 policies DUPLICADAS
+-- (misma condición `auth.uid() = user_id`, distinto nombre). No aportarían
+-- seguridad y ensuciarían la tabla. Por eso esta migración queda INTENCIONADAMENTE
+-- SIN DDL: nada de CREATE/ALTER/DROP POLICY, nada de ALTER TABLE, nada de GRANT,
+-- nada de índices. No toca datos.
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- INVERSORES (frontera de datos)
+--
+-- Los inversores NO acceden a `operaciones_inmobiliarias`. Su acceso va
+-- EXCLUSIVAMENTE por `investment_shares.payload`, un snapshot ya filtrado por
+-- visibilidad que publica el propietario (ver 20260702_investment_shares.sql y
+-- src/lib/shares.ts → buildInvestorSnapshot). La RLS de `operaciones_inmobiliarias`
+-- NO se abre a inversores en ningún caso.
+--
+-- ─────────────────────────────────────────────────────────────────────────────
+-- SI EN EL FUTURO SE QUISIERA VERSIONAR REALMENTE (fuera de alcance)
+--
+-- Solo tendría sentido en un entorno NUEVO donde estas policies NO existan. En ese
+-- caso, replicar EXACTAMENTE los nombres y condiciones vivos (arriba) — no nombres
+-- nuevos — para que siga siendo idempotente por nombre. Antes de ejecutar nada,
+-- correr las consultas de PASO 1 (solo lectura) contra el proyecto destino:
+--
+--   SELECT relname, relrowsecurity FROM pg_class
+--     WHERE oid = 'public.operaciones_inmobiliarias'::regclass;
+--   SELECT policyname, cmd, qual, with_check FROM pg_policies
+--     WHERE schemaname='public' AND tablename='operaciones_inmobiliarias';
+--   SELECT grantee, privilege_type FROM information_schema.role_table_grants
+--     WHERE table_schema='public' AND table_name='operaciones_inmobiliarias'
+--     ORDER BY grantee, privilege_type;
+--
+-- NOTA: otras tablas sin RLS versionada en el repo (app_settings, ai_meta_drafts,
+-- profile_settings) quedan FUERA del alcance de esta tarea y no se tocan aquí.
+--
+-- FIN — no-op intencional. No hay sentencias ejecutables por debajo de esta línea.
