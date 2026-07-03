@@ -6,7 +6,14 @@ import { supabase } from "@/src/lib/supabaseClient";
 import { ENTITY_CONFIGS, EntityKey, SupabaseRow, SyncableEntity } from "./types";
 
 // Re-export de la lógica de fusión pura (mantiene la API previa de este módulo).
-export { isRemoteNewer, rowToEntity, mergeRemoteRows } from "./merge";
+export {
+  isRemoteNewer,
+  rowToEntity,
+  mergeRemoteRows,
+  mergeById,
+  mergeOperationEntity,
+  operationSignature,
+} from "./merge";
 
 // ==================== ALMACENAMIENTO LOCAL (aislado por usuario, a prueba de fallos) ====================
 // TODAS las claves se aíslan por userId para NO mezclar datos entre cuentas en el

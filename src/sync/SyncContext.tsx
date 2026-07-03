@@ -7,6 +7,7 @@ import {
   pushItem,
   pushDelete,
   mergeRemoteRows,
+  mergeOperationEntity,
   getDirtyIds,
   markDirty,
   clearDirty,
@@ -70,6 +71,11 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   // Push debounce
   const pushTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Ref al programador de push. Permite que doPull dispare una re-subida de convergencia
+  // (tras fusionar por colección) sin depender de `schedulePush`, que se declara más
+  // abajo (evita problemas de orden de declaración en las deps de useCallback).
+  const schedulePushRef = useRef<() => void>(() => {});
+
   // ==================== AUTH ====================
 
   useEffect(() => {
@@ -131,13 +137,27 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         setLastError(errors.join("; "));
       }
 
+      // Fusión por COLECCIÓN: cuando existe copia local y remota de una operación se
+      // fusionan sus sub-colecciones por id (no se pisan arrays enteros). `needsRepush`
+      // recoge los ids cuya unión aporta datos que el remoto aún no tiene, para volver a
+      // subirlos y que el otro dispositivo los reciba (convergencia).
+      const needsRepush = new Set<string>();
+      const mergedOps = mergeRemoteRows(
+        storeRef.current.realEstateOperations,
+        data.realEstateOperations || [],
+        { combine: mergeOperationEntity, needsRepush }
+      );
+
       isApplyingRemote.current = true;
-
-      setStore((prev) => ({
-        realEstateOperations: mergeRemoteRows(prev.realEstateOperations, data.realEstateOperations || []),
-      }));
-
+      setStore({ realEstateOperations: mergedOps });
       isApplyingRemote.current = false;
+
+      // Marcar dirty las operaciones fusionadas con datos propios y re-subir la unión.
+      if (needsRepush.size > 0) {
+        for (const id of needsRepush) markDirty("realEstateOperations", id);
+        schedulePushRef.current();
+      }
+
       setLastSyncAt(new Date().toISOString());
     } catch (err) {
       setLastError(err instanceof Error ? err.message : "Pull failed");
@@ -214,6 +234,9 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       doPush();
     }, 500);
   }, [doPush]);
+
+  // Mantener el ref del programador de push al día para la convergencia desde doPull.
+  schedulePushRef.current = schedulePush;
 
   // ==================== SYNC TRIGGER ====================
 
