@@ -598,8 +598,14 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
   // snapshot capturado al iniciar la operación asíncrona; si no, se descartaban en
   // silencio las ediciones hechas durante la subida (p.ej. un gasto añadido mientras
   // se subía un vídeo).
+  // El ref se sincroniza en un efecto (no en render: el React Compiler prohíbe escribir
+  // refs durante el renderizado). El efecto corre tras cada render y SIEMPRE antes de que
+  // resuelva cualquier `await`, por lo que un `commit` posterior a una subida sigue
+  // fusionando sobre el estado más reciente: el fix de pérdida de edición se conserva.
   const draftRef = useRef(draft);
-  draftRef.current = draft;
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isManualTasasTotal, setIsManualTasasTotal] = useState(false);
   const [showTypeChanger, setShowTypeChanger] = useState(false);
