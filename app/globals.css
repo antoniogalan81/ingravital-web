@@ -72,6 +72,30 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* ── Foco accesible por teclado en TODA la app ────────────────────────────────
+   Solo se muestra con navegación por teclado (:focus-visible), nunca con ratón
+   ni táctil. Los campos de formulario ya tienen su propio anillo de foco, así que
+   se les evita el doble marco. Mejora WCAG sin cambiar el aspecto con ratón. */
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.form-input:focus-visible,
+.form-select:focus-visible,
+.lp-input:focus-visible {
+  outline: none;
+}
+/* En el chrome oscuro y la landing, el azul de marca contrasta peor: aclara. */
+.app-chrome :focus-visible,
+.lp-root :focus-visible {
+  outline-color: var(--lp-brand-light, #6fa0f0);
+}
+
+::selection {
+  background: rgba(30, 79, 163, 0.18);
+}
+
 /* ── Primitivas reutilizables (paridad con components/ui/Premium.tsx de APP) ── */
 @layer components {
   .app-bg {

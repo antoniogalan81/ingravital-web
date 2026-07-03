@@ -33,10 +33,17 @@ export function ProgressBar({
           {pct == null ? "—" : `${pct}%`}
         </span>
       </div>
-      <div className="h-2 w-full rounded-full bg-[var(--surface-alt)] overflow-hidden border border-line">
+      <div
+        className="h-2 w-full rounded-full bg-[var(--surface-alt)] overflow-hidden border border-line"
+        role="progressbar"
+        aria-label={label}
+        aria-valuenow={pct ?? undefined}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
         {pct == null ? null : (
           <div
-            className="bar-anim h-full rounded-full transition-[width] duration-500"
+            className="bar-anim h-full rounded-full transition-[width] duration-500 motion-reduce:transition-none"
             style={{ width: `${pct}%`, background: TONE_VAR[tone] }}
           />
         )}

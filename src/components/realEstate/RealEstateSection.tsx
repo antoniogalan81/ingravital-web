@@ -166,6 +166,20 @@ function CompareModal({ ops, onClose, onOpenOp }: { ops: REOperation[]; onClose:
   const [showSale, setShowSale] = useState(true);
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
 
+  // Cerrar con Escape + bloquear scroll del fondo mientras el modal está abierto.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
   const toggleExpand = useCallback((key: string) => {
     setExpandedRows((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
@@ -397,13 +411,13 @@ function CompareModal({ ops, onClose, onOpenOp }: { ops: REOperation[]; onClose:
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center">
+    <div className="fixed inset-0 z-50 flex items-start justify-center" role="dialog" aria-modal="true" aria-labelledby="compare-modal-title">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative w-full max-w-5xl max-h-full bg-white shadow-2xl flex flex-col overflow-hidden sm:mt-8 sm:rounded-2xl">
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0 gap-4">
-          <h2 className="text-base font-extrabold text-ink tracking-tight shrink-0">Comparación de inversiones</h2>
+          <h2 id="compare-modal-title" className="text-base font-extrabold text-ink tracking-tight shrink-0">Comparación de inversiones</h2>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -431,9 +445,10 @@ function CompareModal({ ops, onClose, onOpenOp }: { ops: REOperation[]; onClose:
           <button
             type="button"
             onClick={onClose}
+            aria-label="Cerrar"
             className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors shrink-0"
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>

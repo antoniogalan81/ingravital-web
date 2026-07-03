@@ -593,6 +593,19 @@ interface RealEstateModalProps {
 
 export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: RealEstateModalProps) {
   const [draft, setDraft] = useState<REOperation>(() => JSON.parse(JSON.stringify(op)));
+  // Ref con el draft SIEMPRE actual. Un `commit` disparado tras un `await` (subida de
+  // archivo, etc.) debe fusionar su patch sobre el estado MÁS RECIENTE, no sobre el
+  // snapshot capturado al iniciar la operación asíncrona; si no, se descartaban en
+  // silencio las ediciones hechas durante la subida (p.ej. un gasto añadido mientras
+  // se subía un vídeo).
+  // El ref se sincroniza en un efecto (no en render: el React Compiler prohíbe escribir
+  // refs durante el renderizado). El efecto corre tras cada render y SIEMPRE antes de que
+  // resuelva cualquier `await`, por lo que un `commit` posterior a una subida sigue
+  // fusionando sobre el estado más reciente: el fix de pérdida de edición se conserva.
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isManualTasasTotal, setIsManualTasasTotal] = useState(false);
   const [showTypeChanger, setShowTypeChanger] = useState(false);
@@ -652,12 +665,14 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
 
   const commit = useCallback(
     (patch: Partial<REOperation>) => {
-      const updated = { ...draft, ...patch, updatedAt: new Date().toISOString() };
+      // Fusiona sobre draftRef.current (estado más reciente), no sobre el `draft` del
+      // closure. `onSave` se mantiene síncrono (mismo comportamiento que antes).
+      const updated = { ...draftRef.current, ...patch, updatedAt: new Date().toISOString() };
       setDraft(updated);
       onSave(updated);
       dirtyRef.current = true;
     },
-    [draft, onSave]
+    [onSave]
   );
 
   const setCosts = useCallback(
@@ -802,9 +817,10 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
             <button
               type="button"
               onClick={handleClose}
+              aria-label="Cerrar"
               className="p-2 text-slate-400 hover:text-slate-600 transition-colors rounded-lg hover:bg-slate-100"
             >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
@@ -1273,6 +1289,9 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
               <span className="text-sm font-medium text-slate-700">Financiación habilitada</span>
               <button
                 type="button"
+                role="switch"
+                aria-checked={draft.financing.enabled}
+                aria-label="Financiación habilitada"
                 onClick={() => setFinancing({ enabled: !draft.financing.enabled })}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${draft.financing.enabled ? "bg-brand" : "bg-slate-200"}`}
               >

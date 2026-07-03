@@ -5,7 +5,7 @@
 // activación explícita. Compartir resumen vía Web Share API / portapapeles (patrón
 // seguro, sin dependencias nuevas ni PDF).
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import type { REOperation, REResults } from "@/src/lib/realEstate";
 import {
@@ -33,6 +33,16 @@ export function InvestorView({
   const share = op.share ?? defaultShareSettings();
   const vis = share.visibility;
   const can = (k: REVisibilityKey) => vis[k] === true;
+
+  // Cerrar con Escape (el TrackingModal padre suprime su Escape mientras esta vista
+  // está abierta, así que la gestiona ella misma; si no, quedaba inaccesible por teclado).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   const exp = useMemo(() => expenseTotals(op), [op]);
   const sales = useMemo(() => salesStats(op), [op]);
@@ -67,12 +77,17 @@ export function InvestorView({
     can("rentabilidadEstimada") || can("rentabilidadReal") || can("rentabilidadPromotor") || can("rentabilidadInversor");
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/40 flex justify-center overflow-y-auto">
+    <div
+      className="fixed inset-0 z-[60] bg-black/40 flex justify-center overflow-y-auto"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Vista inversor: ${op.name}`}
+    >
       <div className="reveal-fast min-h-full w-full max-w-3xl bg-white shadow-2xl">
         {/* Header */}
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-white px-5 py-3">
-          <button type="button" onClick={onClose} className="p-2 -ml-2 text-slate-500 hover:text-ink rounded-lg hover:bg-slate-100">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <button type="button" onClick={onClose} aria-label="Cerrar" className="p-2 -ml-2 text-slate-500 hover:text-ink rounded-lg hover:bg-slate-100">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -80,8 +95,8 @@ export function InvestorView({
             <p className="text-[10px] uppercase tracking-widest font-bold text-ink-subtle">Vista inversor</p>
             <p className="text-sm font-extrabold text-ink truncate max-w-[60vw]">{op.name}</p>
           </div>
-          <button type="button" onClick={shareSummary} className="p-2 -mr-2 text-brand hover:bg-[var(--brand-soft)] rounded-lg" title="Compartir resumen">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <button type="button" onClick={shareSummary} aria-label="Compartir resumen" className="p-2 -mr-2 text-brand hover:bg-[var(--brand-soft)] rounded-lg" title="Compartir resumen">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
             </svg>
           </button>

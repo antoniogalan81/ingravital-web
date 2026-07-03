@@ -117,13 +117,13 @@ export function QuickEntryModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center">
+    <div className="fixed inset-0 z-[70] flex items-start justify-center" role="dialog" aria-modal="true" aria-labelledby="quickentry-modal-title">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative w-full max-w-lg max-h-full bg-white shadow-2xl flex flex-col overflow-hidden sm:mt-16 sm:rounded-2xl in-reveal">
         {/* Header */}
         <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4 flex-shrink-0">
           <div>
-            <h2 className="text-base font-extrabold text-ink tracking-tight">{meta.title}</h2>
+            <h2 id="quickentry-modal-title" className="text-base font-extrabold text-ink tracking-tight">{meta.title}</h2>
             <p className="text-xs text-ink-subtle mt-0.5">{meta.subtitle}</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Cerrar" className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors shrink-0">

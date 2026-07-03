@@ -7,9 +7,17 @@ import {
   pushItem,
   pushDelete,
   mergeRemoteRows,
+  mergeOperationEntity,
   getDirtyIds,
   markDirty,
   clearDirty,
+  setSyncUser,
+  migrateLegacyKeys,
+  loadEntityCache,
+  saveEntityCache,
+  getDeletedIds,
+  markDeleted,
+  clearDeleted,
 } from "./syncEngine";
 import { EntityKey, SyncableEntity } from "./types";
 import type { REOperation } from "@/src/lib/realEstate";
@@ -63,6 +71,11 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   // Push debounce
   const pushTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Ref al programador de push. Permite que doPull dispare una re-subida de convergencia
+  // (tras fusionar por colección) sin depender de `schedulePush`, que se declara más
+  // abajo (evita problemas de orden de declaración en las deps de useCallback).
+  const schedulePushRef = useRef<() => void>(() => {});
+
   // ==================== AUTH ====================
 
   useEffect(() => {
@@ -80,6 +93,31 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       listener?.subscription.unsubscribe();
     };
   }, []);
+
+  // ==================== AISLAMIENTO POR USUARIO + HIDRATACIÓN OFFLINE ====================
+  // Al cambiar de usuario: fijamos el aislamiento de claves, migramos claves antiguas
+  // (una vez) y REEMPLAZAMOS el store por la caché local de ESE usuario (o vacío). Así:
+  //  · las ediciones sobreviven a un refresco sin conexión (arranque instantáneo),
+  //  · nunca se muestran datos de otra cuenta tras cambiar de usuario.
+  // Debe declararse ANTES del efecto de sync inicial para que `setSyncUser` se aplique
+  // antes de cualquier pull/push (los efectos corren en orden de declaración).
+  useEffect(() => {
+    setSyncUser(userId);
+    if (!userId) {
+      setStore({ realEstateOperations: [] });
+      return;
+    }
+    migrateLegacyKeys();
+    const cached = loadEntityCache("realEstateOperations") as REOperation[] | null;
+    setStore({ realEstateOperations: cached ?? [] });
+  }, [userId]);
+
+  // Persistimos la copia local ante cualquier cambio, para que sobreviva a refrescos
+  // offline. Escritura protegida (quota/modo privado no rompen la app).
+  useEffect(() => {
+    if (!userId) return;
+    saveEntityCache("realEstateOperations", store.realEstateOperations);
+  }, [store.realEstateOperations, userId]);
 
   // ==================== PULL ====================
 
@@ -99,13 +137,27 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         setLastError(errors.join("; "));
       }
 
+      // Fusión por COLECCIÓN: cuando existe copia local y remota de una operación se
+      // fusionan sus sub-colecciones por id (no se pisan arrays enteros). `needsRepush`
+      // recoge los ids cuya unión aporta datos que el remoto aún no tiene, para volver a
+      // subirlos y que el otro dispositivo los reciba (convergencia).
+      const needsRepush = new Set<string>();
+      const mergedOps = mergeRemoteRows(
+        storeRef.current.realEstateOperations,
+        data.realEstateOperations || [],
+        { combine: mergeOperationEntity, needsRepush }
+      );
+
       isApplyingRemote.current = true;
-
-      setStore((prev) => ({
-        realEstateOperations: mergeRemoteRows(prev.realEstateOperations, data.realEstateOperations || []),
-      }));
-
+      setStore({ realEstateOperations: mergedOps });
       isApplyingRemote.current = false;
+
+      // Marcar dirty las operaciones fusionadas con datos propios y re-subir la unión.
+      if (needsRepush.size > 0) {
+        for (const id of needsRepush) markDirty("realEstateOperations", id);
+        schedulePushRef.current();
+      }
+
       setLastSyncAt(new Date().toISOString());
     } catch (err) {
       setLastError(err instanceof Error ? err.message : "Pull failed");
@@ -121,15 +173,14 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     if (!userId) return;
 
     const dirty = getDirtyIds();
+    const deleted = getDeletedIds();
     const entityKeys = Object.keys(dirty) as EntityKey[];
-
-    if (entityKeys.length > 0) {
-      console.log("[Push] Starting push for entities:", entityKeys, dirty);
-    }
+    const errors: string[] = [];
 
     await Promise.allSettled(
       entityKeys.map(async (entityKey) => {
         const ids = dirty[entityKey] || [];
+        const delIds = deleted[entityKey] || [];
         const currentStore = storeRef.current;
 
         for (const id of ids) {
@@ -138,32 +189,41 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
             item = currentStore.realEstateOperations.find((x) => x.id === id);
           }
 
-          console.log(`[Push] → ${entityKey}/${id}, item found: ${!!item}`);
+          // Solo se envía tombstone si el borrado es EXPLÍCITO (id en la lista de
+          // borrados o item.deleted). Un "dirty sin item" que NO es borrado explícito
+          // se deja pendiente: jamás tombstoneamos una operación viva por un hueco de
+          // memoria (esa era la causa del borrado accidental tras un refresco).
+          const isDeleted = delIds.includes(id) || !!item?.deleted;
 
           try {
             let result: { error: string | null };
-            if (item) {
-              result = item.deleted
-                ? await pushDelete(entityKey, userId, id)
-                : await pushItem(entityKey, userId, item);
-            } else {
+            if (isDeleted) {
               result = await pushDelete(entityKey, userId, id);
+            } else if (item) {
+              result = await pushItem(entityKey, userId, item);
+            } else {
+              continue; // sin item y sin borrado explícito → no tocar la nube
             }
 
             if (result.error) {
-              console.error(`[Push] FAILED ${entityKey}/${id}:`, result.error);
-              // No llamar clearDirty — reintento en el siguiente push
+              errors.push(`${entityKey}/${id}: ${result.error}`);
+              // se mantiene dirty para reintentar en el próximo push
             } else {
-              console.log(`[Push] OK ${entityKey}/${id}`);
               clearDirty(entityKey, id);
+              if (isDeleted) clearDeleted(entityKey, id);
             }
           } catch (err) {
-            console.error(`[Push] EXCEPTION ${entityKey}/${id}:`, err);
-            // item remains dirty for next push attempt
+            errors.push(`${entityKey}/${id}: ${err instanceof Error ? err.message : String(err)}`);
           }
         }
       })
     );
+
+    // Estado HONESTO: si algún push falló, se expone el error (los items quedan dirty
+    // y se reintentan). No se marca como sincronizado algo que no lo está.
+    if (errors.length > 0) {
+      setLastError(errors.join("; "));
+    }
   }, [userId]); // store eliminado de deps: se lee via storeRef para no recrear doPush tras cada setStore
 
   const schedulePush = useCallback(() => {
@@ -174,6 +234,9 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       doPush();
     }, 500);
   }, [doPush]);
+
+  // Mantener el ref del programador de push al día para la convergencia desde doPull.
+  schedulePushRef.current = schedulePush;
 
   // ==================== SYNC TRIGGER ====================
 
@@ -250,12 +313,28 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       }));
 
       if (!isApplyingRemote.current) {
+        markDeleted("realEstateOperations", id); // borrado EXPLÍCITO → sí tombstone
         markDirty("realEstateOperations", id);
         schedulePush();
       }
     },
     [schedulePush]
   );
+
+  // Flush best-effort al ocultar/cerrar la pestaña: si hay un push debounced pendiente
+  // (edición en los últimos 500 ms), se intenta enviar ya. Si no llega a completarse,
+  // el dirty persiste y se reintenta en la próxima apertura (sin pérdida).
+  useEffect(() => {
+    const flush = () => {
+      if (pushTimeoutRef.current) {
+        clearTimeout(pushTimeoutRef.current);
+        pushTimeoutRef.current = null;
+        void doPush();
+      }
+    };
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
+  }, [doPush]);
 
   // ==================== CONTEXT VALUE ====================
 
