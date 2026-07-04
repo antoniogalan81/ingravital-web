@@ -3,7 +3,8 @@
 // de usuario (no filtra nada). Los datos ya cargados siguen disponibles gracias a la
 // caché local por usuario del motor de sync.
 export const metadata = {
-  title: "Sin conexión · Invergravital",
+  // El sufijo "· Invergravital" lo añade el title.template del layout raíz.
+  title: "Sin conexión",
 };
 
 export default function OfflinePage() {

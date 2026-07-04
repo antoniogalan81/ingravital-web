@@ -17,10 +17,25 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Invergravital",
-  description: "Invergravital Web App",
+  metadataBase: new URL("https://www.invergravital.com"),
+  title: {
+    default: "Invergravital",
+    template: "%s · Invergravital",
+  },
+  description:
+    "Invergravital — herramienta gratuita de análisis y seguimiento de operaciones inmobiliarias: costes, financiación y rentabilidad real.",
+  applicationName: "Invergravital",
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Invergravital" },
+  openGraph: {
+    type: "website",
+    siteName: "Invergravital",
+    title: "Invergravital",
+    description:
+      "Herramienta gratuita de análisis y seguimiento de operaciones inmobiliarias.",
+    url: "https://www.invergravital.com",
+    locale: "es_ES",
+  },
 };
 
 export const viewport: Viewport = {
