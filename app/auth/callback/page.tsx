@@ -13,16 +13,19 @@ function safeNext(raw: string | null): string {
   return raw;
 }
 
-// Callback OAuth (PKCE). Supabase vuelve con ?code= en la query; el cliente
-// (detectSessionInUrl) lo intercambia por la sesión. Aquí solo esperamos a que
-// la sesión esté lista y redirigimos limpio a `next` (por defecto /panel).
-// Nunca quedan tokens en la URL.
+// Callback OAuth (PKCE). Supabase vuelve con ?code= en la query. Aquí:
+//  1. Si ya hay sesión (detectSessionInUrl pudo intercambiar el code al iniciar
+//     el cliente), redirigimos a `next`.
+//  2. Si no, intercambiamos el code explícitamente con exchangeCodeForSession.
+//  3. Ante error real, volvemos a /login sin dejar ?code= en la URL.
+// Nunca dejamos al usuario en la landing con ?code=.
 export default function AuthCallbackPage() {
   const router = useRouter();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const next = safeNext(params.get("next"));
+    const code = params.get("code");
     const oauthError = params.get("error") || params.get("error_description");
 
     if (oauthError) {
@@ -31,26 +34,52 @@ export default function AuthCallbackPage() {
     }
 
     let done = false;
-    const finish = (hasSession: boolean) => {
-      if (done || !hasSession) return;
+    const finishOk = () => {
+      if (done) return;
       done = true;
       // Limpia cualquier resto (?code=, #...) antes de navegar.
       window.history.replaceState({}, "", "/auth/callback");
       router.replace(next);
     };
+    const finishError = () => {
+      if (done) return;
+      done = true;
+      router.replace("/login?error=oauth");
+    };
 
-    // detectSessionInUrl intercambia el code de forma asíncrona → escuchamos.
+    // Si la sesión llega por el intercambio async del cliente, lo captamos aquí.
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      finish(!!session);
+      if (session) finishOk();
     });
 
-    // Fallback: la sesión puede estar lista antes de montar el listener.
-    supabase.auth.getSession().then(({ data }) => finish(!!data.session));
+    const run = async () => {
+      // 1. ¿Ya hay sesión establecida?
+      const { data } = await supabase.auth.getSession();
+      if (data.session) {
+        finishOk();
+        return;
+      }
 
-    // Si en unos segundos no hay sesión, volver a login sin tokens en la URL.
-    const timeout = setTimeout(() => {
-      if (!done) router.replace("/login?error=oauth");
-    }, 8000);
+      // 2. Intercambio explícito del code (PKCE).
+      if (code) {
+        const { data: exchanged, error } = await supabase.auth.exchangeCodeForSession(code);
+        if (!error && exchanged.session) {
+          finishOk();
+          return;
+        }
+        // Si el code ya fue consumido por detectSessionInUrl, la sesión llegará
+        // por onAuthStateChange (arriba); no marcamos error todavía.
+        return;
+      }
+
+      // 3. Ni sesión ni code: enlace inválido.
+      finishError();
+    };
+
+    run();
+
+    // Red de seguridad: si en unos segundos no hay sesión, volver a login limpio.
+    const timeout = setTimeout(finishError, 8000);
 
     return () => {
       sub.subscription.unsubscribe();

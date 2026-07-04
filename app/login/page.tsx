@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { supabase } from "@/src/lib/supabaseClient";
+import { authRedirectUrl } from "@/src/lib/siteUrl";
 import { useAuth } from "@/src/contexts/AuthContext";
 
 export default function LoginPage() {
@@ -77,8 +78,8 @@ export default function LoginPage() {
     setForgotSuccess(false);
 
     try {
-      const redirectUrl = `${window.location.origin}/auth/reset`;
-      const { error: resetError } = 
+      const redirectUrl = authRedirectUrl("/auth/reset");
+      const { error: resetError } =
       await supabase.auth.resetPasswordForEmail(targetEmail, {
         redirectTo: redirectUrl,
       });
@@ -101,7 +102,7 @@ export default function LoginPage() {
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=/panel`,
+        redirectTo: authRedirectUrl("/auth/callback?next=/panel"),
       },
     });
 

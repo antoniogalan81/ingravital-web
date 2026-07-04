@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/src/lib/supabaseClient";
+import { authRedirectUrl } from "@/src/lib/siteUrl";
 import { useAuth } from "@/src/contexts/AuthContext";
 import type { Gender } from "@/src/lib/types";
 import AppGate from "@/components/AppGate";
@@ -375,8 +376,8 @@ export default function AccountPage() {
     setPasswordError(null);
 
     try {
-      const redirectUrl = `${window.location.origin}/auth/reset`;
-      
+      const redirectUrl = authRedirectUrl("/auth/reset");
+
       const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
         redirectTo: redirectUrl,
       });
