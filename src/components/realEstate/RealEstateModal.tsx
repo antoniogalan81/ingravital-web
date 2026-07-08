@@ -8,6 +8,7 @@ import { DEFAULT_TASAS } from "@/src/lib/realEstate";
 import { calcResults, calcNumTrasteros, calcNumPlazas, calcTINFromCuota, fmtEUR, fmtNum, fmtPct, convertRealEstateOperationType } from "@/src/lib/realEstateCalc";
 import { ScenariosPanel } from "./ScenariosPanel";
 import { TrackingModal } from "./tracking/TrackingModal";
+import { InvestmentFlowMap } from "./charts/InvestmentFlowMap";
 
 type RealEstateCategory = "vivienda" | "local" | "suelo" | "adaptacion";
 
@@ -937,6 +938,11 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
               )}
               {nGarajes > 0 && <KPI label="Nº garajes" value={String(nGarajes)} />}
               {nTrasteros > 0 && <KPI label="Nº trasteros" value={String(nTrasteros)} />}
+            </div>
+
+            {/* Mapa visual de la inversión — complementa el resumen, no lo sustituye */}
+            <div className="mt-3">
+              <InvestmentFlowMap op={draft} res={res} />
             </div>
           </SectionBlock>
 

@@ -16,6 +16,7 @@ import { PipelineFilters, type StageCounts } from "./pipeline/PipelineFilters";
 import { ViewModeToggle, type ViewMode } from "./pipeline/ViewModeToggle";
 import { OperationsTable, type OperationRow } from "./OperationsTable";
 import { PortfolioHeader } from "./PortfolioHeader";
+import { CompareDashboard } from "./charts/CompareDashboard";
 import { KanbanBoard } from "./KanbanBoard";
 import { priorityDef, temperatureDef } from "@/src/lib/management";
 import { expenseTotals, salesStats } from "@/src/lib/realEstateTrackingCalc";
@@ -456,6 +457,20 @@ function CompareModal({ ops, onClose, onOpenOp }: { ops: REOperation[]; onClose:
 
         {/* Tabla scrollable */}
         <div className="flex-1 overflow-auto">
+          {/* Panel comparativo visual (arriba del todo, antes de la tabla) */}
+          <div className="px-4 pt-4 sm:px-6">
+            <CompareDashboard
+              rows={rows}
+              onOpenOp={
+                onOpenOp
+                  ? (id) => {
+                      const r = rows.find((x) => x.op.id === id);
+                      if (r) onOpenOp(r.op);
+                    }
+                  : undefined
+              }
+            />
+          </div>
           <table className="w-full text-sm border-collapse" style={{ minWidth: `${180 + ops.length * 180}px` }}>
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
