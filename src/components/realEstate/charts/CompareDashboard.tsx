@@ -105,12 +105,18 @@ export function CompareDashboard({ rows, onOpenOp }: { rows: CompareRow[]; onOpe
     return map;
   }, [rows, activeMetrics]);
 
-  // "Mejor global" transparente: la inversión que gana en más métricas reales.
+  // "Mejor global" transparente: SOLO cuentan las métricas de CALIDAD (retorno /
+  // beneficio, goal "max") que tengan un ganador determinado. "Menor inversión"
+  // (goal "min") NO cuenta: ser más barato o estar incompleto no es ser "mejor".
+  // El denominador es el nº de esas métricas de calidad, no todas las activas.
   const overall = useMemo(() => {
+    const qualityKeys = activeMetrics
+      .filter((m) => m.goal === "max" && (winners.get(m.key) ?? -1) >= 0)
+      .map((m) => m.key);
     const wins = new Array(rows.length).fill(0);
-    for (const m of activeMetrics) {
-      const wi = winners.get(m.key);
-      if (wi != null && wi >= 0) wins[wi] += 1;
+    for (const key of qualityKeys) {
+      const wi = winners.get(key)!;
+      wins[wi] += 1;
     }
     let bestIdx = -1;
     let bestWins = 0;
@@ -119,20 +125,22 @@ export function CompareDashboard({ rows, onOpenOp }: { rows: CompareRow[]; onOpe
       if (w > bestWins) { bestWins = w; bestIdx = i; tie = false; }
       else if (w === bestWins && w > 0) { tie = true; }
     });
-    return { idx: bestIdx, wins: bestWins, tie, total: activeMetrics.length };
+    return { idx: bestIdx, wins: bestWins, tie, total: qualityKeys.length };
   }, [rows, activeMetrics, winners]);
 
   if (rows.length < 2 || activeMetrics.length === 0) return null;
 
+  // Corona solo si hay ≥2 métricas de calidad comparables y un líder claro (sin empate).
+  const showCrown = overall.total >= 2 && overall.idx >= 0 && !overall.tie;
   const hasFinancing = rows.some((r) => r.res.totalFinanced > 0);
 
   return (
     <section className="mb-5 rounded-2xl border border-line bg-[var(--surface-alt)] p-4 sm:p-5" aria-label="Resumen comparativo visual">
       <div className="flex items-center justify-between gap-3 mb-3">
         <h3 className="text-sm font-extrabold text-ink tracking-tight">Panel comparativo</h3>
-        {overall.idx >= 0 && !overall.tie && (
+        {showCrown && (
           <span className="pill" style={{ background: "var(--positive-soft)", color: "var(--positive)" }}>
-            ★ Mejor global: {rows[overall.idx].op.name} · {overall.wins}/{overall.total} métricas
+            ★ Mejor global: {rows[overall.idx].op.name} · {overall.wins}/{overall.total} métricas de retorno
           </span>
         )}
       </div>
@@ -173,7 +181,7 @@ export function CompareDashboard({ rows, onOpenOp }: { rows: CompareRow[]; onOpe
                 {m.title}
                 {m.goal === "min" && <span className="ml-1 font-normal normal-case text-ink-subtle">(menor es mejor)</span>}
               </p>
-              <CompareBars items={items} format={m.format} onOpen={onOpenOp} />
+              <CompareBars items={items} format={m.format} onOpen={onOpenOp} minMetric={m.goal === "min"} />
             </div>
           );
         })}

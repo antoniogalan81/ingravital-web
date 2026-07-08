@@ -98,18 +98,26 @@ export function CompareBars({
   items,
   format,
   onOpen,
+  minMetric = false,
 }: {
   items: CompareItem[];
   format: (v: number) => string;
   onOpen?: (id: string) => void;
+  // Métrica de tamaño (menor inversión): el "mejor" se marca en tono neutro
+  // con ↓, no en verde con ★ — ser más barato no es una señal de calidad.
+  minMetric?: boolean;
 }) {
-  const scale = Math.max(1, ...items.map((it) => Math.abs(it.value)).filter((v) => Number.isFinite(v)));
+  const safe = (v: number): number => (Number.isFinite(v) ? v : 0);
+  const scale = Math.max(1, ...items.map((it) => Math.abs(safe(it.value))));
+  // El resaltado del "mejor" es verde (calidad) salvo en métricas de tamaño.
+  const bestColor = minMetric ? "var(--brand)" : "var(--positive)";
   return (
     <div className="flex flex-col gap-1.5">
       {items.map((it) => {
-        const w = clampPct((Math.abs(it.value) / scale) * 100);
-        const neg = it.value < 0;
-        const bg = it.isBest ? "var(--positive)" : neg ? "var(--negative)" : "var(--brand)";
+        const value = safe(it.value);
+        const w = clampPct((Math.abs(value) / scale) * 100);
+        const neg = value < 0;
+        const bg = it.isBest ? bestColor : neg ? "var(--negative)" : "var(--brand)";
         return (
           <div key={it.id} className="flex items-center gap-2">
             <button
@@ -127,15 +135,15 @@ export function CompareBars({
             <div className="flex-1 min-w-0 h-5 rounded-md bg-[var(--surface-alt)] border border-line overflow-hidden relative">
               <div
                 className="h-full rounded-md bar-anim"
-                style={{ width: `${Math.max(w, it.value === 0 ? 0 : 3)}%`, background: bg }}
+                style={{ width: `${Math.max(w, value === 0 ? 0 : 3)}%`, background: bg }}
               />
             </div>
             <span
               className="w-20 sm:w-24 shrink-0 text-right text-[11px] font-bold tabular-nums"
-              style={{ color: it.isBest ? "var(--positive)" : neg ? "var(--negative)" : "var(--ink)" }}
+              style={{ color: it.isBest ? bestColor : neg ? "var(--negative)" : "var(--ink)" }}
             >
               {format(it.value)}
-              {it.isBest ? <span className="text-[9px] text-emerald-600"> ★</span> : null}
+              {it.isBest ? <span className="text-[9px]" style={{ color: bestColor }}>{minMetric ? " ↓" : " ★"}</span> : null}
             </span>
           </div>
         );
