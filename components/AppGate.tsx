@@ -6,9 +6,9 @@
 // 7 secciones + marco de título. Evita duplicar auth en cada página.
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
-import { supabase } from "@/src/lib/supabaseClient";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, type ReactNode } from "react";
+import { useAuth } from "@/src/contexts/AuthContext";
 
 export type AppSection = "panel" | "inversiones" | "oportunidades" | "informes" | "inversores";
 
@@ -38,55 +38,29 @@ export default function AppGate({
   children: ReactNode;
 }) {
   const pathname = usePathname();
-  const [authState, setAuthState] = useState<{ loading: boolean; authenticated: boolean }>({
-    loading: true,
-    authenticated: false,
-  });
+  const router = useRouter();
+  // Auth centralizada: AuthContext es la única fuente de verdad de la sesión
+  // (incluye el filtrado de sesiones expiradas/no utilizables y un arranque
+  // acotado que siempre termina). Aquí no duplicamos getSession/onAuthStateChange.
+  const { loading, user } = useAuth();
 
+  // Guardia de ruta protegida: cuando el arranque de auth termina sin sesión
+  // utilizable, redirigimos a /login. Como /login trata una sesión no utilizable
+  // como "sin sesión", no hay rebote circular login↔ruta protegida.
   useEffect(() => {
-    let resolved = false;
+    if (!loading && !user) {
+      router.replace("/login");
+    }
+  }, [loading, user, router]);
 
-    const grant = () => {
-      if (resolved) return;
-      resolved = true;
-      setAuthState({ loading: false, authenticated: true });
-    };
-    const reject = () => {
-      if (resolved) return;
-      resolved = true;
-      window.location.href = "/login";
-    };
-
-    // Señal autoritativa: INITIAL_SESSION se emite tras hidratar la sesión del
-    // storage. Así no redirigimos antes de tiempo (evita rebote a /login al
-    // hacer F5 en una ruta protegida mientras la sesión aún se está cargando).
-    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.user) grant();
-      else if (event === "INITIAL_SESSION" || event === "SIGNED_OUT") reject();
-    });
-
-    // Ruta rápida: si la sesión ya está cargada, no esperamos al evento.
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session?.user) grant();
-    });
-
-    // Red de seguridad: si nada resuelve en 5s, mandar a login.
-    const timeout = setTimeout(reject, 5000);
-
-    return () => {
-      sub.subscription.unsubscribe();
-      clearTimeout(timeout);
-    };
-  }, []);
-
-  if (authState.loading) {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center app-bg">
         <div className="text-ink-subtle text-sm">Verificando sesión…</div>
       </div>
     );
   }
-  if (!authState.authenticated) return null;
+  if (!user) return null; // redirigiendo a /login
 
   return (
     <div className="min-h-screen app-bg">

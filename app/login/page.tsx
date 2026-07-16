@@ -8,6 +8,24 @@ import { supabase } from "@/src/lib/supabaseClient";
 import { authRedirectUrl } from "@/src/lib/siteUrl";
 import { useAuth } from "@/src/contexts/AuthContext";
 
+// Traduce un error de Supabase Auth a un mensaje claro en español. Distingue
+// credenciales inválidas, email sin confirmar, límite de intentos y —clave para
+// no dejar el formulario mudo— fallos de red/servicio caído. Para errores no
+// reconocidos devuelve un mensaje genérico en vez de exponer texto crudo del
+// backend (evita filtrar detalle interno ante cambios de formato del SDK).
+function authErrorMessage(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err ?? "");
+  if (/Invalid login credentials/i.test(message)) return "Email o contraseña incorrectos";
+  if (/Email not confirmed/i.test(message)) return "Por favor, confirma tu email antes de iniciar sesión";
+  if (/rate limit|too many requests/i.test(message)) {
+    return "Demasiados intentos. Espera unos minutos e inténtalo de nuevo.";
+  }
+  if (/Failed to fetch|NetworkError|network|fetch failed/i.test(message)) {
+    return "No se puede conectar con el servidor. Inténtalo de nuevo en unos minutos.";
+  }
+  return "No se pudo completar la operación. Inténtalo de nuevo.";
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const { loading: authLoading, user } = useAuth();
@@ -45,19 +63,16 @@ export default function LoginPage() {
       });
 
       if (authError) {
-        // Traducir errores comunes
-        if (authError.message.includes("Invalid login credentials")) {
-          setError("Email o contraseña incorrectos");
-        } else if (authError.message.includes("Email not confirmed")) {
-          setError("Por favor, confirma tu email antes de iniciar sesión");
-        } else {
-          setError(authError.message);
-        }
+        setError(authErrorMessage(authError));
         return;
       }
 
       // Éxito - redirigir (AuthContext detectará el cambio via onAuthStateChange)
       router.replace("/finanzas");
+    } catch (err) {
+      // Un fallo de red (p. ej. servicio de auth caído) lanza en vez de devolver
+      // error. Lo mostramos en vez de dejar el formulario sin respuesta.
+      setError(authErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -85,11 +100,13 @@ export default function LoginPage() {
       });
 
       if (resetError) {
-        setForgotError(resetError.message);
+        setForgotError(authErrorMessage(resetError));
         return;
       }
 
       setForgotSuccess(true);
+    } catch (err) {
+      setForgotError(authErrorMessage(err));
     } finally {
       setForgotLoading(false);
     }
@@ -99,15 +116,19 @@ export default function LoginPage() {
   const handleGoogleSignIn = async () => {
     setError(null);
 
-    const { error: oauthError } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: authRedirectUrl("/auth/callback?next=/panel"),
-      },
-    });
+    try {
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: authRedirectUrl("/auth/callback?next=/panel"),
+        },
+      });
 
-    if (oauthError) {
-      setError(oauthError.message);
+      if (oauthError) {
+        setError(authErrorMessage(oauthError));
+      }
+    } catch (err) {
+      setError(authErrorMessage(err));
     }
   };
 
