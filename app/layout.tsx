@@ -1,18 +1,16 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist } from "next/font/google";
 import { Toaster } from "sonner";
 import "./globals.css";
 import { ClientProviders } from "@/src/components/ClientProviders";
 import CookieBanner from "@/components/CookieBanner";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 
+// Solo se usa la familia sans (Geist). La mono (Geist_Mono) estaba cargándose en
+// todas las páginas sin aplicarse en ningún sitio —los números usan `tabular-nums`
+// sobre la sans—, así que se elimina: menos descargas de fuente por página.
 const geistSans = Geist({
   variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
   subsets: ["latin"],
 });
 
@@ -50,7 +48,7 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} antialiased`}
       >
         <ClientProviders>{children}</ClientProviders>
         <CookieBanner />

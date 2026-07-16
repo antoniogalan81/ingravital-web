@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { supabase } from "@/src/lib/supabaseClient";
+import { useAuth } from "@/src/contexts/AuthContext";
 import {
   pullAll,
   pushItem,
@@ -49,7 +49,14 @@ const SyncContext = createContext<SyncContextValue | null>(null);
 // ==================== PROVIDER ====================
 
 export function SyncProvider({ children }: { children: React.ReactNode }) {
-  const [userId, setUserId] = useState<string | null>(null);
+  // El usuario viene de AuthContext (única fuente de verdad de la sesión).
+  // Antes SyncProvider llamaba a su propio getSession()/onAuthStateChange, lo que
+  // duplicaba la inicialización de auth (dos listeners, dos getSession) y podía
+  // divergir de AuthContext (que descarta sesiones expiradas). Al consumir
+  // useAuth() no hay duplicación y `userId` es siempre coherente con la sesión
+  // realmente utilizable.
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
   const [store, setStore] = useState<SyncStore>({
     realEstateOperations: [],
   });
@@ -75,24 +82,6 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   // (tras fusionar por colección) sin depender de `schedulePush`, que se declara más
   // abajo (evita problemas de orden de declaración en las deps de useCallback).
   const schedulePushRef = useRef<() => void>(() => {});
-
-  // ==================== AUTH ====================
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setUserId(session?.user?.id || null);
-    };
-    checkAuth();
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_, session) => {
-      setUserId(session?.user?.id || null);
-    });
-
-    return () => {
-      listener?.subscription.unsubscribe();
-    };
-  }, []);
 
   // ==================== AISLAMIENTO POR USUARIO + HIDRATACIÓN OFFLINE ====================
   // Al cambiar de usuario: fijamos el aislamiento de claves, migramos claves antiguas

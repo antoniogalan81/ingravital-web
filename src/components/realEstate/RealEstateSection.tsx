@@ -17,6 +17,7 @@ import { ViewModeToggle, type ViewMode } from "./pipeline/ViewModeToggle";
 import { OperationsTable, type OperationRow } from "./OperationsTable";
 import { PortfolioHeader } from "./PortfolioHeader";
 import { CompareDashboard } from "./charts/CompareDashboard";
+import { ModalPortal } from "@/src/components/ui/ModalPortal";
 import { KanbanBoard } from "./KanbanBoard";
 import { priorityDef, temperatureDef } from "@/src/lib/management";
 import { expenseTotals, salesStats } from "@/src/lib/realEstateTrackingCalc";
@@ -116,6 +117,7 @@ function TypePickerModal({ onPick, onClose }: { onPick: (cat: RealEstateCategory
   }, [onClose]);
 
   return (
+    <ModalPortal>
     <div className="fixed inset-0 z-50 flex items-start justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative w-full max-w-2xl max-h-full bg-white shadow-2xl flex flex-col overflow-hidden sm:mt-16 sm:rounded-2xl in-reveal">
@@ -159,6 +161,7 @@ function TypePickerModal({ onPick, onClose }: { onPick: (cat: RealEstateCategory
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }
 
@@ -166,6 +169,7 @@ function CompareModal({ ops, onClose, onOpenOp }: { ops: REOperation[]; onClose:
   const [showRent, setShowRent] = useState(true);
   const [showSale, setShowSale] = useState(true);
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   // Cerrar con Escape + bloquear scroll del fondo mientras el modal está abierto.
   useEffect(() => {
@@ -180,6 +184,14 @@ function CompareModal({ ops, onClose, onOpenOp }: { ops: REOperation[]; onClose:
       document.body.style.overflow = prevOverflow;
     };
   }, [onClose]);
+
+  // Gestión de foco: al abrir, llevar el foco al diálogo; al cerrar, devolverlo al
+  // elemento que lo tenía (accesibilidad de teclado / lectores de pantalla).
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+    return () => previouslyFocused?.focus?.();
+  }, []);
 
   const toggleExpand = useCallback((key: string) => {
     setExpandedRows((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -412,12 +424,14 @@ function CompareModal({ ops, onClose, onOpenOp }: { ops: REOperation[]; onClose:
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center" role="dialog" aria-modal="true" aria-labelledby="compare-modal-title">
+    <ModalPortal>
+    <div ref={dialogRef} tabIndex={-1} className="fixed inset-0 z-50 flex items-start justify-center outline-none" role="dialog" aria-modal="true" aria-labelledby="compare-modal-title">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative w-full max-w-5xl max-h-full bg-white shadow-2xl flex flex-col overflow-hidden sm:mt-8 sm:rounded-2xl">
+      <div className="relative w-full max-w-5xl max-h-[100dvh] sm:max-h-[calc(100dvh-3rem)] bg-white shadow-2xl flex flex-col overflow-hidden sm:my-6 sm:rounded-2xl">
 
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0 gap-4">
+        {/* Header — flex-wrap para que a 400% de zoom / anchos mínimos reordene en
+            varias líneas en lugar de recortarse bajo el overflow-hidden del modal. */}
+        <div className="flex flex-wrap items-center justify-between px-6 py-4 border-b border-slate-200 flex-shrink-0 gap-x-4 gap-y-2">
           <h2 id="compare-modal-title" className="text-base font-extrabold text-ink tracking-tight shrink-0">Comparación de inversiones</h2>
           <div className="flex items-center gap-2">
             <button
@@ -455,8 +469,16 @@ function CompareModal({ ops, onClose, onOpenOp }: { ops: REOperation[]; onClose:
           </button>
         </div>
 
-        {/* Tabla scrollable */}
-        <div className="flex-1 overflow-auto">
+        {/* Tabla scrollable — min-h-0 permite que este hijo flex encoja y active el
+            scroll interno en vez de crecer y empujar el modal (trampa flex clásica).
+            tabIndex + role=region para que el teclado pueda enfocar la zona y
+            desplazarla (flechas/RePág/AvPág) hasta la última fila. */}
+        <div
+          className="flex-1 min-h-0 overflow-auto"
+          tabIndex={0}
+          role="region"
+          aria-label="Tabla comparativa de inversiones"
+        >
           {/* Panel comparativo visual (arriba del todo, antes de la tabla) */}
           <div className="px-4 pt-4 sm:px-6">
             <CompareDashboard
@@ -587,6 +609,7 @@ function CompareModal({ ops, onClose, onOpenOp }: { ops: REOperation[]; onClose:
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }
 

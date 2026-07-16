@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import type { REOperation, REUnit } from "@/src/lib/realEstate";
 import { DEFAULT_TASAS } from "@/src/lib/realEstate";
 import { fmtEUR, fmtNum, calcFrench, calcTINFromCuota } from "@/src/lib/realEstateCalc";
+import { ModalPortal } from "@/src/components/ui/ModalPortal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1619,6 +1620,7 @@ export function RealEstateWizard({ baseOp, onDone, onCancel }: RealEstateWizardP
   }, [handleCancelOrClose]);
 
   return (
+    <ModalPortal>
     <div className="fixed inset-0 z-50 flex items-start justify-center" role="dialog" aria-modal="true" aria-labelledby="wizard-title">
       <div className="absolute inset-0 bg-black/40" onClick={handleCancelOrClose} />
       <div className="relative w-full max-w-lg h-full bg-white shadow-2xl flex flex-col overflow-hidden">
@@ -1832,5 +1834,6 @@ export function RealEstateWizard({ baseOp, onDone, onCancel }: RealEstateWizardP
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useMemo, type ReactNode } from "react";
 import { supabase } from "@/src/lib/supabaseClient";
 import {
   isUsableSession,
@@ -143,8 +143,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   }, []);
 
+  // Memoizamos el value para no forzar un re-render de TODOS los consumidores de
+  // useAuth() en cada evento de auth (p. ej. TOKEN_REFRESHED cada hora crea un
+  // objeto `user` nuevo). Sin esto, cada refresco de token repropagaría por todo
+  // el árbol (incluido SyncProvider, que ahora consume useAuth).
+  const value = useMemo(
+    () => ({ loading, user, profile, signOut, refreshProfile }),
+    [loading, user, profile, signOut, refreshProfile],
+  );
+
   return (
-    <AuthContext.Provider value={{ loading, user, profile, signOut, refreshProfile }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
