@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect, Fragment } from "react";
 import { toast } from "sonner";
 import { useSync } from "@/src/sync/SyncContext";
 import { calcResults, fmtEUR, fmtPct, CATEGORY_INFO, convertRealEstateOperationType, type RealEstateCategory } from "@/src/lib/realEstateCalc";
@@ -165,7 +165,17 @@ function TypePickerModal({ onPick, onClose }: { onPick: (cat: RealEstateCategory
   );
 }
 
-function CompareModal({ ops, onClose, onOpenOp }: { ops: REOperation[]; onClose: () => void; onOpenOp?: (op: REOperation) => void }) {
+// Best-value marker (★ mejor / ↓ menor inversión). Shared by the wide table and the narrow
+// stacked layout so the highlight semantics never diverge between breakpoints.
+function BestMark({ isMin }: { isMin?: boolean }) {
+  return (
+    <span className={`ml-1 text-[10px] font-bold px-1 rounded ${isMin ? "text-blue-600 bg-blue-100" : "text-emerald-600 bg-emerald-100"}`}>
+      {isMin ? "↓" : "★"}
+    </span>
+  );
+}
+
+export function CompareModal({ ops, onClose, onOpenOp }: { ops: REOperation[]; onClose: () => void; onOpenOp?: (op: REOperation) => void }) {
   const [showRent, setShowRent] = useState(true);
   const [showSale, setShowSale] = useState(true);
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
@@ -469,17 +479,19 @@ function CompareModal({ ops, onClose, onOpenOp }: { ops: REOperation[]; onClose:
           </button>
         </div>
 
-        {/* Tabla scrollable — min-h-0 permite que este hijo flex encoja y active el
-            scroll interno en vez de crecer y empujar el modal (trampa flex clásica).
-            tabIndex + role=region para que el teclado pueda enfocar la zona y
-            desplazarla (flechas/RePág/AvPág) hasta la última fila. */}
+        {/* Región desplazable — ÚNICO propietario del scroll VERTICAL principal. min-h-0
+            permite que este hijo flex encoja y active el scroll interno en vez de crecer y
+            empujar el modal (trampa flex clásica). El scroll horizontal (solo la tabla ancha
+            en ≥md) vive en su propio contenedor, así que aquí no hay dos barras compitiendo.
+            tabIndex + role=region para que el teclado pueda enfocar la zona y desplazarla
+            (flechas/RePág/AvPág) hasta la última fila de la última operación. */}
         <div
-          className="flex-1 min-h-0 overflow-auto"
+          className="flex-1 min-h-0 overflow-y-auto"
           tabIndex={0}
           role="region"
           aria-label="Tabla comparativa de inversiones"
         >
-          {/* Panel comparativo visual (arriba del todo, antes de la tabla) */}
+          {/* Panel comparativo visual (arriba del todo, antes de la tabla/tarjetas) */}
           <div className="px-4 pt-4 sm:px-6">
             <CompareDashboard
               rows={rows}
@@ -493,6 +505,77 @@ function CompareModal({ ops, onClose, onOpenOp }: { ops: REOperation[]; onClose:
               }
             />
           </div>
+
+          {/* NARROW (<md): operaciones APILADAS en vertical. Cada operación es una tarjeta con
+              todos sus campos, de modo que el scroll vertical (el gesto natural) recorre la 1ª,
+              la 2ª y las siguientes por completo — sin que ninguna quede fuera de pantalla a la
+              derecha. Reutiliza los MISMOS `visibleFields` + `rows` que la tabla (cero lógica
+              de cálculo duplicada, sin condiciones por número de operaciones). */}
+          <div className="md:hidden px-4 pb-2 space-y-4" data-testid="compare-stacked">
+            {rows.map((r, ri) => (
+              <section
+                key={r.op.id}
+                aria-label={`Operación ${r.op.name}`}
+                className="rounded-xl border border-slate-200 overflow-hidden"
+              >
+                <h3 className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
+                  <span
+                    className={`text-sm font-bold leading-tight ${onOpenOp ? "text-blue-700 underline cursor-pointer hover:text-blue-900" : "text-slate-900"}`}
+                    onClick={onOpenOp ? () => onOpenOp(r.op) : undefined}
+                  >
+                    {r.op.name}
+                  </span>
+                  {r.op.isDraft && (
+                    <span className="text-[10px] font-medium text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                      Incompleta
+                    </span>
+                  )}
+                </h3>
+                <dl className="divide-y divide-slate-100">
+                  {visibleFields.map((field) => {
+                    const best = field.isBest?.(r, ri) ?? false;
+                    const isExpanded = field.expandKey ? expandedRows[field.expandKey] ?? false : false;
+                    const visibleSubs = field.subFields?.filter((sf) => rows.some((rr) => sf.getRaw(rr) > 0)) ?? [];
+                    const catCls =
+                      field.category === "rent" ? "text-emerald-600" :
+                      field.category === "sale" ? "text-blue-600" :
+                      "text-slate-500";
+                    return (
+                      <Fragment key={field.label}>
+                        <div className={`flex items-center justify-between gap-3 px-4 py-2 ${best ? (field.isMin ? "bg-blue-50" : "bg-emerald-50") : ""}`}>
+                          <dt
+                            className={`text-xs font-medium ${catCls} ${field.expandKey ? "cursor-pointer select-none flex items-center gap-1" : ""}`}
+                            onClick={field.expandKey ? () => toggleExpand(field.expandKey!) : undefined}
+                          >
+                            {field.expandKey && (
+                              <svg className={`w-3 h-3 transition-transform flex-shrink-0 ${isExpanded ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                              </svg>
+                            )}
+                            {field.label}
+                          </dt>
+                          <dd className={`text-sm tabular-nums font-medium text-right whitespace-nowrap ${best ? (field.isMin ? "text-blue-700" : "text-emerald-700") : "text-slate-800"}`}>
+                            {field.getValue(r)}
+                            {best && <BestMark isMin={field.isMin} />}
+                          </dd>
+                        </div>
+                        {isExpanded && visibleSubs.map((sf) => (
+                          <div key={`${field.label}__${sf.label}`} className="flex items-center justify-between gap-3 pl-8 pr-4 py-1.5 bg-slate-50/70">
+                            <span className="text-[11px] text-slate-400 font-medium">{sf.label}</span>
+                            <span className="text-xs tabular-nums text-slate-500 whitespace-nowrap">{sf.getValue(r)}</span>
+                          </div>
+                        ))}
+                      </Fragment>
+                    );
+                  })}
+                </dl>
+              </section>
+            ))}
+          </div>
+
+          {/* WIDE (≥md): tabla comparativa lado a lado. Su scroll HORIZONTAL (solo si las
+              columnas no caben) vive aquí, aislado del scroll vertical de la región. */}
+          <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm border-collapse" style={{ minWidth: `${180 + ops.length * 180}px` }}>
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
@@ -559,11 +642,7 @@ function CompareModal({ ops, onClose, onOpenOp }: { ops: REOperation[]; onClose:
                             }`}
                           >
                             {field.getValue(r)}
-                            {best && (
-                              <span className={`ml-1 text-[10px] font-bold px-1 rounded ${field.isMin ? "text-blue-600 bg-blue-100" : "text-emerald-600 bg-emerald-100"}`}>
-                                {field.isMin ? "↓" : "★"}
-                              </span>
-                            )}
+                            {best && <BestMark isMin={field.isMin} />}
                           </td>
                         );
                       })}
@@ -585,6 +664,7 @@ function CompareModal({ ops, onClose, onOpenOp }: { ops: REOperation[]; onClose:
               })}
             </tbody>
           </table>
+          </div>
         </div>
 
         {/* Leyenda */}

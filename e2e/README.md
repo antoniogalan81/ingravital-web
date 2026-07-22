@@ -1,3 +1,26 @@
+# E2E
+
+## `compare-scroll.spec.ts` — scroll de la comparación (VERIFICADO)
+
+Cubre el fallo "al comparar dos operaciones solo se ve la primera; no se puede bajar a la
+segunda". Comprueba en navegador real, a 6 viewports (desktop/laptop/tablet/móvil), que el
+scroll VERTICAL llega al último campo de la ÚLTIMA operación (tabla lado a lado en ≥md;
+tarjetas apiladas en <md), con un único propietario del scroll vertical y sin overlays.
+
+Corre contra el **fixture aislado** `/dev-compare-harness` (solo dev/test, 404 en producción):
+renderiza el `<CompareModal>` REAL con operaciones simuladas y SIN auth/Supabase, así que no
+toca datos de producción. Ejecución bajo demanda (Playwright no es dependencia por defecto):
+
+```bash
+npm i -D @playwright/test && npx playwright install chromium
+npx next dev --webpack -p 3311          # en otra terminal
+DIAG_BASE=http://localhost:3311 npx playwright test e2e/compare-scroll.spec.ts
+```
+
+Verificado en verde el 2026-07-22 (2 ops en los 6 viewports + 3 ops en móvil).
+
+---
+
 # E2E — flujo crítico (PREPARADO, no ejecutado)
 
 `critical-flow.spec.ts` cubre el flujo que este bloque de hardening protege:
