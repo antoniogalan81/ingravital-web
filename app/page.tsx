@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import PublicShell from "@/components/PublicShell";
+import AndroidDownload from "@/components/AndroidDownload";
+import { ANDROID_DOWNLOAD_PATH } from "@/src/lib/androidRelease";
 
 /* ───────────────────────────────────────────────────────────────────────────
    Landing pública premium de Invergravital. Chrome (header/footer/fondo) en
@@ -13,8 +15,6 @@ import PublicShell from "@/components/PublicShell";
 const ENTRAR_URL = "/finanzas"; // pide login si no hay sesión
 const OPORTUNIDADES_URL = "/oportunidades";
 const COLABORAR_URL = "/servicios";
-const ANDROID_URL =
-  "https://expo.dev/artifacts/eas/P56ZmlkE7MRN5k1A-XI9cTYv6ZEwMHBMtxFAFisHZIY.apk";
 
 const DASH_KPIS = [
   { label: "Inversión total", value: "312.500 €", tone: "neutral" },
@@ -126,7 +126,7 @@ export default function Home() {
               <Icon d="M9 12l2 2 4-4m5.6 1A9 9 0 1112 3a9 9 0 019.6 8z" className="h-4 w-4 text-[var(--lp-positive)]" />
               Creada por inversores
             </span>
-            <a href={ANDROID_URL} download="invergravital.apk" className="inline-flex items-center gap-2 underline-offset-4 transition-colors hover:text-[var(--lp-text)] hover:underline">
+            <a href={ANDROID_DOWNLOAD_PATH} className="inline-flex items-center gap-2 underline-offset-4 transition-colors hover:text-[var(--lp-text)] hover:underline">
               <Icon d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" className="h-4 w-4" />
               Descargar para Android
             </a>
@@ -220,6 +220,8 @@ export default function Home() {
       </section>
 
       {/* ── CTA final ────────────────────────────────────────────────────── */}
+      <AndroidDownload />
+
       <section className="mx-auto max-w-[1180px] px-5 pb-24 sm:px-8">
         <div className="lp-reveal lp-glass relative overflow-hidden px-6 py-16 text-center sm:px-10 sm:py-20">
           <div className="lp-glow" aria-hidden style={{ inset: "auto", bottom: "-120px", left: "50%", transform: "translateX(-50%)", width: "520px", height: "320px", background: "rgba(63,116,214,0.28)" }} />
