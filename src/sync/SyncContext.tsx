@@ -21,21 +21,28 @@ import {
 } from "./syncEngine";
 import { EntityKey, SyncableEntity } from "./types";
 import type { REOperation } from "@/src/lib/realEstate";
+import type { BalanceItem } from "@/src/lib/balance";
 
 // ==================== STORE TYPES ====================
-// La WEB solo sincroniza operaciones inmobiliarias (núcleo del producto).
+// La WEB sincroniza dos colecciones: operaciones inmobiliarias (núcleo del
+// producto) y los items del módulo Balance (titulares/cuentas/préstamos, tabla
+// `balance_items`), esta última COMPARTIDA con la APP.
 
 interface SyncStore {
   realEstateOperations: REOperation[];
+  balanceItems: BalanceItem[];
 }
 
 interface SyncContextValue {
   // Data
   realEstateOperations: REOperation[];
+  balanceItems: BalanceItem[];
 
   // Actions
   setRealEstateOperation: (item: REOperation) => void;
   deleteRealEstateOperation: (id: string) => void;
+  setBalanceItem: (item: BalanceItem) => void;
+  deleteBalanceItem: (id: string) => void;
 
   // Sync
   isSyncing: boolean;
@@ -59,6 +66,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const userId = user?.id ?? null;
   const [store, setStore] = useState<SyncStore>({
     realEstateOperations: [],
+    balanceItems: [],
   });
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
@@ -93,12 +101,13 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setSyncUser(userId);
     if (!userId) {
-      setStore({ realEstateOperations: [] });
+      setStore({ realEstateOperations: [], balanceItems: [] });
       return;
     }
     migrateLegacyKeys();
-    const cached = loadEntityCache("realEstateOperations") as REOperation[] | null;
-    setStore({ realEstateOperations: cached ?? [] });
+    const cachedOps = loadEntityCache("realEstateOperations") as REOperation[] | null;
+    const cachedBalance = loadEntityCache("balanceItems") as BalanceItem[] | null;
+    setStore({ realEstateOperations: cachedOps ?? [], balanceItems: cachedBalance ?? [] });
   }, [userId]);
 
   // Persistimos la copia local ante cualquier cambio, para que sobreviva a refrescos
@@ -107,6 +116,11 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     if (!userId) return;
     saveEntityCache("realEstateOperations", store.realEstateOperations);
   }, [store.realEstateOperations, userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    saveEntityCache("balanceItems", store.balanceItems);
+  }, [store.balanceItems, userId]);
 
   // ==================== PULL ====================
 
@@ -119,7 +133,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     try {
       // If the store is empty (new session / hard refresh), force a full pull so the
       // in-memory store gets populated even when nothing changed since last pull.
-      const storeIsEmpty = !storeRef.current.realEstateOperations.length;
+      const storeIsEmpty =
+        !storeRef.current.realEstateOperations.length && !storeRef.current.balanceItems.length;
       const { data, errors } = await pullAll(userId, storeIsEmpty);
 
       if (errors.length > 0) {
@@ -137,8 +152,15 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         { combine: mergeOperationEntity, needsRepush }
       );
 
+      // Balance: registros planos sin sub-colecciones → LWW clásico por fila
+      // (sin `combine`), idéntico a la política que aplica la APP sobre la misma tabla.
+      const mergedBalance = mergeRemoteRows(
+        storeRef.current.balanceItems as unknown as SyncableEntity[],
+        data.balanceItems || []
+      ) as unknown as BalanceItem[];
+
       isApplyingRemote.current = true;
-      setStore({ realEstateOperations: mergedOps });
+      setStore({ realEstateOperations: mergedOps, balanceItems: mergedBalance });
       isApplyingRemote.current = false;
 
       // Marcar dirty las operaciones fusionadas con datos propios y re-subir la unión.
@@ -176,6 +198,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
           let item: SyncableEntity | undefined;
           if (entityKey === "realEstateOperations") {
             item = currentStore.realEstateOperations.find((x) => x.id === id);
+          } else if (entityKey === "balanceItems") {
+            item = currentStore.balanceItems.find((x) => x.id === id) as SyncableEntity | undefined;
           }
 
           // Solo se envía tombstone si el borrado es EXPLÍCITO (id en la lista de
@@ -310,6 +334,50 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     [schedulePush]
   );
 
+  // ==================== BALANCE: ALTA / EDICIÓN / BORRADO ====================
+  // Mismo contrato que las operaciones: escritura optimista en memoria + dirty +
+  // push con debounce. El borrado es EXPLÍCITO (tombstone) para que se propague a
+  // la APP. La UI nunca habla con Supabase directamente.
+
+  const setBalanceItem = useCallback(
+    (item: BalanceItem) => {
+      const now = new Date().toISOString();
+      const updated = { ...item, updatedAt: now } as BalanceItem;
+
+      setStore((prev) => {
+        const exists = prev.balanceItems.some((x) => x.id === item.id);
+        return {
+          ...prev,
+          balanceItems: exists
+            ? prev.balanceItems.map((x) => (x.id === item.id ? updated : x))
+            : [...prev.balanceItems, updated],
+        };
+      });
+
+      if (!isApplyingRemote.current) {
+        markDirty("balanceItems", item.id);
+        schedulePush();
+      }
+    },
+    [schedulePush]
+  );
+
+  const deleteBalanceItem = useCallback(
+    (id: string) => {
+      setStore((prev) => ({
+        ...prev,
+        balanceItems: prev.balanceItems.filter((x) => x.id !== id),
+      }));
+
+      if (!isApplyingRemote.current) {
+        markDeleted("balanceItems", id);
+        markDirty("balanceItems", id);
+        schedulePush();
+      }
+    },
+    [schedulePush]
+  );
+
   // Flush best-effort al ocultar/cerrar la pestaña: si hay un push debounced pendiente
   // (edición en los últimos 500 ms), se intenta enviar ya. Si no llega a completarse,
   // el dirty persiste y se reintenta en la próxima apertura (sin pérdida).
@@ -329,15 +397,19 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<SyncContextValue>(() => ({
     realEstateOperations: store.realEstateOperations,
+    balanceItems: store.balanceItems,
     setRealEstateOperation,
     deleteRealEstateOperation,
+    setBalanceItem,
+    deleteBalanceItem,
     isSyncing,
     lastSyncAt,
     lastError,
     triggerSync,
   }), [
-    store.realEstateOperations,
+    store.realEstateOperations, store.balanceItems,
     setRealEstateOperation, deleteRealEstateOperation,
+    setBalanceItem, deleteBalanceItem,
     isSyncing, lastSyncAt, lastError, triggerSync,
   ]);
 

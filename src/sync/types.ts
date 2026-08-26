@@ -37,6 +37,14 @@ export const ENTITY_CONFIGS: Record<string, EntityConfig> = {
     getId: (item) => item.id,
     getUpdatedAt: (item) => item.updatedAt || new Date().toISOString(),
   },
+  // BALANCE — titulares, cuentas y préstamos en una sola tabla discriminada por
+  // `data.kind` (ver src/lib/balance.ts). Misma tabla y mismo contrato que la APP.
+  balanceItems: {
+    tableName: "balance_items",
+    localKey: "balanceItems",
+    getId: (item) => item.id,
+    getUpdatedAt: (item) => item.updatedAt || new Date().toISOString(),
+  },
 };
 
 export type EntityKey = keyof typeof ENTITY_CONFIGS;

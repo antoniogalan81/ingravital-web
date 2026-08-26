@@ -10,13 +10,14 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 import { useAuth } from "@/src/contexts/AuthContext";
 
-export type AppSection = "panel" | "inversiones" | "oportunidades" | "informes" | "inversores";
+export type AppSection = "panel" | "inversiones" | "balance" | "oportunidades" | "informes" | "inversores";
 
 // Secciones reales del núcleo inmobiliario primero; Oportunidades e Inversores
 // quedan al final (secundarias / "Próximamente") para no darles protagonismo.
 const NAV: { id: AppSection; label: string; href: string }[] = [
   { id: "panel", label: "Panel", href: "/panel" },
   { id: "inversiones", label: "Inversiones", href: "/finanzas" },
+  { id: "balance", label: "Balance", href: "/balance" },
   { id: "informes", label: "Informes", href: "/informes" },
   { id: "oportunidades", label: "Oportunidades", href: "/oportunidades" },
   { id: "inversores", label: "Inversores", href: "/inversores" },
