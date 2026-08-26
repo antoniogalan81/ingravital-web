@@ -513,7 +513,10 @@ export function BalanceSection() {
           <ul className="divide-y divide-[var(--line)] overflow-hidden rounded-xl border border-line">
             {charges.map((c) => (
               <li key={c.loanId} className="flex items-center gap-3 px-3 py-2.5">
-                <div className="w-16 shrink-0 text-center">
+                {/* Ancho intrinseco: la columna nunca puede quedarse mas estrecha
+                    que la fecha (DD/MM/AAAA no admite salto de linea y se
+                    desbordaria sobre el alias). `shrink-0` la protege del alias. */}
+                <div className="shrink-0 whitespace-nowrap text-center">
                   <p className="text-sm font-extrabold tabular-nums text-ink">{fmtDate(c.dateISO)}</p>
                   <p className="text-[11px] text-ink-subtle">
                     {c.daysAway === 0 ? "hoy" : `en ${c.daysAway} d`}
