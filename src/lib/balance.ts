@@ -46,8 +46,14 @@ export type BalanceAccount = BalanceBase & {
 export type BalanceLoan = BalanceBase & {
   kind: "LOAN";
   alias: string;
-  /** Entidad o prestamista — ej. "Banco Santander", "Socio X". */
-  lender: string;
+  /**
+   * @deprecated Entidad prestamista. Retirada de la interfaz: la cuenta de cargo
+   * ya identifica al banco, así que pedirla era redundante. Se conserva OPCIONAL
+   * en el tipo para no romper los préstamos que la tengan guardada (se lee y se
+   * vuelve a escribir tal cual en el sync); no se pide ni se muestra en ninguna
+   * pantalla y las altas nuevas no la crean.
+   */
+  lender?: string;
   holderId: string | null;
   /** Capital pendiente en euros. */
   outstanding: number;
@@ -67,6 +73,94 @@ export const isHolder = (i: BalanceItem): i is BalanceHolder => i.kind === "HOLD
 export const isAccount = (i: BalanceItem): i is BalanceAccount => i.kind === "ACCOUNT";
 export const isLoan = (i: BalanceItem): i is BalanceLoan => i.kind === "LOAN";
 
+// ── REGLA DE NEGOCIO: la cuenta de cargo pertenece al titular del préstamo ───
+//
+// Es la ÚNICA definición de esa regla en todo el módulo. La consumen tanto la WEB
+// (celdas inline) como la APP (hojas de selección), y también la proyección de
+// lectura `splitBalance`, para que un estado inválido no pueda ni crearse ni
+// mostrarse — venga de la UI, de datos antiguos o de una sincronización.
+
+/** Vínculo titular ↔ cuenta de un préstamo. */
+export type LoanLink = { holderId: string | null; accountId: string | null };
+
+const indexAccounts = (accounts: BalanceAccount[]): Map<string, BalanceAccount> =>
+  new Map(accounts.map((a) => [a.id, a]));
+
+/**
+ * Cuentas que puede usar un préstamo de `holderId`.
+ * Sin titular (`null`) devuelve TODAS: elegir primero la cuenta es un flujo válido
+ * y es esa elección la que fija el titular (ver `resolveLoanLink`).
+ */
+export function accountsOfHolder(
+  accounts: BalanceAccount[],
+  holderId: string | null
+): BalanceAccount[] {
+  if (holderId === null) return accounts;
+  return accounts.filter((a) => a.holderId === holderId);
+}
+
+/**
+ * Aplica un cambio de titular o de cuenta manteniendo el vínculo coherente:
+ *  · cambia la CUENTA  → el titular pasa a ser el de esa cuenta (relación ya conocida);
+ *  · cambia el TITULAR → si la cuenta era de otro titular, se suelta.
+ * Si el cambio trae ambos campos manda la cuenta, que es el dato más específico.
+ * Nunca devuelve un titular A con una cuenta de un titular B.
+ */
+export function resolveLoanLink(
+  current: LoanLink,
+  patch: Partial<LoanLink>,
+  accounts: BalanceAccount[]
+): LoanLink {
+  const byId = indexAccounts(accounts);
+  const holderId = patch.holderId !== undefined ? patch.holderId : current.holderId;
+  const accountId = patch.accountId !== undefined ? patch.accountId : current.accountId;
+
+  if (patch.accountId !== undefined) {
+    const acc = accountId ? byId.get(accountId) : undefined;
+    // Cuenta elegida (o inexistente/ninguna): la cuenta manda sobre el titular.
+    return acc ? { holderId: acc.holderId, accountId: acc.id } : { holderId, accountId: null };
+  }
+
+  if (patch.holderId !== undefined) {
+    const acc = accountId ? byId.get(accountId) : undefined;
+    if (acc && acc.holderId === holderId) return { holderId, accountId: acc.id };
+    return { holderId, accountId: null }; // la cuenta ya no encaja con el titular
+  }
+
+  return { holderId, accountId };
+}
+
+/** ¿El vínculo es válido? (sin cuenta también lo es). */
+export function isLoanLinkValid(link: LoanLink, accounts: BalanceAccount[]): boolean {
+  if (!link.accountId) return true;
+  const acc = indexAccounts(accounts).get(link.accountId);
+  return !!acc && acc.holderId === link.holderId;
+}
+
+/**
+ * Proyección de lectura: devuelve el vínculo ya saneado.
+ *  · cuenta borrada            → se suelta la cuenta;
+ *  · cuenta de otro titular    → se suelta la cuenta;
+ *  · préstamo aún sin titular  → adopta el de la cuenta (coherente con la regla de arriba).
+ * No escribe nada: el valor guardado se corrige solo en la siguiente edición.
+ */
+function sanitizeLink(link: LoanLink, byId: Map<string, BalanceAccount>): LoanLink {
+  if (!link.accountId) return link;
+  const acc = byId.get(link.accountId);
+  if (!acc) return { holderId: link.holderId, accountId: null };
+  if (acc.holderId === link.holderId) return link;
+  if (link.holderId === null) return { holderId: acc.holderId, accountId: acc.id };
+  return { holderId: link.holderId, accountId: null };
+}
+
+/** `sanitizeLink` para un préstamo suelto (misma regla, API pública). */
+export function sanitizeLoanLink(loan: BalanceLoan, accounts: BalanceAccount[]): BalanceLoan {
+  const fixed = sanitizeLink({ holderId: loan.holderId, accountId: loan.accountId }, indexAccounts(accounts));
+  return fixed.holderId === loan.holderId && fixed.accountId === loan.accountId
+    ? loan
+    : { ...loan, ...fixed };
+}
+
 const byOrder = (a: BalanceBase, b: BalanceBase): number =>
   (a.order ?? 0) - (b.order ?? 0) || (a.createdAt || "").localeCompare(b.createdAt || "");
 
@@ -77,11 +171,18 @@ export function splitBalance(items: BalanceItem[]): {
   loans: BalanceLoan[];
 } {
   const list = Array.isArray(items) ? items.filter((i) => i && !i.deleted) : [];
-  return {
-    holders: list.filter(isHolder).sort(byOrder),
-    accounts: list.filter(isAccount).sort(byOrder),
-    loans: list.filter(isLoan).sort(byOrder),
-  };
+  const accounts = list.filter(isAccount).sort(byOrder);
+  const byId = indexAccounts(accounts);
+
+  // Los préstamos se devuelven con el vínculo titular↔cuenta ya saneado: ninguna
+  // pantalla puede pintar una combinación inválida aunque llegue de datos antiguos
+  // o de una cuenta que otro dispositivo acaba de borrar o reasignar.
+  const loans = list.filter(isLoan).sort(byOrder).map((l) => {
+    const fixed = sanitizeLink({ holderId: l.holderId, accountId: l.accountId }, byId);
+    return fixed.holderId === l.holderId && fixed.accountId === l.accountId ? l : { ...l, ...fixed };
+  });
+
+  return { holders: list.filter(isHolder).sort(byOrder), accounts, loans };
 }
 
 // ── Factorías ─────────────────────────────────────────────────────────────────
@@ -111,7 +212,6 @@ export function newLoan(id: string, nowISO: string, order = 0): BalanceLoan {
     id,
     kind: "LOAN",
     alias: "",
-    lender: "",
     holderId: null,
     outstanding: 0,
     installment: 0,
@@ -197,7 +297,8 @@ export function daysBetween(aISO: string, bISO: string): number {
 export type UpcomingCharge = {
   loanId: string;
   alias: string;
-  lender: string;
+  /** Titular del préstamo, para que la vista lo resuelva a nombre. */
+  holderId: string | null;
   amount: number;
   dateISO: string;
   daysAway: number;
@@ -231,7 +332,7 @@ export function upcomingCharges(
     out.push({
       loanId: loan.id,
       alias: loan.alias || "(sin alias)",
-      lender: loan.lender || "",
+      holderId: loan.holderId,
       amount: num(loan.installment),
       dateISO,
       daysAway: daysBetween(todayISODate.slice(0, 10), dateISO),

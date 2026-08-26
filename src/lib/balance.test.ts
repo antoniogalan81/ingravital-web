@@ -5,7 +5,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  accountsOfHolder,
   filterByHolder,
+  isLoanLinkValid,
+  resolveLoanLink,
+  sanitizeLoanLink,
   nextChargeDate,
   daysBetween,
   splitBalance,
@@ -102,8 +106,8 @@ test("daysBetween cuenta días naturales", () => {
 test("upcomingCharges: ordena por fecha, resuelve cuenta y omite préstamos sin día", () => {
   const accounts = [acc({ id: "a1", bank: "CaixaBank", alias: "Operativa" })];
   const loans = [
-    loan({ id: "l1", alias: "Hipoteca", lender: "Santander", installment: 600, chargeDay: 5, accountId: "a1" }),
-    loan({ id: "l2", alias: "Coche", lender: "BBVA", installment: 200, chargeDay: 12, accountId: null }),
+    loan({ id: "l1", alias: "Hipoteca", installment: 600, chargeDay: 5, accountId: "a1" }),
+    loan({ id: "l2", alias: "Coche", installment: 200, chargeDay: 12, accountId: null }),
     loan({ id: "l3", alias: "Sin día", installment: 50, chargeDay: undefined }),
   ];
   const out = upcomingCharges(loans, accounts, "2026-03-10");
@@ -125,4 +129,143 @@ test("upcomingCharges: cuenta asociada inexistente no rompe la fila", () => {
 test("todayISO usa la fecha LOCAL (no desplaza de día por UTC)", () => {
   // 1 de enero a las 00:30 hora local: en UTC podría ser aún 31 de diciembre.
   assert.equal(todayISO(new Date(2026, 0, 1, 0, 30)), "2026-01-01");
+});
+
+// ── Regla titular ↔ cuenta ────────────────────────────────────────────────────
+
+const H_A = "hA"; // Ventana al Futuro, S.L.
+const H_B = "hB"; // Particular
+const ACCS = [
+  acc({ id: "a1", bank: "CaixaBank", alias: "Operativa", holderId: H_A, balance: 83450 }),
+  acc({ id: "a2", bank: "Santander", alias: "Impuestos", holderId: H_A, balance: 25300 }),
+  acc({ id: "b1", bank: "ING", alias: "Personal", holderId: H_B, balance: 9000 }),
+  acc({ id: "z1", bank: "Revolut", alias: "Sin titular", holderId: null, balance: 100 }),
+];
+
+test("accountsOfHolder: un titular solo ve SUS cuentas", () => {
+  assert.deepEqual(accountsOfHolder(ACCS, H_A).map((a) => a.id), ["a1", "a2"]);
+  assert.deepEqual(accountsOfHolder(ACCS, H_B).map((a) => a.id), ["b1"]);
+});
+
+test("accountsOfHolder: sin titular se ofrecen todas (elegir cuenta primero es válido)", () => {
+  assert.equal(accountsOfHolder(ACCS, null).length, ACCS.length);
+});
+
+test("resolveLoanLink: elegir CUENTA fija el titular de esa cuenta", () => {
+  const out = resolveLoanLink({ holderId: null, accountId: null }, { accountId: "a1" }, ACCS);
+  assert.deepEqual(out, { holderId: H_A, accountId: "a1" });
+});
+
+test("resolveLoanLink: elegir una cuenta de OTRO titular reasigna el titular", () => {
+  const out = resolveLoanLink({ holderId: H_A, accountId: "a1" }, { accountId: "b1" }, ACCS);
+  assert.deepEqual(out, { holderId: H_B, accountId: "b1" });
+});
+
+test("resolveLoanLink: cambiar a un titular que NO es dueño de la cuenta la suelta", () => {
+  const out = resolveLoanLink({ holderId: H_A, accountId: "a1" }, { holderId: H_B }, ACCS);
+  assert.deepEqual(out, { holderId: H_B, accountId: null });
+});
+
+test("resolveLoanLink: cambiar a un titular que SÍ es dueño conserva la cuenta", () => {
+  const out = resolveLoanLink({ holderId: H_A, accountId: "a1" }, { holderId: H_A }, ACCS);
+  assert.deepEqual(out, { holderId: H_A, accountId: "a1" });
+});
+
+test("resolveLoanLink: quitar la cuenta no toca el titular", () => {
+  const out = resolveLoanLink({ holderId: H_A, accountId: "a1" }, { accountId: null }, ACCS);
+  assert.deepEqual(out, { holderId: H_A, accountId: null });
+});
+
+test("resolveLoanLink: una cuenta inexistente nunca queda enlazada", () => {
+  const out = resolveLoanLink({ holderId: H_A, accountId: "a1" }, { accountId: "fantasma" }, ACCS);
+  assert.deepEqual(out, { holderId: H_A, accountId: null });
+});
+
+test("resolveLoanLink: cuenta sin titular deja el préstamo sin titular", () => {
+  const out = resolveLoanLink({ holderId: H_A, accountId: "a1" }, { accountId: "z1" }, ACCS);
+  assert.deepEqual(out, { holderId: null, accountId: "z1" });
+});
+
+test("resolveLoanLink: si el cambio trae los dos campos, manda la cuenta", () => {
+  const out = resolveLoanLink({ holderId: null, accountId: null }, { holderId: H_A, accountId: "b1" }, ACCS);
+  assert.deepEqual(out, { holderId: H_B, accountId: "b1" });
+});
+
+test("resolveLoanLink: quitar el titular suelta también la cuenta", () => {
+  const out = resolveLoanLink({ holderId: H_A, accountId: "a1" }, { holderId: null }, ACCS);
+  assert.deepEqual(out, { holderId: null, accountId: null });
+});
+
+test("isLoanLinkValid distingue vínculos válidos de inválidos", () => {
+  assert.equal(isLoanLinkValid({ holderId: H_A, accountId: "a1" }, ACCS), true);
+  assert.equal(isLoanLinkValid({ holderId: H_A, accountId: null }, ACCS), true);
+  assert.equal(isLoanLinkValid({ holderId: H_A, accountId: "b1" }, ACCS), false);
+  assert.equal(isLoanLinkValid({ holderId: H_A, accountId: "fantasma" }, ACCS), false);
+});
+
+test("sanitizeLoanLink no toca un préstamo ya coherente (misma referencia)", () => {
+  const l = loan({ id: "l1", holderId: H_A, accountId: "a1" });
+  assert.equal(sanitizeLoanLink(l, ACCS), l);
+});
+
+test("splitBalance sanea al leer: cuenta de otro titular se suelta", () => {
+  const items: BalanceItem[] = [
+    ...ACCS,
+    loan({ id: "l1", holderId: H_A, accountId: "b1" }), // inválido en origen
+  ];
+  const { loans } = splitBalance(items);
+  assert.deepEqual({ holderId: loans[0].holderId, accountId: loans[0].accountId }, { holderId: H_A, accountId: null });
+});
+
+test("splitBalance sanea al leer: cuenta borrada se suelta", () => {
+  const items: BalanceItem[] = [
+    acc({ id: "a1", holderId: H_A }),
+    loan({ id: "l1", holderId: H_A, accountId: "ya-no-existe" }),
+  ];
+  const { loans } = splitBalance(items);
+  assert.equal(loans[0].accountId, null);
+});
+
+test("splitBalance sanea al leer: préstamo sin titular adopta el de su cuenta", () => {
+  const items: BalanceItem[] = [...ACCS, loan({ id: "l1", holderId: null, accountId: "a2" })];
+  const { loans } = splitBalance(items);
+  assert.deepEqual({ holderId: loans[0].holderId, accountId: loans[0].accountId }, { holderId: H_A, accountId: "a2" });
+});
+
+test("splitBalance: tras sanear, ningún préstamo queda con vínculo inválido", () => {
+  const items: BalanceItem[] = [
+    ...ACCS,
+    loan({ id: "l1", holderId: H_A, accountId: "b1" }),
+    loan({ id: "l2", holderId: H_B, accountId: "a1" }),
+    loan({ id: "l3", holderId: null, accountId: "roto" }),
+  ];
+  const { loans, accounts } = splitBalance(items);
+  for (const l of loans) {
+    assert.equal(isLoanLinkValid({ holderId: l.holderId, accountId: l.accountId }, accounts), true, l.id);
+  }
+});
+
+// ── Compatibilidad con préstamos antiguos ─────────────────────────────────────
+
+test("un préstamo antiguo con `lender` se lee sin romperse y conserva el dato", () => {
+  const legacy = { ...loan({ id: "l1", holderId: H_A, accountId: "a1" }), lender: "Banco Santander" };
+  const { loans } = splitBalance([...ACCS, legacy]);
+  assert.equal(loans.length, 1);
+  assert.equal(loans[0].lender, "Banco Santander"); // se conserva, aunque no se muestre
+  assert.equal(loans[0].accountId, "a1");
+});
+
+test("newLoan ya no crea el campo `lender`", () => {
+  assert.equal("lender" in newLoan("l1", NOW), false);
+});
+
+test("upcomingCharges expone el titular en vez del prestamista", () => {
+  const [c] = upcomingCharges(
+    [loan({ id: "l1", holderId: H_A, accountId: "a1", installment: 640, chargeDay: 12 })],
+    ACCS,
+    "2026-08-26"
+  );
+  assert.equal(c.holderId, H_A);
+  assert.equal("lender" in c, false);
+  assert.equal(c.accountLabel, "CaixaBank · Operativa");
 });

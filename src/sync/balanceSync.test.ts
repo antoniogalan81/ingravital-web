@@ -107,10 +107,29 @@ test("un borrado hecho en la APP elimina la fila en la WEB", () => {
 });
 
 test("rowToEntity conserva el discriminante `kind` (sin él no habría módulo)", () => {
-  const loan: BalanceItem = { ...newLoan("l1", "2026-03-10T10:00:00.000Z"), lender: "Santander" };
+  const loan: BalanceItem = { ...newLoan("l1", "2026-03-10T10:00:00.000Z"), alias: "Hipoteca" };
   const entity = rowToEntity(rowFromApp(loan, "2026-03-10T10:00:01.000Z")) as unknown as BalanceItem;
 
   assert.equal(entity.kind, "LOAN");
   assert.equal(entity.id, "l1");
-  assert.equal((entity as { lender: string }).lender, "Santander");
+  assert.equal((entity as { alias: string }).alias, "Hipoteca");
+});
+
+test("un préstamo antiguo con `lender` sobrevive al viaje de ida y vuelta", () => {
+  // `lender` se retiró de la interfaz pero NO de los datos: un préstamo guardado por
+  // una versión anterior debe seguir sincronizándose sin perder el campo.
+  const legacy = {
+    ...newLoan("l1", "2026-03-10T10:00:00.000Z"),
+    alias: "Hipoteca antigua",
+    lender: "Banco Santander",
+    installment: 600,
+  } as BalanceItem;
+
+  const merged = mergeRemoteRows<SyncableEntity>([], [rowFromApp(legacy, "2026-03-10T10:00:01.000Z")]);
+  const { loans } = splitBalance(merged as unknown as BalanceItem[]);
+
+  assert.equal(loans.length, 1);
+  assert.equal(loans[0].alias, "Hipoteca antigua");
+  assert.equal(loans[0].lender, "Banco Santander");
+  assert.equal(loans[0].installment, 600);
 });

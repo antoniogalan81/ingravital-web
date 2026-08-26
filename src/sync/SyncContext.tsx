@@ -33,7 +33,7 @@ interface SyncStore {
   balanceItems: BalanceItem[];
 }
 
-interface SyncContextValue {
+export interface SyncContextValue {
   // Data
   realEstateOperations: REOperation[];
   balanceItems: BalanceItem[];
@@ -51,7 +51,9 @@ interface SyncContextValue {
   triggerSync: () => Promise<void>;
 }
 
-const SyncContext = createContext<SyncContextValue | null>(null);
+// Exportado (además del provider) para poder montar la sección en un fixture de
+// desarrollo con datos simulados y SIN auth/Supabase — ver app/dev-balance-harness.
+export const SyncContext = createContext<SyncContextValue | null>(null);
 
 // ==================== PROVIDER ====================
 

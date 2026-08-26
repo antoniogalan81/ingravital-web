@@ -23,10 +23,13 @@ import {
 } from "@/src/components/ui/DataTable";
 import { fmtEUR } from "@/src/lib/realEstateCalc";
 import {
+  accountLabel,
+  accountsOfHolder,
   filterByHolder,
   newAccount,
   newHolder,
   newLoan,
+  resolveLoanLink,
   splitBalance,
   summarize,
   todayISO,
@@ -120,6 +123,17 @@ export function BalanceSection() {
     [setBalanceItem]
   );
 
+  // Titular y cuenta de un préstamo NUNCA se escriben sueltos: pasan por la regla
+  // compartida `resolveLoanLink`, única definición de "la cuenta de cargo pertenece
+  // al titular del préstamo" (src/lib/balance.ts). La APP usa exactamente la misma.
+  const patchLoanLink = useCallback(
+    (row: BalanceLoan, change: { holderId?: string | null; accountId?: string | null }) => {
+      const link = resolveLoanLink({ holderId: row.holderId, accountId: row.accountId }, change, accounts);
+      setBalanceItem({ ...row, ...link });
+    },
+    [accounts, setBalanceItem]
+  );
+
   const removeRow = useCallback(
     (id: string, label: string) => {
       if (!window.confirm(`¿Eliminar ${label}? Se borrará también en la app.`)) return;
@@ -157,15 +171,26 @@ export function BalanceSection() {
     [holders]
   );
 
-  const accountOptions = useMemo(
-    () => [
+  const holderName = useCallback(
+    (id: string | null) => holders.find((h) => h.id === id)?.name || "Sin titular",
+    [holders]
+  );
+
+  /**
+   * Cuentas ofrecibles a un préstamo de `holderId`, con su saldo a la vista para
+   * distinguirlas de un vistazo. Sin titular se ofrecen todas: elegir primero la
+   * cuenta es un flujo válido y es esa elección la que fija el titular.
+   * El saldo respeta el interruptor de privacidad.
+   */
+  const accountOptionsFor = useCallback(
+    (holderId: string | null) => [
       { value: "", label: "— Sin cuenta —" },
-      ...accounts.map((a) => ({
+      ...accountsOfHolder(accounts, holderId).map((a) => ({
         value: a.id,
-        label: [a.bank, a.alias].filter(Boolean).join(" · ") || "(cuenta sin nombre)",
+        label: `${accountLabel(a)} · ${money(a.balance, hideAmounts)}`,
       })),
     ],
-    [accounts]
+    [accounts, hideAmounts]
   );
 
   // ── Columnas ────────────────────────────────────────────────────────────────
@@ -282,26 +307,14 @@ export function BalanceSection() {
       ),
     },
     {
-      key: "lender",
-      header: "Entidad / prestamista",
-      width: "12rem",
-      cell: (row) => (
-        <TextCellInput
-          value={row.lender}
-          placeholder="Banco Santander"
-          onChange={(v) => patch(row, { lender: v })}
-        />
-      ),
-    },
-    {
       key: "holder",
       header: "Titular",
-      width: "12rem",
+      width: "13rem",
       cell: (row) => (
         <SelectCellInput
           value={row.holderId ?? ""}
           options={holderOptions}
-          onChange={(v) => patch(row, { holderId: v || null })}
+          onChange={(v) => patchLoanLink(row, { holderId: v || null })}
         />
       ),
     },
@@ -351,12 +364,12 @@ export function BalanceSection() {
     {
       key: "account",
       header: "Cuenta asociada",
-      width: "14rem",
+      width: "19rem",
       cell: (row) => (
         <SelectCellInput
           value={row.accountId ?? ""}
-          options={accountOptions}
-          onChange={(v) => patch(row, { accountId: v || null })}
+          options={accountOptionsFor(row.holderId)}
+          onChange={(v) => patchLoanLink(row, { accountId: v || null })}
         />
       ),
     },
@@ -468,11 +481,11 @@ export function BalanceSection() {
           getRowId={(r) => r.id}
           onAddRow={addLoan}
           addLabel="Añadir préstamo"
-          onDeleteRow={(r) => removeRow(r.id, `el préstamo «${r.alias || r.lender || "sin nombre"}»`)}
+          onDeleteRow={(r) => removeRow(r.id, `el préstamo «${r.alias || "sin nombre"}»`)}
           emptyText="Sin préstamos para este filtro."
           footer={
             <tr className="border-t border-line bg-[var(--surface-alt)]">
-              <td className="px-2.5 py-2 text-xs font-bold uppercase tracking-wide text-ink-subtle" colSpan={3}>
+              <td className="px-2.5 py-2 text-xs font-bold uppercase tracking-wide text-ink-subtle" colSpan={2}>
                 Totales
               </td>
               <td className="px-2.5 py-2 text-right text-sm font-extrabold tabular-nums text-ink">
@@ -509,7 +522,9 @@ export function BalanceSection() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-ink">{c.alias}</p>
                   <p className="truncate text-[11px] text-ink-subtle">
-                    {[c.lender, c.accountLabel ?? "sin cuenta asociada"].filter(Boolean).join(" · ")}
+                    {[holderName(c.holderId), c.accountLabel ?? "sin cuenta asociada"]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </p>
                 </div>
                 <p className="shrink-0 text-sm font-extrabold tabular-nums text-ink">
