@@ -47,7 +47,7 @@ export default function AppGate({
   const { loading, user } = useAuth();
   // El Área Inversor solo se ofrece si la cuenta tiene ese rol. Es navegación,
   // no permiso: los permisos los impone la RLS.
-  const { hasInversor, hasPromotor, loading: rolesLoading, addRole, setArea } = useRoles();
+  const { hasInversor, roles, loading: rolesLoading, addRole, setArea } = useRoles();
 
   // Guardia de ruta protegida: cuando el arranque de auth termina sin sesión
   // utilizable, redirigimos a /login. Como /login trata una sesión no utilizable
@@ -58,16 +58,20 @@ export default function AppGate({
     }
   }, [loading, user, router]);
 
-  // Cuentas anteriores al sistema de roles no tienen ninguna fila en `user_roles`.
-  // Estar en el Área Promotor ES ser promotor: se le concede el rol al entrar, de
-  // forma idempotente, para que la cuenta quede coherente sin pedirle nada.
+  // Cuentas anteriores al sistema de roles no tienen NINGUNA fila en `user_roles`:
+  // a esas se les concede `promotor` al entrar aquí, que es lo que ya venían siendo.
+  //
+  // La condición es `roles.length === 0`, no `!hasPromotor`: con la segunda, un
+  // inversor puro que llegara por error a una ruta de promotor (un enlace antiguo,
+  // una URL escrita a mano) se quedaba con el rol de promotor para siempre sin
+  // haberlo pedido. Quien ya tiene rol elige desde su perfil.
   useEffect(() => {
-    if (loading || rolesLoading || !user || hasPromotor) return;
+    if (loading || rolesLoading || !user || roles.length > 0) return;
     void addRole("promotor").catch(() => {
       // Si la migración de roles aún no está aplicada, la app sigue funcionando
       // igual que antes: el rol solo controla qué áreas se ofrecen.
     });
-  }, [loading, rolesLoading, user, hasPromotor, addRole]);
+  }, [loading, rolesLoading, user, roles.length, addRole]);
 
   if (loading) {
     return (

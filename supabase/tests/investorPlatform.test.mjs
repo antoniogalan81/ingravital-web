@@ -23,14 +23,16 @@ import { dirname, join } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MIGRATION = join(HERE, "..", "migrations", "20260910_investor_platform.sql");
+const MIGRATION_GUARD = join(HERE, "..", "migrations", "20260910b_investor_platform_owner_guard.sql");
 
 // PGlite no trae pgcrypto; gen_random_uuid() es núcleo desde PG13 y gen_random_bytes
 // solo se usa para generar tokens. Se adapta el ENTORNO de prueba, nunca la migración.
-const migrationSql = () =>
-  readFileSync(MIGRATION, "utf8").replace(
-    /create\s+extension\s+if\s+not\s+exists\s+pgcrypto\s*;/gi,
-    "-- [test] pgcrypto no disponible en PGlite",
-  );
+const strip = (sql) =>
+  sql.replace(/create\s+extension\s+if\s+not\s+exists\s+pgcrypto\s*;/gi, "-- [test] pgcrypto no disponible en PGlite");
+
+/** Migración base + corrección de seguridad: el esquema tal y como está en producción. */
+const migrationSql = () => `${strip(readFileSync(MIGRATION, "utf8"))}
+${strip(readFileSync(MIGRATION_GUARD, "utf8"))}`;
 
 const BOOTSTRAP = `
 create schema if not exists auth;
@@ -193,7 +195,12 @@ async function setup() {
     try {
       return await fn();
     } finally {
+      // Se limpia TAMBIEN la claim: si se queda puesta, `auth.uid()` sigue
+      // devolviendo ese usuario en las consultas posteriores de nivel superior y
+      // los triggers que dependen de la identidad se comportan como si siguiera
+      // habiendo sesion.
       await db.exec("reset role;");
+      await db.exec("select set_config('request.jwt.claims', '', false);");
     }
   };
   const asInvestorA = (fn) => asUser(actors.invA, { email: "inversor.a@test.com" }, fn);
@@ -816,4 +823,90 @@ test("REGRESIÓN: has_role no permite enumerar el rol de otra cuenta", async () 
     const despues = await db.query(`select public.has_role('inversor') as r`);
     assert.equal(despues.rows[0].r, true, "tras reclamar, sí tiene el rol inversor");
   });
+});
+
+test("REGRESIÓN: nadie puede colgar una invitación de la oportunidad de otro (IDOR)", async () => {
+  // El fallo: las policies solo comprobaban `auth.uid() = owner_id`, es decir que la
+  // fila DIJERA ser tuya, no que la oportunidad a la que apunta lo fuera. Como el
+  // cliente elegía ambos valores, cualquiera podía colgar una invitación propia —con
+  // toda la visibilidad activada— de la oportunidad de otro promotor y leerla con
+  // `get_investor_snapshot`, que es SECURITY DEFINER y no pasa por la RLS.
+  const { db, actors, opportunity, asUser, asInvestorA } = await setup();
+
+  await asUser(actors.promoB, { email: "promotor.b@test.com" }, async () => {
+    await assertDenied(
+      db,
+      `insert into public.opportunity_invitations (opportunity_id, owner_id, token, invited_email)
+       values ($1, $2, 'idor-b', 'promotor.b@test.com')`,
+      [opportunity, actors.promoB],
+    );
+    await assertDenied(
+      db,
+      `insert into public.investments (opportunity_id, owner_id, amount, status)
+       values ($1, $2, 1000, 'activa')`,
+      [opportunity, actors.promoB],
+    );
+  });
+
+  // Y un inversor legítimo tampoco puede ampliarse la visibilidad por esta vía.
+  await asInvestorA(async () => {
+    await db.query(`select public.claim_invitation('tok-a')`);
+    await assertDenied(
+      db,
+      `insert into public.opportunity_invitations (opportunity_id, owner_id, token, invited_email, visibility)
+       values ($1, $2, 'idor-inv', 'inversor.a@test.com', '{"rentabilidadPromotor":true}'::jsonb)`,
+      [opportunity, actors.invA],
+    );
+  });
+});
+
+test("REGRESIÓN: repuntar una invitación propia a una oportunidad ajena también se rechaza", async () => {
+  const { db, actors, opportunity, asUser } = await setup();
+
+  // El promotor B crea su propia operación y oportunidad, y una invitación legítima.
+  const opB = (
+    await db.query(
+      `insert into public.operaciones_inmobiliarias (id, user_id, data, client_updated_at)
+       values (gen_random_uuid(), $1, '{}'::jsonb, now()) returning id`,
+      [actors.promoB],
+    )
+  ).rows[0].id;
+  const oppB = (
+    await db.query(
+      `insert into public.investment_opportunities (owner_id, operation_id, title)
+       values ($1, $2, 'Propia de B') returning id`,
+      [actors.promoB, opB],
+    )
+  ).rows[0].id;
+  const invB = (
+    await db.query(
+      `insert into public.opportunity_invitations (opportunity_id, owner_id, token, invited_email)
+       values ($1, $2, 'legit-b', 'x@b.com') returning id`,
+      [oppB, actors.promoB],
+    )
+  ).rows[0].id;
+
+  await asUser(actors.promoB, { email: "promotor.b@test.com" }, async () => {
+    await assertDenied(
+      db,
+      `update public.opportunity_invitations set opportunity_id = $1 where id = $2`,
+      [opportunity, invB],
+    );
+  });
+});
+
+test("REGRESIÓN: owner_id se deriva del servidor, no se acepta del cliente", async () => {
+  const { db, actors, opportunity, asUser } = await setup();
+
+  // El promotor A miente sobre el owner_id: debe guardarse el suyo real igualmente.
+  const fila = await asUser(actors.promoA, { email: "promotor.a@test.com" }, async () =>
+    (
+      await db.query(
+        `insert into public.opportunity_invitations (opportunity_id, owner_id, token, invited_email)
+         values ($1, $2, 'derivado', 'x@test.com') returning owner_id`,
+        [opportunity, actors.promoB],
+      )
+    ).rows[0],
+  );
+  assert.equal(fila.owner_id, actors.promoA, "el owner_id enviado por el cliente se ignora");
 });

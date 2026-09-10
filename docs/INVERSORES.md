@@ -12,7 +12,8 @@
 >   a que existiera el backend real. Ver §9.
 
 **Última actualización:** 2026-09-10
-**Estado del documento:** refleja la auditoría verificada del 2026-09-10 (§1) y la arquitectura objetivo (§3+).
+**Estado:** la migración `20260910_investor_platform.sql` está **APLICADA en producción** y el
+flujo completo está **verificado de extremo a extremo** contra el proyecto real (§7).
 
 ---
 
@@ -179,10 +180,32 @@ Ver la máquina de estados exacta en el código: `src/lib/investorPlatform/state
 
 | Bloque | Código | Aplicado en producción | Comprobado por |
 |---|---|---|---|
-| Esquema completo, RLS, RPC, Storage, backfill | ✅ `20260910_investor_platform.sql` | ❌ **NO** | `npm run test:db` (18/18) y `node scripts/verify-investor-schema.mjs` |
+| Esquema completo, RLS, RPC, Storage, backfill | ✅ `20260910_investor_platform.sql` | ✅ **SÍ** | `verify-investor-schema.mjs` → 10 tablas + 11 funciones, todo presente y protegido |
 
-`verify-investor-schema.mjs` contra `zrstaskwqwuxgelcrwxx` el 2026-09-10 devolvió
-**16 objetos sin aplicar** (6 tablas + 10 funciones). Ver §8.
+Comprobado además que `anon` recibe 401 en las 6 tablas nuevas y que la firma insegura
+`has_role(uuid, text)` **ya no existe** (PostgREST responde `PGRST202`).
+
+### 7.1b Recorrido completo verificado contra producción
+
+`node scripts/e2e-investor-flow.mjs --yes-production` — **44 comprobaciones, todas correctas**,
+ejecutadas dos veces. Cada paso usa el JWT del usuario que corresponde, así que lo que se
+verifica es la RLS real del servidor:
+
+- operación → oportunidad → contacto → invitación → reclamar → snapshot → vista → interés
+  → inversión real → «Mis inversiones» → captación → revocación → caducidad.
+- Normalización de email y teléfono hecha por la base de datos.
+- Aislamiento entre promotores y entre inversores.
+- El snapshot no contiene `internal_notes` ni la rentabilidad del promotor.
+- El inversor obtiene **0 filas** de `investment_opportunities`, `operaciones_inmobiliarias`,
+  `investor_contacts` e `investments`; sus datos llegan solo por RPC.
+- Storage: el propietario firma su archivo; el inversor solo con la visibilidad activada,
+  y la pierde **en el mismo instante** en que se desactiva.
+- Escalada de privilegios bloqueada (roles ajenos y modificación de la oportunidad).
+
+**Limitación del E2E:** usa sesiones anónimas, que no llevan email ni teléfono en el JWT,
+así que ahí solo se comprueba la rama NEGATIVA de `claim_invitation` (identidad que no
+coincide ⇒ denegado). La rama positiva por email y por teléfono está cubierta en
+`supabase/tests/investorPlatform.test.mjs` contra Postgres real.
 
 ### 7.2 WEB — implementado y verificado (typecheck + lint + build + tests)
 
@@ -250,10 +273,19 @@ ahora una prueba de regresión:
 
 ## 8. BLOQUEOS EXTERNOS CONOCIDOS
 
-| Bloqueo | Detalle | Consecuencia |
-|---|---|---|
-| **No se pueden aplicar migraciones a producción desde este entorno** | El CLI de Supabase está autenticado con una cuenta que **no tiene acceso** al proyecto `zrstaskwqwuxgelcrwxx` (`supabase projects list` no lo incluye). No existe `POSTGRES_URL` ni contraseña de BD: Vercel solo guarda `SUPABASE_SECRET_KEY`, que **no ejecuta DDL** | Las migraciones se entregan versionadas e idempotentes y las aplica una persona en el SQL Editor del Dashboard. Nada que dependa de tablas nuevas puede darse por funcionando en producción hasta entonces |
-| Buckets de Storage no verificables | La clave pública responde igual para un bucket existente y uno inexistente | La existencia de `investment-media` / `investment-documents` en producción es **NO CONFIRMADO** |
+| Bloqueo | Estado |
+|---|---|
+| Aplicar migraciones a producción | **RESUELTO.** Aplicada a mano en el SQL Editor y verificada con `verify-investor-schema.mjs` |
+| Buckets de Storage | **RESUELTO.** El E2E sube un archivo real a `investment-media` y lo firma: el bucket existe y sus policies funcionan |
+| ¿APP y WEB en el mismo proyecto? | **RESUELTO.** Ambos apuntan a `zrstaskwqwuxgelcrwxx` con clave publicable `sb_pub…` |
+
+### Limitaciones que siguen vigentes
+
+| Limitación | Detalle |
+|---|---|
+| `SUPABASE_SECRET_KEY` no es recuperable | Está marcada como **sensible** en Vercel: solo se puede sobrescribir, no leer. Por eso el E2E usa sesiones anónimas y **no puede borrar los usuarios de prueba que crea** (sí borra todas sus filas) |
+| Supabase rechaza dominios de prueba | `.invalid` y `example.com` son rechazados por el validador de email, así que no se pueden crear usuarios con email para el E2E |
+| OTP por SMS | Depende de que haya un proveedor configurado en el proyecto. Si no lo hay, el formulario muestra el error real en vez de fingir el envío. El magic link por email no necesita nada más |
 
 ---
 
@@ -300,9 +332,36 @@ migrado nunca muestra más de lo que mostraba antes.
 
 ---
 
+## 9.5 Segunda revisión adversarial — hallazgos y decisiones
+
+Una segunda auditoría independiente, ya con la plataforma desplegada, encontró un
+fallo **crítico y explotable en producción**. Se reprodujo contra el proyecto real
+antes de corregirlo.
+
+| Gravedad | Hallazgo | Decisión |
+|---|---|---|
+| **CRÍTICO** | **IDOR entre oportunidades.** Las policies solo comprobaban `auth.uid() = owner_id` — que la fila *dijera* ser tuya — y no que la `opportunity_id` a la que apunta lo fuera. Cualquier usuario autenticado podía colgar una invitación propia, con toda la visibilidad activada, de la oportunidad de otro promotor y leerla con `get_investor_snapshot` (que es `SECURITY DEFINER` y no pasa por la RLS). **Medido en producción: se filtraban título, `costesTotales` y `rentabilidadPromotor` de una oportunidad con la visibilidad completamente vacía.** Servía también para que un inversor legítimo se auto‑concediera más visibilidad de la autorizada | **CORREGIDO** en `20260910b_investor_platform_owner_guard.sql`: `owner_id` se deriva en el servidor desde `investment_opportunities` mediante trigger (INSERT y UPDATE), y la policy exige además la propiedad de la oportunidad. 3 pruebas de regresión |
+| ALTO | `claim_invitation` compara `auth.jwt() ->> 'email'` sin mirar si esa identidad está verificada | **CORREGIDO**: si el JWT dice explícitamente que no está verificada, se rechaza. Ausente ⇒ no se bloquea, para no romper accesos en curso. La protección principal sigue siendo que el proyecto exige confirmación al registrarse |
+| MEDIO | `AppGate` concedía el rol `promotor` a un inversor puro que llegara por error a una ruta de promotor | **CORREGIDO**: solo se autoconcede a cuentas **sin ningún rol** (las anteriores al sistema de roles) |
+| MEDIO | La comprobación de limpieza del E2E miraba 3 de las 7 tablas que borra | **CORREGIDO**: se comprueban las siete |
+| MEDIO | `interest_note` lo escribe el inversor por RPC y lo lee el promotor sobre la misma fila; hoy ningún código escribe ahí desde el lado del promotor | **ACEPTADO y documentado.** Es campo **de escritura exclusiva del inversor**. No pongas ahí notas del promotor: la RLS filtra filas, no columnas, y el inversor lee esa fila |
+| BAJO | `has_role(text)` no la usa ninguna policy | **ACEPTADO**: se conserva para uso futuro. **No forma parte de la superficie de seguridad activa** |
+
+### Sin hallazgos (verificado explícitamente)
+
+Path traversal en Storage; oráculos por mensaje de error o por tiempo en las funciones
+`SECURITY DEFINER`; transferencia de una invitación ya reclamada; concordancia SQL↔TS.
+
+---
+
 ## 10. CÓMO APLICAR LAS MIGRACIONES
 
 1. Supabase Dashboard → proyecto de Invergravital → SQL Editor.
 2. Ejecutar en orden los ficheros de `WEB/supabase/migrations/` que aún no estén aplicados.
    Todos son **aditivos e idempotentes**: no hacen `DROP`, `DELETE` ni `TRUNCATE`.
 3. Verificar con las sondas de §0 y con `WEB/scripts/verify-investor-schema.mjs`.
+4. Comprobar el flujo real: `node scripts/e2e-investor-flow.mjs --yes-production`.
+
+**Orden obligatorio:** `20260910_investor_platform.sql` y después
+`20260910b_investor_platform_owner_guard.sql`. La segunda cierra un IDOR: no dejes la
+primera aplicada sin la segunda.

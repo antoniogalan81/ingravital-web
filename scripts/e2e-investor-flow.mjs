@@ -60,7 +60,6 @@ if (!URL_ || !ANON) {
 // Marca única: todo lo que cree este script la lleva, para poder limpiarlo sin dudas.
 const RUN = `e2e${Date.now().toString(36)}`;
 const DOMAIN = "invergravital-e2e.invalid";
-const PASSWORD = `E2e!${RUN}!pw`;
 
 // ── Utilidades HTTP ──────────────────────────────────────────────────────────
 
@@ -157,10 +156,16 @@ async function cleanup(actors) {
 
   let restos = 0;
   for (const a of actors.filter(Boolean)) {
+    // Se re-comprueban LAS SIETE tablas que se borran, no solo tres: un DELETE que
+    // fallara en silencio dejaria basura en produccion sin que el script lo notara.
     for (const [table, query] of [
+      ["investments", `?select=id&owner_id=eq.${a.id}`],
+      ["opportunity_invitations", `?select=id&owner_id=eq.${a.id}`],
+      ["investment_activity", `?select=id&owner_id=eq.${a.id}`],
       ["investment_opportunities", `?select=id&owner_id=eq.${a.id}`],
       ["investor_contacts", `?select=id&owner_id=eq.${a.id}`],
       ["operaciones_inmobiliarias", `?select=id&user_id=eq.${a.id}`],
+      ["user_roles", `?select=role&user_id=eq.${a.id}`],
     ]) {
       const r = await a.client.from(table, query);
       if (Array.isArray(r.body) && r.body.length > 0) restos += r.body.length;
