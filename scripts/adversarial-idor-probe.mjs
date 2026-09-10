@@ -252,6 +252,60 @@ await call(atacante, `user_roles?user_id=eq.${victima.id}`, { method: "DELETE" }
 const rolVic = await call(victima, `user_roles?select=role&user_id=eq.${victima.id}`);
 ok(Array.isArray(rolVic.b) && rolVic.b.length === 1, "borrar el rol de otro usuario");
 
+sec("12. Publicar una oportunidad sobre la OPERACIÓN de otro");
+const a12 = await call(atacante, "investment_opportunities", {
+  method: "POST",
+  body: JSON.stringify({ owner_id: atacante.id, operation_id: opId, title: `robada ${RUN}` }),
+});
+ok(a12.s >= 400, "oportunidad sobre la operación ajena", `HTTP ${a12.s}`);
+
+// La cara buena: sobre la propia SÍ, y una operación aún sin sincronizar no bloquea.
+const propiaOk = await call(atacante, "investment_opportunities", {
+  method: "POST",
+  body: JSON.stringify({ owner_id: atacante.id, operation_id: opAtk, title: `propia2 ${RUN}` }),
+});
+ok(propiaOk.s >= 400, "una segunda oportunidad sobre la MISMA operación (única por promotor)", `HTTP ${propiaOk.s}`);
+const sinSync = await call(atacante, "investment_opportunities", {
+  method: "POST",
+  body: JSON.stringify({ owner_id: atacante.id, operation_id: crypto.randomUUID(), title: `sinsync ${RUN}` }),
+});
+ok(sinSync.s === 201, "una operación aún NO sincronizada no bloquea (esperado: permitido)", `HTTP ${sinSync.s}`);
+
+sec("13. Registrar actividad sobre entidades ajenas");
+const a13 = await call(atacante, "investment_activity", {
+  method: "POST",
+  body: JSON.stringify({ owner_id: atacante.id, opportunity_id: opp.id, kind: "vista" }),
+});
+ok(a13.s >= 400, "actividad sobre la oportunidad ajena", `HTTP ${a13.s}`);
+
+const a13b = await call(atacante, "investment_activity", {
+  method: "POST",
+  body: JSON.stringify({ owner_id: victima.id, opportunity_id: oppAtk.id, kind: "creada" }),
+});
+ok(
+  a13b.s === 201 && a13b.b?.[0]?.owner_id === atacante.id,
+  "el owner_id de la actividad lo pone el servidor",
+  `HTTP ${a13b.s} owner=${a13b.b?.[0]?.owner_id === atacante.id ? "derivado" : "del cliente"}`,
+);
+
+sec("14. Las RPC de vista e interés sobre una invitación ajena");
+const a14 = await call(atacante, "rpc/set_invitation_interest", {
+  method: "POST",
+  body: JSON.stringify({ p_invitation: invVic.id, p_interest: "interesado" }),
+});
+ok(a14.s >= 400, "set_invitation_interest sobre invitación ajena", `HTTP ${a14.s}`);
+
+await call(atacante, "rpc/register_invitation_view", {
+  method: "POST",
+  body: JSON.stringify({ p_invitation: invVic.id }),
+});
+const vistas = await call(victima, `opportunity_invitations?select=view_count&id=eq.${invVic.id}`);
+ok(
+  Number(vistas.b?.[0]?.view_count ?? 0) === 0,
+  "register_invitation_view no cuenta una vista ajena",
+  `view_count=${vistas.b?.[0]?.view_count}`,
+);
+
 // ── Limpieza ──
 sec("LIMPIEZA");
 for (const u of [victima, atacante]) {

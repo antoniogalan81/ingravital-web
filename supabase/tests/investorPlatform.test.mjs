@@ -25,6 +25,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const MIGRATION = join(HERE, "..", "migrations", "20260910_investor_platform.sql");
 const MIGRATION_GUARD = join(HERE, "..", "migrations", "20260910b_investor_platform_owner_guard.sql");
 const MIGRATION_HARD  = join(HERE, "..", "migrations", "20260910c_investor_platform_hardening.sql");
+const MIGRATION_TRIG  = join(HERE, "..", "migrations", "20260910d_investor_platform_triggers_only.sql");
 
 // PGlite no trae pgcrypto; gen_random_uuid() es núcleo desde PG13 y gen_random_bytes
 // solo se usa para generar tokens. Se adapta el ENTORNO de prueba, nunca la migración.
@@ -33,7 +34,7 @@ const strip = (sql) =>
 
 /** Migración base + corrección de seguridad: el esquema tal y como está en producción. */
 const migrationSql = () =>
-  [MIGRATION, MIGRATION_GUARD, MIGRATION_HARD].map((f) => strip(readFileSync(f, "utf8"))).join(String.fromCharCode(10));
+  [MIGRATION, MIGRATION_GUARD, MIGRATION_HARD, MIGRATION_TRIG].map((f) => strip(readFileSync(f, "utf8"))).join(String.fromCharCode(10));
 
 const BOOTSTRAP = `
 create schema if not exists auth;
