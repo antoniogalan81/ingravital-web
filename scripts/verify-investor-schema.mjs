@@ -86,7 +86,8 @@ const TABLES = [
 ];
 
 const FUNCTIONS = [
-  ["has_role", { p_user: "00000000-0000-0000-0000-000000000000", p_role: "inversor" }],
+  // Firma de UN argumento: la de dos permitía enumerar el rol de cuentas ajenas.
+  ["has_role", { p_role: "inversor" }],
   ["norm_email", { p: "x@y.com" }],
   ["norm_phone", { p: "600000000" }],
   ["claim_invitation", { p_token: "verificacion-inexistente" }],
@@ -96,6 +97,7 @@ const FUNCTIONS = [
   ["investor_can_read_file", { p_owner: "x", p_operation: "y", p_key: "media" }],
   ["list_my_investor_opportunities", {}],
   ["list_my_investments", {}],
+  ["get_my_investor_profile", {}],
 ];
 
 let missing = 0;
