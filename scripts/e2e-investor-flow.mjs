@@ -425,6 +425,40 @@ async function main() {
   const trasCaducar = await invA.client.rpc("get_investor_snapshot", { p_invitation: invitation.id });
   ok(trasCaducar.status >= 400, "caducada ⇒ sin acceso", `HTTP ${trasCaducar.status}`);
 
+  section("16b. IDOR: colgar una invitacion de la oportunidad de OTRO");
+  // El promotor B intenta crear una invitacion propia sobre la oportunidad de A, con
+  // toda la visibilidad activada. Debe rechazarse: `owner_id` se deriva en el servidor
+  // y la policy exige ser dueno de la oportunidad.
+  const idorInv = await promoB.client.insert("opportunity_invitations", {
+    opportunity_id: opportunity.id,
+    owner_id: promoB.id,
+    token: `idor-${RUN}`,
+    invited_email: `idor-${RUN}@${DOMAIN}`,
+    visibility: { estrategia: true, costesTotales: true, rentabilidadPromotor: true, media: true },
+  });
+  ok(idorInv.status >= 400, "no se puede colgar una invitacion de una oportunidad ajena", `HTTP ${idorInv.status}`);
+
+  const idorInvest = await promoB.client.insert("investments", {
+    opportunity_id: opportunity.id,
+    owner_id: promoB.id,
+    amount: 1000,
+    status: "activa",
+  });
+  ok(idorInvest.status >= 400, "ni una inversion sobre una oportunidad ajena", `HTTP ${idorInvest.status}`);
+
+  // Y el owner_id que manda el cliente se ignora: se deriva del servidor.
+  const derivada = await promoA.client.insert("opportunity_invitations", {
+    opportunity_id: opportunity.id,
+    owner_id: promoB.id, // mentira
+    token: `derivado-${RUN}`,
+    invited_email: `derivado-${RUN}@${DOMAIN}`,
+  });
+  ok(
+    derivada.status === 201 && derivada.body?.[0]?.owner_id === promoA.id,
+    "el owner_id enviado por el cliente se ignora y se deriva del servidor",
+    `HTTP ${derivada.status} owner=${derivada.body?.[0]?.owner_id === promoA.id ? "correcto" : derivada.body?.[0]?.owner_id}`,
+  );
+
   section("17. Escalada de privilegios");
   const escalada = await invA.client.insert("user_roles", { user_id: promoB.id, role: "promotor" });
   ok(escalada.status >= 400, "un inversor no puede conceder roles a otra cuenta", `HTTP ${escalada.status}`);

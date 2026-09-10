@@ -226,3 +226,21 @@ grant execute on function public.claim_invitation(text) to authenticated;
 
 comment on function public.tg_enforce_opportunity_owner() is
   'Deriva owner_id desde investment_opportunities y rechaza operar sobre oportunidades ajenas. Cierra el IDOR de invitaciones e inversiones.';
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- `user_roles`: permitir RENUNCIAR a un rol propio
+--
+-- La migración anterior concedía SELECT e INSERT pero no DELETE, y no había policy de
+-- borrado: un rol era irrevocable para siempre. Combinado con la autoconcesión de
+-- `promotor` al entrar en su área, alguien que solo quería ser inversor se quedaba
+-- con el rol de promotor sin forma de quitárselo. Cada usuario puede quitarse los
+-- suyos; los de otros siguen fuera de su alcance.
+
+grant delete on table public.user_roles to authenticated;
+
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname='public' and tablename='user_roles' and policyname='user_roles: self delete') then
+    create policy "user_roles: self delete" on public.user_roles
+      for delete using (auth.uid() = user_id);
+  end if;
+end $$;

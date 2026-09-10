@@ -910,3 +910,27 @@ test("REGRESIÓN: owner_id se deriva del servidor, no se acepta del cliente", as
   );
   assert.equal(fila.owner_id, actors.promoA, "el owner_id enviado por el cliente se ignora");
 });
+
+test("REGRESIÓN: un usuario puede renunciar a un rol propio, pero no al de otro", async () => {
+  // Sin policy de DELETE un rol era irrevocable: quien recibía `promotor` sin pedirlo
+  // no tenía forma de quitárselo.
+  const { db, actors, asInvestorA } = await setup();
+  await db.query(`insert into public.user_roles (user_id, role) values ($1, 'promotor')`, [actors.promoB]);
+
+  await asInvestorA(async () => {
+    await db.query(`select public.claim_invitation('tok-a')`);
+    const antes = await db.query(`select count(*)::int n from public.user_roles`);
+    assert.equal(antes.rows[0].n, 1, "tiene su rol de inversor");
+
+    await db.query(`delete from public.user_roles where role = 'inversor'`);
+    const despues = await db.query(`select count(*)::int n from public.user_roles`);
+    assert.equal(despues.rows[0].n, 0, "puede renunciar al suyo");
+
+    // El de otro usuario ni se ve ni se borra.
+    await db.query(`delete from public.user_roles where user_id = $1`, [actors.promoB]);
+  });
+
+  const ajeno = await db.query(
+    `select count(*)::int n from public.user_roles where user_id = $1`, [actors.promoB]);
+  assert.equal(ajeno.rows[0].n, 1, "el rol de otro usuario sigue intacto");
+});
