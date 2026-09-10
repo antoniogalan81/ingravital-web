@@ -934,3 +934,75 @@ test("REGRESIÓN: un usuario puede renunciar a un rol propio, pero no al de otro
     `select count(*)::int n from public.user_roles where user_id = $1`, [actors.promoB]);
   assert.equal(ajeno.rows[0].n, 1, "el rol de otro usuario sigue intacto");
 });
+
+test("REGRESIÓN: una invitación forjada YA EXISTENTE no da acceso ni siquiera por RPC", async () => {
+  // Simula el estado tras el ataque: la fila se crea saltándose el trigger (como si
+  // se hubiera creado antes del parche) y se comprueba que NINGÚN camino la honra.
+  const { db, actors, opportunity, asUser } = await setup();
+
+  await db.exec("alter table public.opportunity_invitations disable trigger trg_enforce_opportunity_owner");
+  const forjada = (
+    await db.query(
+      `insert into public.opportunity_invitations
+         (opportunity_id, owner_id, token, invited_email, investor_user_id, visibility)
+       values ($1, $2, 'forjada', 'promotor.b@test.com', $2,
+               '{"estrategia":true,"costesTotales":true,"rentabilidadPromotor":true,"media":true}'::jsonb)
+       returning id`,
+      [opportunity, actors.promoB],
+    )
+  ).rows[0].id;
+  await db.exec("alter table public.opportunity_invitations enable trigger trg_enforce_opportunity_owner");
+
+  await asUser(actors.promoB, { email: "promotor.b@test.com" }, async () => {
+    await assertDenied(db, `select public.get_investor_snapshot($1)`, [forjada]);
+    await assertDenied(db, `select public.claim_invitation('forjada')`);
+
+    const lista = (await db.query(`select public.list_my_investor_opportunities() as x`)).rows[0].x;
+    assert.equal(lista.length, 0, "no puede aparecer en su listado de oportunidades");
+  });
+
+  assert.equal(
+    (await db.query(`select public.invitation_is_coherent($1) as c`, [forjada])).rows[0].c,
+    false,
+    "la fila se reconoce como incoherente",
+  );
+});
+
+test("REGRESIÓN: la migración NEUTRALIZA las filas forjadas, no las reasigna", async () => {
+  // Reasignar el owner_id al promotor víctima convertiría la invitación forjada en una
+  // invitación VÁLIDA suya que sigue apuntando al atacante: le consolidaría el acceso.
+  const db = new PGlite();
+  await db.exec(BOOTSTRAP);
+  await db.exec(strip(readFileSync(MIGRATION, "utf8")));
+
+  const victima = (await db.query(`insert into auth.users (email) values ('v@t.com') returning id`)).rows[0].id;
+  const atacante = (await db.query(`insert into auth.users (email) values ('a@t.com') returning id`)).rows[0].id;
+  const op = (
+    await db.query(
+      `insert into public.operaciones_inmobiliarias (id, user_id, data, client_updated_at)
+       values (gen_random_uuid(), $1, '{}'::jsonb, now()) returning id`, [victima])
+  ).rows[0].id;
+  const opp = (
+    await db.query(
+      `insert into public.investment_opportunities (owner_id, operation_id, title)
+       values ($1, $2, 'De la victima') returning id`, [victima, op])
+  ).rows[0].id;
+  // Fila forjada, como la creaba el fallo.
+  await db.query(
+    `insert into public.opportunity_invitations
+       (opportunity_id, owner_id, token, invited_email, investor_user_id, visibility)
+     values ($1, $2, 'forj', 'a@t.com', $2, '{"rentabilidadPromotor":true}'::jsonb)`,
+    [opp, atacante],
+  );
+
+  await db.exec(strip(readFileSync(MIGRATION_GUARD, "utf8")));
+
+  const fila = (
+    await db.query(
+      `select owner_id, status, investor_user_id, visibility from public.opportunity_invitations where token = 'forj'`)
+  ).rows[0];
+  assert.equal(fila.owner_id, atacante, "NO se reasigna al propietario legítimo");
+  assert.equal(fila.status, "revocada", "queda revocada");
+  assert.equal(fila.investor_user_id, null, "y desvinculada del atacante");
+  assert.deepEqual(fila.visibility, {}, "sin visibilidad");
+});
