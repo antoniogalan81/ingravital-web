@@ -12,8 +12,16 @@
 >   a que existiera el backend real. Ver §9.
 
 **Última actualización:** 2026-09-10
-**Estado:** la migración `20260910_investor_platform.sql` está **APLICADA en producción** y el
-flujo completo está **verificado de extremo a extremo** contra el proyecto real (§7).
+**Estado:** las **dos** migraciones (`20260910_investor_platform.sql` y
+`20260910b_investor_platform_owner_guard.sql`) están **APLICADAS en producción**. El flujo
+completo —promotor → oportunidad → invitación → identificación → visualización → interés →
+inversión real → seguimiento → histórico— está **verificado contra el proyecto real** (§7),
+igual que el aislamiento entre cuentas (§7.1c).
+
+> ⚠️ **Las dos migraciones van juntas.** `20260910b` cierra un IDOR y además redefine
+> `get_investor_snapshot`, `investor_can_read_file`, `list_my_investor_opportunities`,
+> `list_my_investments` y `claim_invitation`. Aplicar la primera sin la segunda deja el
+> agujero abierto; reaplicar la primera después obliga a **volver a aplicar la segunda**.
 
 ---
 
@@ -180,15 +188,15 @@ Ver la máquina de estados exacta en el código: `src/lib/investorPlatform/state
 
 | Bloque | Código | Aplicado en producción | Comprobado por |
 |---|---|---|---|
-| Esquema completo, RLS, RPC, Storage, backfill | ✅ `20260910_investor_platform.sql` | ✅ **SÍ** | `verify-investor-schema.mjs` → 10 tablas + 11 funciones, todo presente y protegido |
+| Esquema, RLS, RPC, Storage, backfill | ✅ `20260910_investor_platform.sql` | ✅ **SÍ** | `verify-investor-schema.mjs` → 10 tablas + 11 funciones, todo presente y protegido |
+| Cierre del IDOR en tres capas | ✅ `20260910b_investor_platform_owner_guard.sql` | ✅ **SÍ** | `adversarial-idor-probe.mjs` → 17 ataques, los 17 bloqueados |
 
 Comprobado además que `anon` recibe 401 en las 6 tablas nuevas y que la firma insegura
 `has_role(uuid, text)` **ya no existe** (PostgREST responde `PGRST202`).
 
 ### 7.1b Recorrido completo verificado contra producción
 
-`node scripts/e2e-investor-flow.mjs --yes-production` — **44 comprobaciones, todas correctas**,
-ejecutadas dos veces. Cada paso usa el JWT del usuario que corresponde, así que lo que se
+`node scripts/e2e-investor-flow.mjs --yes-production` — **63 comprobaciones, todas correctas**. Cada paso usa el JWT del usuario que corresponde, así que lo que se
 verifica es la RLS real del servidor:
 
 - operación → oportunidad → contacto → invitación → reclamar → snapshot → vista → interés
@@ -201,6 +209,17 @@ verifica es la RLS real del servidor:
 - Storage: el propietario firma su archivo; el inversor solo con la visibilidad activada,
   y la pierde **en el mismo instante** en que se desactiva.
 - Escalada de privilegios bloqueada (roles ajenos y modificación de la oportunidad).
+- **Seguimiento, liquidación e histórico**: el inversor sigue el proyecto que financia; al
+  liquidar, la rentabilidad FINAL no pisa a la PACTADA y se conservan importe devuelto y
+  fecha.
+
+### 7.1c Sonda adversarial contra producción
+
+`node scripts/adversarial-idor-probe.mjs --yes-production` — **17 ataques, los 17 bloqueados**:
+insert y update cruzados de invitación e inversión, upsert `merge-duplicates` para esquivar
+la policy, apropiarse de la oportunidad ajena, leer el snapshot de una invitación de otro,
+reclamar el token ajeno, escribir y firmar en el Storage de la víctima, lectura directa de
+las cinco tablas del módulo, y conceder o borrar roles de terceros.
 
 **Limitación del E2E:** usa sesiones anónimas, que no llevan email ni teléfono en el JWT,
 así que ahí solo se comprueba la rama NEGATIVA de `claim_invitation` (identidad que no
@@ -351,6 +370,44 @@ antes de corregirlo.
 
 Path traversal en Storage; oráculos por mensaje de error o por tiempo en las funciones
 `SECURITY DEFINER`; transferencia de una invitación ya reclamada; concordancia SQL↔TS.
+
+---
+
+## 9.6 Tercera revisión — el IDOR y la remediación que lo empeoraba
+
+| Gravedad | Hallazgo | Decisión |
+|---|---|---|
+| **CRÍTICO** | **IDOR entre oportunidades.** Las policies solo compraban `auth.uid() = owner_id` — que la fila *dijera* ser tuya — y no que la `opportunity_id` lo fuera. Cualquier usuario autenticado podía colgar una invitación propia, con toda la visibilidad activada, de la oportunidad de otro promotor y leerla con `get_investor_snapshot` (SECURITY DEFINER, no pasa por la RLS). Medido en producción con la visibilidad vacía: se filtraban título, `costesTotales` y `rentabilidadPromotor` | **CORREGIDO** en tres capas: trigger que deriva `owner_id` (INSERT y UPDATE), policy que exige propiedad de la oportunidad, y comprobación de coherencia en **todos** los caminos SECURITY DEFINER vía `invitation_is_coherent()` |
+| **CRÍTICO** | La primera versión del propio guard **reasignaba** `owner_id` de las filas incoherentes al promotor legítimo. Eso convertía la invitación forjada en una invitación **válida** de la víctima que seguía apuntando al atacante en `investor_user_id`: le consolidaba el acceso | **CORREGIDO**: ahora se **neutralizan** (revocadas, desvinculadas, sin visibilidad), conservando la fila como evidencia |
+| MEDIO | `user_roles` no tenía policy de DELETE: un rol era irrevocable | **CORREGIDO**: cada usuario puede renunciar a los suyos |
+
+### Barrera contra la reintroducción
+
+`supabase/tests/investorPlatform.test.mjs` incluye el test **GUARDIA**, que falla si la
+migración vuelve a *reasignar* `owner_id` en vez de neutralizar, o si desaparece
+cualquiera de las tres capas de defensa. Cualquier `revert` a la versión insegura rompe
+`npm test`.
+
+---
+
+## 9.7 Usuarios anónimos de prueba — cómo purgarlos
+
+`e2e-investor-flow.mjs` y `adversarial-idor-probe.mjs` crean **sesiones anónimas reales**
+porque `SUPABASE_SECRET_KEY` está marcada como sensible en Vercel y no se puede recuperar
+(no hay API de administración disponible, ni para crear usuarios con email ni para
+borrarlos). Sus **filas de datos sí las borran ellos** al terminar — lo verifican y lo
+imprimen —; lo único que queda son registros vacíos en `auth.users`.
+
+Para limpiarlos, ejecuta en el SQL Editor:
+
+```
+WEB/scripts/purge-anonymous-test-users.sql
+```
+
+Va en tres pasos: inventario (debe salir `datos_asociados = 0` en todas las filas),
+borrado — cuyo `where` repite la condición de seguridad, así que **nunca** borra un
+usuario que tenga datos colgando — y comprobación final. Verificado sobre Postgres real:
+borra los anónimos vacíos y respeta tanto a un anónimo con datos como a un usuario real.
 
 ---
 
