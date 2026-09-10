@@ -12,9 +12,12 @@ function isValidEmail(email: string) {
 export async function POST(req: Request) {
   try {
     const url = process.env.SUPABASE_URL;
-    const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    // Clave secreta del formato nuevo (sb_secret_…), no la service_role
+    // heredada en formato JWT: esa quedo expuesta en texto plano y se
+    // deshabilita con el resto de claves legacy del proyecto.
+    const secretKey = process.env.SUPABASE_SECRET_KEY;
 
-    if (!url || !serviceRole) {
+    if (!url || !secretKey) {
       return NextResponse.json(
         { ok: false, error: "Server misconfigured: missing Supabase env vars." },
         { status: 500 }
@@ -34,8 +37,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Email no valido." }, { status: 400 });
     }
 
-    // Service role: bypass RLS. Solo úsalo en servidor.
-    const supabaseAdmin = createClient(url, serviceRole, {
+    // Clave secreta: salta RLS. Solo en servidor, nunca en el bundle cliente.
+    const supabaseAdmin = createClient(url, secretKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
