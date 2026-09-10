@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { supabase } from "@/src/lib/supabaseClient";
+import { toast } from "sonner";
 import { useAuth } from "@/src/contexts/AuthContext";
 
 export default function SignupPage() {
@@ -16,6 +17,9 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  // Perfil con el que quiere usar Invergravital. Una sola cuenta puede tener los dos;
+  // esto solo decide con cuál empieza. Ver docs/INVERSORES.md.
+  const [profileKind, setProfileKind] = useState<"promotor" | "inversor" | "ambos">("promotor");
 
   // Redirect si ya está autenticado
   useEffect(() => {
@@ -76,9 +80,24 @@ export default function SignupPage() {
             { onConflict: "id" }
           );
 
-        // Si hay sesión activa, redirigir
+        // Roles elegidos. Se conceden aquí porque la RLS de `user_roles` solo deja
+        // escribir los del propio usuario, y en este punto ya hay sesión.
         if (data.session) {
-          router.replace("/account");
+          const roles =
+            profileKind === "ambos" ? ["promotor", "inversor"] : [profileKind];
+          const { error: roleError } = await supabase
+            .from("user_roles")
+            .upsert(
+              roles.map((role) => ({ user_id: data.user!.id, role })),
+              { onConflict: "user_id,role" },
+            );
+          if (roleError) {
+            // No bloquea el alta: el rol se puede activar luego desde el perfil.
+            toast.warning("Tu cuenta se creó, pero no se pudo fijar el perfil", {
+              description: "Podrás activarlo desde tu perfil.",
+            });
+          }
+          router.replace(profileKind === "inversor" ? "/i" : "/account");
           return;
         }
       }
@@ -149,6 +168,42 @@ export default function SignupPage() {
                   </div>
 
                   <form onSubmit={handleSubmit} className="space-y-4">
+                    <fieldset>
+                      <legend className="lp-label">¿Cómo vas a usar Invergravital?</legend>
+                      <div className="mt-1.5 grid gap-2">
+                        {(
+                          [
+                            ["promotor", "Analizo y gestiono operaciones", "Estudio inmuebles y capto inversores."],
+                            ["inversor", "Quiero invertir", "Recibo y estudio oportunidades."],
+                            ["ambos", "Las dos cosas", "Tendrás las dos áreas y podrás cambiar cuando quieras."],
+                          ] as const
+                        ).map(([value, label, hint]) => (
+                          <label
+                            key={value}
+                            className="flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 transition-colors"
+                            style={{
+                              borderColor:
+                                profileKind === value ? "var(--lp-brand-light)" : "var(--lp-border, #d9dee7)",
+                              background: profileKind === value ? "rgba(30,79,163,0.06)" : "transparent",
+                            }}
+                          >
+                            <input
+                              type="radio"
+                              name="profileKind"
+                              value={value}
+                              checked={profileKind === value}
+                              onChange={() => setProfileKind(value)}
+                              className="mt-0.5 h-4 w-4 shrink-0"
+                            />
+                            <span className="min-w-0">
+                              <span className="block text-sm font-semibold text-[var(--lp-text)]">{label}</span>
+                              <span className="block text-xs text-[var(--lp-muted)] mt-0.5">{hint}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
+
                     <div>
                       <label htmlFor="email" className="lp-label">Email</label>
                       <input

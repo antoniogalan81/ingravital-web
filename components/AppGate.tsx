@@ -9,11 +9,12 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { useRoles } from "@/src/contexts/RoleContext";
 
 export type AppSection = "panel" | "inversiones" | "balance" | "oportunidades" | "informes" | "inversores";
 
-// Secciones reales del núcleo inmobiliario primero; Oportunidades e Inversores
-// quedan al final (secundarias / "Próximamente") para no darles protagonismo.
+// Secciones del Área PROMOTOR. Oportunidades e Inversores ya no son maquetas:
+// forman parte del flujo real de captación (ver docs/INVERSORES.md).
 const NAV: { id: AppSection; label: string; href: string }[] = [
   { id: "panel", label: "Panel", href: "/panel" },
   { id: "inversiones", label: "Inversiones", href: "/finanzas" },
@@ -44,6 +45,9 @@ export default function AppGate({
   // (incluye el filtrado de sesiones expiradas/no utilizables y un arranque
   // acotado que siempre termina). Aquí no duplicamos getSession/onAuthStateChange.
   const { loading, user } = useAuth();
+  // El Área Inversor solo se ofrece si la cuenta tiene ese rol. Es navegación,
+  // no permiso: los permisos los impone la RLS.
+  const { hasInversor, hasPromotor, loading: rolesLoading, addRole, setArea } = useRoles();
 
   // Guardia de ruta protegida: cuando el arranque de auth termina sin sesión
   // utilizable, redirigimos a /login. Como /login trata una sesión no utilizable
@@ -53,6 +57,17 @@ export default function AppGate({
       router.replace("/login");
     }
   }, [loading, user, router]);
+
+  // Cuentas anteriores al sistema de roles no tienen ninguna fila en `user_roles`.
+  // Estar en el Área Promotor ES ser promotor: se le concede el rol al entrar, de
+  // forma idempotente, para que la cuenta quede coherente sin pedirle nada.
+  useEffect(() => {
+    if (loading || rolesLoading || !user || hasPromotor) return;
+    void addRole("promotor").catch(() => {
+      // Si la migración de roles aún no está aplicada, la app sigue funcionando
+      // igual que antes: el rol solo controla qué áreas se ofrecen.
+    });
+  }, [loading, rolesLoading, user, hasPromotor, addRole]);
 
   if (loading) {
     return (
@@ -91,9 +106,21 @@ export default function AppGate({
             })}
           </nav>
 
-          <Link href="/account" className={`app-chrome-link shrink-0 ${pathname === "/account" ? "is-active" : ""}`}>
-            Mi cuenta
-          </Link>
+          <div className="flex items-center gap-1 shrink-0">
+            {hasInversor ? (
+              <Link
+                href="/i"
+                onClick={() => setArea("inversor")}
+                className="app-chrome-link !text-xs"
+                title="Cambiar al Área Inversor"
+              >
+                Área Inversor
+              </Link>
+            ) : null}
+            <Link href="/account" className={`app-chrome-link ${pathname === "/account" ? "is-active" : ""}`}>
+              Mi cuenta
+            </Link>
+          </div>
         </div>
 
         {/* Nav — mobile */}

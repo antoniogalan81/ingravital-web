@@ -2,11 +2,12 @@
 
 // INFORMES (WEB) — versión funcional de export/compartir.
 // Selecciona una operación → dossier premium imprimible (ReportDocument) +
-// barra de acciones: imprimir/guardar PDF (window.print), copiar resumen y
-// compartir (próximo paso, requiere backend). Reutiliza calcResults(). Sin
-// Supabase, sin fórmulas nuevas, sin backend.
+// barra de acciones: imprimir/guardar PDF (window.print) y copiar resumen.
+// Compartir con inversores NO se hace desde aquí: vive en la oportunidad de la
+// operación, que es donde están la visibilidad y las invitaciones individuales.
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import AppGate from "@/components/AppGate";
 import { calcResults, fmtEUR, fmtPct } from "@/src/lib/realEstateCalc";
@@ -14,6 +15,7 @@ import { ReportDocument, reportSummaryText } from "@/src/components/realEstate/R
 import { useSync } from "@/src/sync/SyncContext";
 
 function InformesContent() {
+  const router = useRouter();
   const { realEstateOperations } = useSync();
   const ops = useMemo(() => (realEstateOperations ?? []).filter((o) => !o.isDraft && !o.deleted), [realEstateOperations]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -40,8 +42,12 @@ function InformesContent() {
     }
   };
 
-  const handleShare = () => {
-    toast.info("Compartir por enlace llegará con el backend de informes (próximo paso).");
+  // Compartir con inversores tiene un único camino real: la oportunidad de la
+  // operación, con su visibilidad, invitaciones individuales y trazabilidad.
+  // Antes había aquí un botón que solo mostraba un aviso; se ha eliminado en favor
+  // de llevar al flujo que sí existe. Ver docs/INVERSORES.md.
+  const handleShareWithInvestors = () => {
+    router.push("/oportunidades");
   };
 
   if (ops.length === 0) {
@@ -121,8 +127,12 @@ function InformesContent() {
         <button onClick={handleCopy} className="btn-secondary !py-1.5">
           Copiar resumen
         </button>
-        <button onClick={handleShare} className="btn-secondary !py-1.5">
-          Compartir
+        <button
+          onClick={handleShareWithInvestors}
+          className="btn-secondary !py-1.5"
+          title="Compartir con inversores se gestiona desde la oportunidad de la operación"
+        >
+          Compartir con inversores
         </button>
         <button onClick={handlePrint} className="btn-primary !py-1.5">
           Imprimir / guardar PDF

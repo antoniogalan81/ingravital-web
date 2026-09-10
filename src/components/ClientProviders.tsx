@@ -2,12 +2,14 @@
 
 import { SyncProvider } from "@/src/sync";
 import { AuthProvider } from "@/src/contexts/AuthContext";
+import { RoleProvider } from "@/src/contexts/RoleContext";
 
 export function ClientProviders({ children }: { children: React.ReactNode }) {
   return (
     <AuthProvider>
-      <SyncProvider>{children}</SyncProvider>
+      <RoleProvider>
+        <SyncProvider>{children}</SyncProvider>
+      </RoleProvider>
     </AuthProvider>
   );
 }
-

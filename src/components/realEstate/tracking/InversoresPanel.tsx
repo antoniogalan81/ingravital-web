@@ -1,38 +1,47 @@
 "use client";
 
-// Pestaña INVERSORES: agrupa lo relativo al inversor en un solo lugar —
-// rentabilidad separada (total/promotor/inversor) + compartición y visibilidad
-// granular + previsualización de la vista inversor. Reutiliza los paneles
-// existentes (no duplica lógica).
+// Pestaña INVERSORES de una operación.
+//
+//  · Rentabilidad → reparto promotor/inversor. Es análisis INTERNO del promotor y
+//    no sale de aquí salvo que se active explícitamente su visibilidad.
+//  · Oportunidad  → toda la relación con inversores: oferta, presentación,
+//    visibilidad, destinatarios e inversiones reales.
+//
+// El antiguo `SharePanel` (que escribía `investment_shares` y una lista paralela
+// `share.recipients`) queda sustituido por `OpportunityPanel`: una sola fuente de
+// verdad. Ver docs/INVERSORES.md.
 
 import type { REOperation, REResults } from "@/src/lib/realEstate";
-import type { REInvestorSplit, REShareSettings } from "@/src/lib/realEstateTracking";
+import type { REInvestorSplit } from "@/src/lib/realEstateTracking";
 import { RentabilidadPanel } from "./RentabilidadPanel";
-import { SharePanel } from "./SharePanel";
+import { OpportunityPanel } from "@/src/components/opportunity/OpportunityPanel";
 
 export function InversoresPanel({
   op,
   results,
   onChangeSplit,
-  onChangeShare,
-  onPreview,
+  onOpenCrm,
 }: {
   op: REOperation;
   results: REResults;
   onChangeSplit: (split: REInvestorSplit) => void;
-  onChangeShare: (share: REShareSettings) => void;
-  onPreview: () => void;
+  onOpenCrm: () => void;
 }) {
   return (
     <div className="space-y-6">
       <section className="space-y-3">
-        <h3 className="text-sm font-extrabold text-ink">Rentabilidad</h3>
+        <div>
+          <h3 className="text-sm font-extrabold text-ink">Rentabilidad y reparto</h3>
+          <p className="text-[11px] text-ink-subtle mt-0.5">
+            Cálculo interno. Solo se comparte lo que actives en la visibilidad de la oportunidad.
+          </p>
+        </div>
         <RentabilidadPanel op={op} results={results} onChange={onChangeSplit} />
       </section>
 
       <section className="space-y-3 border-t border-line pt-6">
-        <h3 className="text-sm font-extrabold text-ink">Compartir con inversores</h3>
-        <SharePanel op={op} onChange={onChangeShare} onPreview={onPreview} />
+        <h3 className="text-sm font-extrabold text-ink">Oportunidad de inversión</h3>
+        <OpportunityPanel op={op} results={results} onOpenCrm={onOpenCrm} />
       </section>
     </div>
   );

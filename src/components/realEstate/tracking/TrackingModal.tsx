@@ -18,7 +18,6 @@ import {
   type REMilestone,
   type REProgress,
   type RESale,
-  type REShareSettings,
 } from "@/src/lib/realEstateTracking";
 import { stageOf } from "@/src/lib/pipeline";
 import { StageBadge } from "../pipeline/StageBadge";
@@ -30,7 +29,6 @@ import { VentasPanel } from "./VentasPanel";
 import { HitosPanel } from "./HitosPanel";
 import { InversoresPanel } from "./InversoresPanel";
 import { InformePanel } from "./InformePanel";
-import { InvestorView } from "./InvestorView";
 import { QuickEntryModal, type QuickKind } from "./QuickEntryModal";
 
 type TabKey = "inicio" | "resumen" | "economico" | "ventas" | "planificacion" | "inversores" | "informe";
@@ -70,7 +68,6 @@ export function TrackingModal({
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<TabKey>("inicio");
-  const [previewOpen, setPreviewOpen] = useState(false);
   const [quick, setQuick] = useState<QuickKind | null>(null);
 
   const results = useMemo(() => calcResults(op), [op]);
@@ -84,7 +81,7 @@ export function TrackingModal({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Esc cierra primero el modal de entrada rápida / preview (gestionados aparte).
-      if (e.key === "Escape" && !previewOpen && !quick) onClose();
+      if (e.key === "Escape" && !quick) onClose();
     };
     document.addEventListener("keydown", onKey);
     const prevOverflow = document.body.style.overflow;
@@ -93,7 +90,7 @@ export function TrackingModal({
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [onClose, previewOpen, quick]);
+  }, [onClose, quick]);
 
   // Guardado desde la entrada rápida → añade al MISMO array de la operación (JSON sync).
   const saveExpense = useCallback(
@@ -146,7 +143,7 @@ export function TrackingModal({
               <QuickAction label="+ Hito" onClick={() => setQuick("hito")} primary />
               <span className="mx-0.5 h-5 w-px bg-[var(--line)]" aria-hidden />
               <QuickAction label="Media" onClick={() => setTab("resumen")} />
-              <QuickAction label="Vista inversor" onClick={() => setPreviewOpen(true)} />
+              <QuickAction label="Vista inversor" onClick={() => setTab("inversores")} />
               <QuickAction label="Informe" onClick={() => setTab("informe")} />
             </div>
           </div>
@@ -200,11 +197,10 @@ export function TrackingModal({
               op={op}
               results={results}
               onChangeSplit={(investorSplit: REInvestorSplit) => onPersist({ investorSplit })}
-              onChangeShare={(share: REShareSettings) => onPersist({ share })}
-              onPreview={() => setPreviewOpen(true)}
+              onOpenCrm={() => window.open("/inversores", "_blank", "noopener")}
             />
           )}
-          {tab === "informe" && <InformePanel op={op} generatedAt={generatedAt} onPreviewInvestor={() => setPreviewOpen(true)} />}
+          {tab === "informe" && <InformePanel op={op} generatedAt={generatedAt} onPreviewInvestor={() => setTab("inversores")} />}
         </div>
       </div>
 
@@ -219,7 +215,6 @@ export function TrackingModal({
         />
       ) : null}
 
-      {previewOpen ? <InvestorView op={op} results={results} now={now} onClose={() => setPreviewOpen(false)} /> : null}
     </div>
   );
 }

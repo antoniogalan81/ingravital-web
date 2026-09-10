@@ -1,83 +1,186 @@
 "use client";
 
-// OPORTUNIDADES (WEB) — paridad con APP. El promotor publica operaciones y los
-// inversores las exploran (rentabilidad, plazo, capital, riesgo, docs, estado) y
-// expresan interés.
-// ESTADO: estructura + diseño listos. Publicación, listado Supabase y flujo de
-// interés/contratos PENDIENTES de backend.
+// OPORTUNIDADES (promotor) — las ofertas que ha preparado a partir de sus operaciones.
+//
+// Es la vista del PROMOTOR. La del inversor es otra distinta (`/i`), y solo muestra
+// lo que le han compartido. Aquí no hay ni un dato inventado: si no hay
+// oportunidades, se explica cómo se crea la primera.
 
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import AppGate from "@/components/AppGate";
-import { OPP_STATUS_LABEL, RISK_LABEL, type Opportunity } from "@/src/lib/opportunities";
-import { fmtEUR, fmtPct } from "@/src/lib/realEstateCalc";
+import { fmtEUR } from "@/src/lib/realEstateCalc";
+import { listInvestments, listOpportunities } from "@/src/lib/investorPlatform/service";
+import {
+  INVESTMENT_MODEL_LABEL,
+  OPPORTUNITY_STATUS_LABEL,
+  fundingState,
+  type Investment,
+  type Opportunity,
+  type OpportunityStatus,
+} from "@/src/lib/investorPlatform/types";
 
-const PREVIEW: Opportunity = {
-  id: "preview",
-  createdAt: "",
-  updatedAt: "",
-  title: "Edificio 6 viviendas · Centro",
-  location: "Málaga",
-  status: "EN_FONDEO",
-  risk: "MEDIO",
-  estimatedYield: 0.18,
-  termMonths: 18,
-  capitalRequired: 420000,
-  minTicket: 25000,
-  committedCapital: 273000,
-  summary: "Compra y reforma integral de edificio para venta de 6 viviendas.",
-  docCount: 7,
-  interestedCount: 4,
+const STATUS_PILL: Record<OpportunityStatus, string> = {
+  borrador: "pill-neutral",
+  publicada: "pill-info",
+  en_captacion: "pill-warning",
+  cubierta: "pill-positive",
+  cerrada: "pill-neutral",
+  liquidada: "pill-neutral",
 };
 
-const WILL_INCLUDE = [
-  "Rentabilidad estimada y plazo",
-  "Capital necesario y ticket mínimo",
-  "Nivel de riesgo y documentación",
-  "Estado del fondeo y nº de interesados",
-  "Botón para expresar interés",
-];
+function OpportunityCard({
+  opportunity,
+  investments,
+}: {
+  opportunity: Opportunity;
+  investments: Investment[];
+}) {
+  const funding = fundingState(opportunity.targetCapital, investments);
+  const pct = funding.pctFinanciado == null ? null : Math.round(funding.pctFinanciado * 100);
 
-function OpportunityCard({ op }: { op: Opportunity }) {
-  const progress = op.capitalRequired && op.capitalRequired > 0 ? Math.min(1, (op.committedCapital ?? 0) / op.capitalRequired) : 0;
-  const riskClass = op.risk === "ALTO" ? "pill-negative" : op.risk === "MEDIO" ? "pill-warning" : "pill-positive";
   return (
-    <div className="re-card re-card-interactive p-5 max-w-2xl">
-      <div className="flex items-start gap-3">
-        <h3 className="flex-1 text-lg font-extrabold text-ink tracking-tight">{op.title}</h3>
-        <span className="pill pill-info">{OPP_STATUS_LABEL[op.status]}</span>
+    <article className="re-card p-5">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="text-lg font-extrabold text-ink tracking-tight leading-snug truncate">
+            {opportunity.title}
+          </h2>
+          <p className="text-xs text-ink-subtle mt-0.5">
+            {[opportunity.location, INVESTMENT_MODEL_LABEL[opportunity.investmentModel]]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+        </div>
+        <span className={`pill ${STATUS_PILL[opportunity.status]} shrink-0`}>
+          {OPPORTUNITY_STATUS_LABEL[opportunity.status]}
+        </span>
       </div>
-      {op.location && <p className="text-sm text-ink-subtle font-medium mt-0.5">{op.location}</p>}
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
-        <Metric label="Rentab. est." value={op.estimatedYield != null ? fmtPct(op.estimatedYield) : "—"} strong />
-        <Metric label="Plazo" value={op.termMonths != null ? `${op.termMonths} m` : "—"} />
-        <Metric label="Capital" value={op.capitalRequired != null ? fmtEUR(op.capitalRequired) : "—"} />
-        <Metric label="Ticket mín." value={op.minTicket != null ? fmtEUR(op.minTicket) : "—"} />
-      </div>
+      {pct != null ? (
+        <div className="mt-3">
+          <div className="flex items-baseline justify-between text-xs">
+            <span className="font-semibold text-ink">Financiado</span>
+            <span className="tabular-nums text-ink-muted">{pct}%</span>
+          </div>
+          <div className="mt-1 h-2 rounded-full bg-[var(--surface-alt)] overflow-hidden">
+            <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "var(--brand)" }} />
+          </div>
+        </div>
+      ) : null}
 
-      <div className="flex h-1.5 rounded-full overflow-hidden bg-[#e3e8ef] mt-4">
-        <div style={{ flex: Math.max(0.0001, progress), background: "var(--positive)" }} />
-        <div style={{ flex: Math.max(0.0001, 1 - progress) }} />
-      </div>
-      <p className="text-xs text-ink-subtle font-semibold mt-1.5">
-        {fmtEUR(op.committedCapital ?? 0)} de {fmtEUR(op.capitalRequired ?? 0)} ({fmtPct(progress)})
+      <dl className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 border-t border-line pt-3">
+        {[
+          ["Objetivo", funding.objetivo == null ? "—" : fmtEUR(funding.objetivo)],
+          ["Invertido", fmtEUR(funding.invertido)],
+          ["Comprometido", fmtEUR(funding.comprometido)],
+          ["Inversores", String(funding.inversores)],
+        ].map(([label, value]) => (
+          <div key={label}>
+            <dt className="text-[10px] font-bold uppercase tracking-wide text-ink-subtle">{label}</dt>
+            <dd className="text-sm font-bold tabular-nums text-ink mt-0.5">{value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <p className="mt-3 text-[11px] text-ink-subtle">
+        Se gestiona desde la operación: <b>Inversiones → abrir la operación → Seguimiento → Inversores</b>.
       </p>
-
-      <div className="flex flex-wrap items-center gap-3 mt-3">
-        <span className={`pill ${riskClass}`}>{RISK_LABEL[op.risk]}</span>
-        <span className="text-xs text-ink-subtle font-semibold">{op.docCount ?? 0} docs</span>
-        <span className="text-xs text-ink-subtle font-semibold">{op.interestedCount ?? 0} interesados</span>
-      </div>
-    </div>
+    </article>
   );
 }
 
-function Metric({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
+function OportunidadesContent() {
+  const [opportunities, setOpportunities] = useState<Opportunity[] | null>(null);
+  const [investments, setInvestments] = useState<Investment[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    Promise.all([listOpportunities(), listInvestments()])
+      .then(([opps, inv]) => {
+        setOpportunities(opps);
+        setInvestments(inv);
+        setError(null);
+      })
+      .catch((e) =>
+        setError(e instanceof Error ? e.message : "No se pudieron cargar las oportunidades."),
+      );
+  }, []);
+
+  useEffect(() => load(), [load]);
+
+  const byOpportunity = useMemo(() => {
+    const map = new Map<string, Investment[]>();
+    for (const i of investments) {
+      const arr = map.get(i.opportunityId) ?? [];
+      arr.push(i);
+      map.set(i.opportunityId, arr);
+    }
+    return map;
+  }, [investments]);
+
+  const totals = useMemo(() => {
+    const objetivo = (opportunities ?? []).reduce((s, o) => s + (o.targetCapital ?? 0), 0);
+    const captado = investments
+      .filter((i) => i.status !== "cancelada")
+      .reduce((s, i) => s + i.amount, 0);
+    return { objetivo, captado };
+  }, [opportunities, investments]);
+
+  if (error) {
+    return (
+      <div className="re-card p-5 space-y-2">
+        <p className="text-sm text-[var(--negative)]">{error}</p>
+        <button type="button" onClick={load} className="text-sm font-semibold text-brand hover:underline">
+          Reintentar
+        </button>
+      </div>
+    );
+  }
+  if (opportunities === null) return <p className="text-sm text-ink-subtle">Cargando…</p>;
+
+  if (opportunities.length === 0) {
+    return (
+      <div className="empty-state max-w-xl">
+        <h2 className="text-xl font-extrabold text-ink tracking-tight">Todavía no hay oportunidades</h2>
+        <p className="text-sm text-ink-muted mt-2 max-w-md mx-auto leading-relaxed">
+          Una operación no se convierte en oportunidad sola. Abre la operación que quieras financiar,
+          entra en <b>Seguimiento → Inversores</b> y pulsa <b>Preparar para inversores</b>.
+        </p>
+        <Link href="/finanzas" className="btn-primary mt-6">
+          Ir a mis operaciones
+        </Link>
+      </div>
+    );
+  }
+
   return (
-    <div>
-      <p className="text-[10px] uppercase tracking-wide font-bold text-ink-subtle">{label}</p>
-      <p className="text-[15px] font-extrabold mt-0.5" style={strong ? { color: "var(--positive)" } : { color: "var(--ink)" }}>
-        {value}
-      </p>
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="re-card p-5">
+          <p className="text-[11px] font-bold uppercase tracking-[0.07em] text-ink-subtle">
+            Capital objetivo
+          </p>
+          <p className="text-2xl font-extrabold tabular-nums text-ink tracking-tight mt-0.5">
+            {totals.objetivo > 0 ? fmtEUR(totals.objetivo) : "—"}
+          </p>
+        </div>
+        <div className="re-card p-5">
+          <p className="text-[11px] font-bold uppercase tracking-[0.07em] text-ink-subtle">Captado</p>
+          <p
+            className="text-2xl font-extrabold tabular-nums tracking-tight mt-0.5"
+            style={{ color: "var(--positive)" }}
+          >
+            {totals.captado > 0 ? fmtEUR(totals.captado) : "—"}
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {opportunities.map((o) => (
+          <OpportunityCard key={o.id} opportunity={o} investments={byOpportunity.get(o.id) ?? []} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -86,53 +189,11 @@ export default function OportunidadesPage() {
   return (
     <AppGate
       active="oportunidades"
-      label="Captación de inversores"
+      label="Captación de capital"
       title="Oportunidades"
-      subtitle="Publica tus operaciones y deja que los inversores las exploren y expresen interés."
+      subtitle="Las ofertas que has preparado para inversores y su estado real de captación."
     >
-      <div className="space-y-6 max-w-3xl">
-        <div className="re-card p-6 sm:p-7">
-          <div className="flex items-start gap-4">
-            <span className="empty-state-icon !m-0 !w-12 !h-12">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l2.5 5 5.5.8-4 3.9.9 5.5L12 21l-4.9-2.8.9-5.5-4-3.9 5.5-.8L12 3z" />
-              </svg>
-            </span>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-lg font-extrabold text-ink tracking-tight">Oportunidades seleccionadas</h2>
-                <span className="pill pill-accent">Próximamente</span>
-              </div>
-              <p className="text-sm text-ink-muted leading-relaxed mt-2">
-                Operaciones con análisis previo e información clara antes de invertir. La publicación y el flujo de
-                interés se activarán al conectar el backend.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5 mt-5 pt-5 border-t border-line">
-            {WILL_INCLUDE.map((w) => (
-              <div key={w} className="flex items-center gap-2.5 text-sm text-ink-muted font-medium">
-                <svg className="w-4 h-4 shrink-0" style={{ color: "var(--brand)" }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-                {w}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <div className="section-header">
-            <p className="section-label">Vista previa de una oportunidad</p>
-            <span className="text-xs text-ink-subtle font-semibold">Ejemplo ilustrativo</span>
-          </div>
-          <OpportunityCard op={PREVIEW} />
-          <p className="text-xs text-ink-subtle mt-3 leading-relaxed max-w-2xl">
-            Datos de ejemplo para mostrar el formato. No constituye una oferta ni una recomendación de inversión.
-          </p>
-        </div>
-      </div>
+      <OportunidadesContent />
     </AppGate>
   );
 }
