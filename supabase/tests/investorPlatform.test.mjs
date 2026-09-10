@@ -609,3 +609,55 @@ test("las RPC de listado del inversor solo devuelven lo suyo y sin datos interno
     assert.equal(mine.length, 0, "el inversor B no debe ver inversiones ajenas");
   });
 });
+
+test("se puede reclamar la invitación identificándose por TELÉFONO", async () => {
+  // Es el caso del flujo de WhatsApp: al contacto solo se le conoce el móvil.
+  const { db, actors, opportunity } = await setup();
+
+  const contact = (
+    await db.query(
+      `insert into public.investor_contacts (owner_id, first_name, phone)
+       values ($1, 'Sin email', '600 000 002') returning id`,
+      [actors.promoA],
+    )
+  ).rows[0];
+
+  const invitation = (
+    await db.query(
+      `insert into public.opportunity_invitations
+         (opportunity_id, owner_id, contact_id, channel, token, invited_phone)
+       values ($1, $2, $3, 'whatsapp', 'tok-tel', '600000002') returning id, invited_phone`,
+      [opportunity, actors.promoA, contact.id],
+    )
+  ).rows[0];
+  assert.equal(invitation.invited_phone, "+34600000002", "el teléfono debe normalizarse a E.164");
+
+  const asUser = async (uid, claims, fn) => {
+    await db.exec("reset role;");
+    await db.exec(
+      `select set_config('request.jwt.claims', '${JSON.stringify({ sub: uid, role: "authenticated", ...claims })}', false);`,
+    );
+    await db.exec("set role authenticated;");
+    try {
+      return await fn();
+    } finally {
+      await db.exec("reset role;");
+    }
+  };
+
+  // Un teléfono distinto NO sirve, aunque el formato sea válido.
+  await asUser(actors.invA, { phone: "+34611111111" }, async () => {
+    await assertDenied(db, `select public.claim_invitation('tok-tel')`);
+  });
+
+  // El teléfono correcto, aunque el JWT lo traiga en formato nacional.
+  await asUser(actors.invB, { phone: "600000002" }, async () => {
+    const r = await db.query(`select public.claim_invitation('tok-tel') as id`);
+    assert.equal(r.rows[0].id, invitation.id);
+  });
+
+  const linked = await db.query(`select linked_user_id from public.investor_contacts where id = $1`, [
+    contact.id,
+  ]);
+  assert.equal(linked.rows[0].linked_user_id, actors.invB, "debe vincularse por teléfono también");
+});

@@ -171,11 +171,53 @@ Ver la máquina de estados exacta en el código: `src/lib/investorPlatform/state
 
 ## 7. ESTADO DE IMPLEMENTACIÓN
 
-Esta sección se actualiza al final de cada ejecución. **Refleja lo comprobado, no lo intencionado.**
+**Refleja lo comprobado, no lo intencionado.** Actualizado el 2026-09-10.
 
-| Bloque | Estado | Comprobado por |
-|---|---|---|
-| _(pendiente de completar al cierre de esta ejecución)_ | | |
+### 7.1 Base de datos
+
+| Bloque | Código | Aplicado en producción | Comprobado por |
+|---|---|---|---|
+| Esquema completo, RLS, RPC, Storage, backfill | ✅ `20260910_investor_platform.sql` | ❌ **NO** | `npm run test:db` (18/18) y `node scripts/verify-investor-schema.mjs` |
+
+`verify-investor-schema.mjs` contra `zrstaskwqwuxgelcrwxx` el 2026-09-10 devolvió
+**16 objetos sin aplicar** (6 tablas + 10 funciones). Ver §8.
+
+### 7.2 WEB — implementado y verificado (typecheck + lint + build + tests)
+
+| Funcionalidad | Dónde |
+|---|---|
+| Roles promotor / inversor / ambos, con conmutador de área | `src/contexts/RoleContext.tsx`, `components/AppGate.tsx`, `app/i/layout.tsx` |
+| Registro eligiendo perfil | `app/signup/page.tsx` |
+| Entrada por invitación sin onboarding de promotor | `app/invitacion/[token]/page.tsx` |
+| Identificación sin contraseña (magic link / OTP) | `src/components/auth/IdentifyForm.tsx` |
+| CRM real de contactos | `app/inversores/page.tsx`, `src/components/investors/*` |
+| Configurador de oferta + notas internas separadas | `src/components/opportunity/OfferForm.tsx` |
+| Visibilidad granular, efecto inmediato | `src/components/opportunity/VisibilityPanel.tsx` |
+| Destinatarios, WhatsApp / email / enlace, trazabilidad | `src/components/opportunity/InvitationsPanel.tsx` |
+| Inversiones reales, captación y liquidación | `src/components/opportunity/InvestmentsPanel.tsx` |
+| Presentación automática de la oportunidad | `src/components/investor/OpportunityPresentation.tsx` |
+| Área Inversor: oportunidades, inversiones, histórico, perfil | `app/i/**` |
+| Oportunidades del promotor con captación real | `app/oportunidades/page.tsx` |
+
+Verificado con navegador real a 390 px: `/invitacion/[token]` y `/signup` sin
+desbordamiento horizontal, sin errores de consola y con todos los campos etiquetados.
+
+### 7.3 Eliminado
+
+`src/lib/shares.ts`, `SharePanel.tsx`, `InvestorView.tsx`, `InvestorSnapshotView.tsx`,
+`src/lib/investors.ts`, `src/lib/opportunities.ts`, las maquetas de `/inversores` y
+`/oportunidades`, y el botón «Compartir» de `/informes` que solo mostraba un aviso.
+`/inversor` queda como redirección permanente a `/i`.
+
+### 7.4 NO implementado (y por qué)
+
+| Pendiente | Motivo |
+|---|---|
+| Aplicar las migraciones en producción | Bloqueo externo, §8 |
+| E2E del flujo completo | Depende de que la BD esté aplicada |
+| Notificaciones (nueva oportunidad, actualización) | El modelo lo admite (`investment_activity`); no se ha construido |
+| Subida de documentos POR el inversor | El modelo lo admite; la UI es solo lectura |
+| Paridad completa de la APP | Ver §7.5 |
 
 ---
 
@@ -211,6 +253,23 @@ independiente del módulo de inversores, pero conviene resolverlo: o esas entida
 retiran de la APP, o se documenta que su sync no opera. **NO CONFIRMADO** si la APP apunta
 al mismo proyecto Supabase que la WEB (el fichero `.env` de la APP está protegido por una
 regla de denegación en el entorno de trabajo y no se pudo leer).
+
+---
+
+## 9.4 Qué le pasa a la visibilidad en el backfill
+
+Las claves de visibilidad del sistema antiguo y del nuevo **coinciden casi todas**
+(`progreso`, `media`, `hitos`, `gastos`, `gastosImportes`, `facturas`, `ventas`,
+`ventasPrecios`, `costesTotales`, `ingresos`, `pendientePago`, `rentabilidad*`), así
+que el backfill las conserva tal cual. Las diferencias:
+
+| Clave | Situación tras el backfill |
+|---|---|
+| `resumen`, `tiempos` | Solo existían en el sistema antiguo. Se copian y quedan **ignoradas** (nadie las lee). `resumen` era además un toggle inerte, ver D2 |
+| `estrategia`, `riesgos`, `estadoCaptacion` | Solo existen en el nuevo. No están en el dato migrado → se leen como **false** |
+
+El comportamiento es **fail-closed**: lo que no se sabe, no se enseña. Un acceso
+migrado nunca muestra más de lo que mostraba antes.
 
 ---
 
