@@ -269,14 +269,27 @@ export const RE_VISIBILITY_DEFS: {
   { key: "rentabilidadInversor", label: "Rentabilidad del inversor", group: "Rentabilidad", sensitive: true },
 ];
 
+/** @deprecated Ver REShareSettings. Sustituido por `investor_contacts`. */
 export type REShareRecipient = {
   id: string;
   name: string;
   email?: string;
 };
 
+/**
+ * @deprecated SISTEMA ANTIGUO DE COMPARTICIÓN. No lo uses para nada nuevo.
+ *
+ * Se conserva SOLO porque hay operaciones ya guardadas cuyo JSON lo contiene, y
+ * `src/sync/merge.ts` debe seguir fusionándolo sin perder datos. Ninguna pantalla
+ * lo lee ni lo escribe.
+ *
+ * `recipients` era especialmente engañoso: la APP lo rellenaba y el promotor creía
+ * haber compartido, pero no concedía acceso a nadie. La compartición real vive en
+ * `investor_contacts` + `opportunity_invitations`. Ver docs/INVERSORES.md §9.
+ */
 export type REShareSettings = {
   enabled: boolean;
+  /** @deprecated No concede acceso. Usa `opportunity_invitations`. */
   recipients?: REShareRecipient[];
   visibility: Record<REVisibilityKey, boolean>;
 };

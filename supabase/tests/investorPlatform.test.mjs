@@ -661,3 +661,59 @@ test("se puede reclamar la invitación identificándose por TELÉFONO", async ()
   ]);
   assert.equal(linked.rows[0].linked_user_id, actors.invB, "debe vincularse por teléfono también");
 });
+
+test("una inversión registrada ANTES de que el inversor se identifique le llega al reclamar", async () => {
+  // Caso real: se acuerda el capital por teléfono y el promotor lo registra ya,
+  // cuando el contacto todavía no tiene cuenta. Al identificarse debe encontrarla.
+  const { db, actors, opportunity, contact, invitation, asInvestorA } = await setup();
+
+  const created = (
+    await db.query(
+      `insert into public.investments (opportunity_id, owner_id, contact_id, amount, status)
+       values ($1, $2, $3, 75000, 'activa') returning id, investor_user_id`,
+      [opportunity, actors.promoA, contact.id],
+    )
+  ).rows[0];
+  assert.equal(created.investor_user_id, null, "aún no hay usuario al que enlazarla");
+
+  await asInvestorA(async () => {
+    // Antes de reclamar no ve nada: la RLS filtra por investor_user_id.
+    const before = await db.query(`select count(*)::int n from public.investments`);
+    assert.equal(before.rows[0].n, 0);
+
+    await db.query(`select public.claim_invitation('tok-a')`);
+
+    const after = await db.query(`select amount from public.investments`);
+    assert.equal(after.rows.length, 1, "al reclamar debe heredar la inversión de su contacto");
+    assert.equal(Number(after.rows[0].amount), 75000);
+
+    const mine = (await db.query(`select public.list_my_investments() as x`)).rows[0].x;
+    assert.equal(mine.length, 1, "y debe aparecer en «Mis inversiones»");
+  });
+
+  assert.ok(invitation.id, "la invitación existe");
+});
+
+test("reclamar no roba las inversiones de un contacto ajeno", async () => {
+  const { db, actors, opportunity, asInvestorA } = await setup();
+
+  // Inversión de OTRA persona del CRM, sin usuario enlazado.
+  const otro = (
+    await db.query(
+      `insert into public.investor_contacts (owner_id, first_name, email)
+       values ($1, 'Otro', 'otro@test.com') returning id`,
+      [actors.promoA],
+    )
+  ).rows[0];
+  await db.query(
+    `insert into public.investments (opportunity_id, owner_id, contact_id, amount, status)
+     values ($1, $2, $3, 999999, 'activa')`,
+    [opportunity, actors.promoA, otro.id],
+  );
+
+  await asInvestorA(async () => {
+    await db.query(`select public.claim_invitation('tok-a')`);
+    const r = await db.query(`select count(*)::int n from public.investments`);
+    assert.equal(r.rows[0].n, 0, "solo hereda las inversiones de SU propio contacto");
+  });
+});
