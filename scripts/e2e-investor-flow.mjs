@@ -366,6 +366,45 @@ async function main() {
   const snap2 = (await invA.client.rpc("get_investor_snapshot", { p_invitation: invitation.id })).body;
   ok(Number(snap2?.captacion?.invertido) === 50000, "capital invertido calculado", JSON.stringify(snap2?.captacion));
 
+  section("13b. Seguimiento e HISTORICO: liquidar la inversion");
+  const miInv = (await invA.client.rpc("list_my_investments")).body?.[0];
+  ok(miInv?.status === "activa", "antes de liquidar, la inversion esta activa", miInv?.status);
+
+  // Seguimiento: el inversor ve el proyecto que financia mientras la inversion vive.
+  const seguimiento = await invA.client.rpc("get_investor_snapshot", { p_invitation: invitation.id });
+  ok(seguimiento.status === 200, "puede seguir el proyecto que financia", `HTTP ${seguimiento.status}`);
+
+  // El promotor liquida.
+  const liq = await promoA.client.patch("investments", `?id=eq.${miInv.id}`, {
+    status: "liquidada",
+    final_yield_pct: 13.5,
+    returned_amount: 56750,
+    returned_at: new Date().toISOString().slice(0, 10),
+  });
+  ok(liq.status < 300, "el promotor liquida la inversion", `HTTP ${liq.status}`);
+
+  const historico = (await invA.client.rpc("list_my_investments")).body ?? [];
+  const cerrada = historico.find((x) => x.id === miInv.id);
+  ok(cerrada?.status === "liquidada", "pasa a liquidada en Mis inversiones", cerrada?.status);
+  ok(Number(cerrada?.finalYieldPct) === 13.5, "conserva la rentabilidad FINAL", String(cerrada?.finalYieldPct));
+  ok(Number(cerrada?.returnedAmount) === 56750, "y el importe devuelto", String(cerrada?.returnedAmount));
+  ok(Number(cerrada?.agreedYieldPct) === 12, "sin perder la rentabilidad PACTADA", String(cerrada?.agreedYieldPct));
+  ok(!!cerrada?.returnedAt, "y la fecha de liquidacion");
+
+  // Una inversion liquidada ya no cuenta como viva para el acceso a Storage.
+  ok(
+    historico.every((x) => x.title),
+    "el historico conserva el nombre del proyecto",
+  );
+
+  // Se devuelve a 'activa' para que el resto del recorrido siga igual.
+  await promoA.client.patch("investments", `?id=eq.${miInv.id}`, {
+    status: "activa",
+    final_yield_pct: null,
+    returned_amount: null,
+    returned_at: null,
+  });
+
   section("14. La visibilidad surte efecto AL INSTANTE");
   await promoA.client.patch("opportunity_invitations", `?id=eq.${invitation.id}`, {
     visibility: { estrategia: true, costesTotales: false, media: false },

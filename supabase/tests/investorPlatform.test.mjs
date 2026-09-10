@@ -1006,3 +1006,30 @@ test("REGRESIÓN: la migración NEUTRALIZA las filas forjadas, no las reasigna",
   assert.equal(fila.investor_user_id, null, "y desvinculada del atacante");
   assert.deepEqual(fila.visibility, {}, "sin visibilidad");
 });
+
+test("GUARDIA: la migración no puede volver a REASIGNAR filas forjadas", async () => {
+  // Barrera explícita contra una regresión concreta y peligrosa: una versión anterior
+  // de 20260910b "arreglaba" las filas incoherentes poniéndoles el owner_id del
+  // promotor legítimo. Eso convertía la invitación forjada en una invitación VÁLIDA de
+  // la víctima que seguía apuntando al atacante en investor_user_id: le consolidaba el
+  // acceso. Si alguien revierte a aquello, este test lo detiene.
+  const guard = readFileSync(MIGRATION_GUARD, "utf8");
+
+  const reasignaciones = [
+    /update\s+public\.opportunity_invitations[\s\S]{0,200}?set\s+owner_id\s*=\s*o\.owner_id/i,
+    /update\s+public\.investments[\s\S]{0,200}?set\s+owner_id\s*=\s*o\.owner_id/i,
+  ];
+  for (const re of reasignaciones) {
+    assert.ok(
+      !re.test(guard),
+      "la migración reasigna owner_id en vez de neutralizar: eso consolida el ataque",
+    );
+  }
+
+  // Y las tres capas de defensa tienen que seguir presentes.
+  assert.match(guard, /create\s+trigger\s+trg_enforce_opportunity_owner/i, "falta la capa de ESCRITURA");
+  assert.match(guard, /with check[\s\S]{0,400}investment_opportunities/i, "falta la capa de RLS");
+  assert.match(guard, /invitation_is_coherent/, "falta el helper de coherencia");
+  assert.match(guard, /i\.owner_id\s*=\s*o\.owner_id|o\.owner_id\s*=\s*i\.owner_id/, "falta la capa de LECTURA");
+  assert.match(guard, /status\s*=\s*'revocada'/, "falta la neutralización de filas forjadas");
+});
