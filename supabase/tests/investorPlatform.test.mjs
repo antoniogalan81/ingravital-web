@@ -24,6 +24,7 @@ import { dirname, join } from "node:path";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MIGRATION = join(HERE, "..", "migrations", "20260910_investor_platform.sql");
 const MIGRATION_GUARD = join(HERE, "..", "migrations", "20260910b_investor_platform_owner_guard.sql");
+const MIGRATION_HARD  = join(HERE, "..", "migrations", "20260910c_investor_platform_hardening.sql");
 
 // PGlite no trae pgcrypto; gen_random_uuid() es núcleo desde PG13 y gen_random_bytes
 // solo se usa para generar tokens. Se adapta el ENTORNO de prueba, nunca la migración.
@@ -31,8 +32,8 @@ const strip = (sql) =>
   sql.replace(/create\s+extension\s+if\s+not\s+exists\s+pgcrypto\s*;/gi, "-- [test] pgcrypto no disponible en PGlite");
 
 /** Migración base + corrección de seguridad: el esquema tal y como está en producción. */
-const migrationSql = () => `${strip(readFileSync(MIGRATION, "utf8"))}
-${strip(readFileSync(MIGRATION_GUARD, "utf8"))}`;
+const migrationSql = () =>
+  [MIGRATION, MIGRATION_GUARD, MIGRATION_HARD].map((f) => strip(readFileSync(f, "utf8"))).join(String.fromCharCode(10));
 
 const BOOTSTRAP = `
 create schema if not exists auth;
@@ -1032,4 +1033,86 @@ test("GUARDIA: la migración no puede volver a REASIGNAR filas forjadas", async 
   assert.match(guard, /invitation_is_coherent/, "falta el helper de coherencia");
   assert.match(guard, /i\.owner_id\s*=\s*o\.owner_id|o\.owner_id\s*=\s*i\.owner_id/, "falta la capa de LECTURA");
   assert.match(guard, /status\s*=\s*'revocada'/, "falta la neutralización de filas forjadas");
+});
+
+test("ENDURECIMIENTO: no se publica una oportunidad sobre la operación de otro", async () => {
+  const { db, actors, asUser } = await setup();
+  const opA = (
+    await db.query(
+      `insert into public.operaciones_inmobiliarias (id, user_id, data, client_updated_at)
+       values (gen_random_uuid(), $1, '{}'::jsonb, now()) returning id`, [actors.promoA])
+  ).rows[0].id;
+
+  await asUser(actors.promoB, { email: "promotor.b@test.com" }, async () => {
+    await assertDenied(
+      db,
+      `insert into public.investment_opportunities (owner_id, operation_id, title)
+       values ($1, $2, 'sobre operación ajena')`,
+      [actors.promoB, opA],
+    );
+
+    // Una operación que todavía no está sincronizada SÍ se admite: no hay tercero al
+    // que perjudicar y exigirla rompería «Preparar para inversores» recién creada.
+    const inexistente = (
+      await db.query(
+        `insert into public.investment_opportunities (owner_id, operation_id, title)
+         values ($1, gen_random_uuid(), 'aún sin sincronizar') returning id`, [actors.promoB])
+    ).rows;
+    assert.equal(inexistente.length, 1, "una operación aún no sincronizada no debe bloquear");
+  });
+});
+
+test("ENDURECIMIENTO: no se registra actividad sobre entidades ajenas", async () => {
+  const { db, actors, opportunity, asUser } = await setup();
+  await asUser(actors.promoB, { email: "promotor.b@test.com" }, async () => {
+    await assertDenied(
+      db,
+      `insert into public.investment_activity (owner_id, opportunity_id, kind)
+       values ($1, $2, 'vista')`,
+      [actors.promoB, opportunity],
+    );
+  });
+});
+
+test("ENDURECIMIENTO: vista e interés comprueban la coherencia, y la traza queda al promotor", async () => {
+  const { db, actors, opportunity, invitation, asInvestorA } = await setup();
+
+  await asInvestorA(async () => {
+    await db.query(`select public.claim_invitation('tok-a')`);
+    await db.query(`select public.register_invitation_view($1)`, [invitation.id]);
+    await db.query(`select public.set_invitation_interest($1, 'interesado', 'me encaja')`, [invitation.id]);
+  });
+
+  // La traza pertenece al PROMOTOR, que es quien la necesita, no al inversor.
+  const trazas = await db.query(
+    `select kind, owner_id, actor_user_id from public.investment_activity
+      where opportunity_id = $1 order by created_at`, [opportunity]);
+  const vista = trazas.rows.find((r) => r.kind === "vista");
+  const interes = trazas.rows.find((r) => r.kind === "interes");
+  assert.ok(vista, "queda traza de la vista");
+  assert.equal(vista.owner_id, actors.promoA, "la traza es del promotor");
+  assert.equal(vista.actor_user_id, actors.invA, "y registra quién la generó");
+  assert.ok(interes, "queda traza del interés");
+  assert.equal(interes.owner_id, actors.promoA);
+
+  // Sobre una invitación incoherente no hacen nada.
+  await db.exec("alter table public.opportunity_invitations disable trigger trg_enforce_opportunity_owner");
+  const forjada = (
+    await db.query(
+      `insert into public.opportunity_invitations
+         (opportunity_id, owner_id, token, invited_email, investor_user_id)
+       values ($1, $2, 'forj-c', 'promotor.b@test.com', $2) returning id`,
+      [opportunity, actors.promoB])
+  ).rows[0].id;
+  await db.exec("alter table public.opportunity_invitations enable trigger trg_enforce_opportunity_owner");
+
+  await asInvestorA(async () => {
+    await db.query(`select public.claim_invitation('tok-a')`);
+  });
+  const antes = (await db.query(`select view_count from public.opportunity_invitations where id = $1`, [forjada])).rows[0].view_count;
+  await db.exec(`select set_config('request.jwt.claims', '{"sub":"${actors.promoB}","role":"authenticated"}', false); set role authenticated;`);
+  await db.query(`select public.register_invitation_view($1)`, [forjada]);
+  await db.exec("reset role; select set_config('request.jwt.claims', '', false);");
+  const despues = (await db.query(`select view_count from public.opportunity_invitations where id = $1`, [forjada])).rows[0].view_count;
+  assert.equal(despues, antes, "una invitación incoherente no registra vistas");
 });

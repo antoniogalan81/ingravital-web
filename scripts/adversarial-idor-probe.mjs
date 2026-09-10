@@ -28,7 +28,9 @@ const URL_ = env("NEXT_PUBLIC_SUPABASE_URL");
 const ANON = env("NEXT_PUBLIC_SUPABASE_ANON_KEY");
 
 let fails = 0;
+let intentos = 0;
 const ok = (cond, label, extra) => {
+  intentos += 1;
   console.log(`  ${cond ? "BLOQUEADO" : "¡PASA!   "}  ${label}${extra !== undefined ? `  — ${extra}` : ""}`);
   if (!cond) fails += 1;
 };
@@ -286,5 +288,9 @@ console.log(`  filas restantes: ${restos}`);
 console.log(`  usuarios anónimos creados: 2 → ${victima.id}  ${atacante.id}`);
 if (restos > 0) fails += 1;
 
-console.log(fails === 0 ? "\nRESULTADO: TODOS LOS ATAQUES BLOQUEADOS\n" : `\nRESULTADO: ${fails} ATAQUE(S) NO BLOQUEADO(S)\n`);
+console.log(
+  fails === 0
+    ? `\nRESULTADO: ${intentos} ataques, los ${intentos} BLOQUEADOS\n`
+    : `\nRESULTADO: ${fails} de ${intentos} ataque(s) NO BLOQUEADO(S)\n`,
+);
 process.exit(fails === 0 ? 0 : 1);

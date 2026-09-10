@@ -24,6 +24,11 @@ const NAV: { id: AppSection; label: string; href: string }[] = [
   { id: "inversores", label: "Inversores", href: "/inversores" },
 ];
 
+// Fecha en que entró en vigor el sistema de roles. Solo las cuentas anteriores
+// reciben `promotor` automáticamente; las posteriores lo eligen al registrarse.
+// Ver docs/INVERSORES.md §4.
+const ROLES_LIVE_AT = Date.parse("2026-09-10T00:00:00Z");
+
 export default function AppGate({
   active,
   label,
@@ -58,15 +63,18 @@ export default function AppGate({
     }
   }, [loading, user, router]);
 
-  // Cuentas anteriores al sistema de roles no tienen NINGUNA fila en `user_roles`:
+  // Cuentas ANTERIORES al sistema de roles no tienen ninguna fila en `user_roles`:
   // a esas se les concede `promotor` al entrar aquí, que es lo que ya venían siendo.
   //
-  // La condición es `roles.length === 0`, no `!hasPromotor`: con la segunda, un
-  // inversor puro que llegara por error a una ruta de promotor (un enlace antiguo,
-  // una URL escrita a mano) se quedaba con el rol de promotor para siempre sin
-  // haberlo pedido. Quien ya tiene rol elige desde su perfil.
+  // Se acota por fecha de alta y no solo por `roles.length === 0` porque los roles se
+  // pueden renunciar: sin la fecha, un inversor que se quitara su único rol recuperaba
+  // `promotor` con solo pasar por una ruta de promotor —un enlace antiguo, una URL
+  // escrita a mano—, deshaciendo justo lo que acababa de decidir. Las cuentas creadas
+  // a partir de esa fecha eligen su perfil al registrarse y desde su propio perfil.
   useEffect(() => {
     if (loading || rolesLoading || !user || roles.length > 0) return;
+    const creada = user.created_at ? Date.parse(user.created_at) : NaN;
+    if (Number.isFinite(creada) && creada >= ROLES_LIVE_AT) return;
     void addRole("promotor").catch(() => {
       // Si la migración de roles aún no está aplicada, la app sigue funcionando
       // igual que antes: el rol solo controla qué áreas se ofrecen.

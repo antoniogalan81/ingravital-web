@@ -18,10 +18,10 @@ completo —promotor → oportunidad → invitación → identificación → vis
 inversión real → seguimiento → histórico— está **verificado contra el proyecto real** (§7),
 igual que el aislamiento entre cuentas (§7.1c).
 
-> ⚠️ **Las dos migraciones van juntas.** `20260910b` cierra un IDOR y además redefine
-> `get_investor_snapshot`, `investor_can_read_file`, `list_my_investor_opportunities`,
-> `list_my_investments` y `claim_invitation`. Aplicar la primera sin la segunda deja el
-> agujero abierto; reaplicar la primera después obliga a **volver a aplicar la segunda**.
+> ⚠️ **Las TRES migraciones van juntas, y en orden.** `20260910b` cierra un IDOR y redefine cinco funciones de
+> la primera; `20260910c` endurece y redefine otras dos. Aplicar la primera sin la segunda
+> deja el agujero abierto. **Reaplicar una migración obliga a volver a aplicar las
+> posteriores**, porque cada una sobreescribe funciones de la anterior.
 
 ---
 
@@ -189,7 +189,7 @@ Ver la máquina de estados exacta en el código: `src/lib/investorPlatform/state
 | Bloque | Código | Aplicado en producción | Comprobado por |
 |---|---|---|---|
 | Esquema, RLS, RPC, Storage, backfill | ✅ `20260910_investor_platform.sql` | ✅ **SÍ** | `verify-investor-schema.mjs` → 10 tablas + 11 funciones, todo presente y protegido |
-| Cierre del IDOR en tres capas | ✅ `20260910b_investor_platform_owner_guard.sql` | ✅ **SÍ** | `adversarial-idor-probe.mjs` → 17 ataques, los 17 bloqueados |
+| Cierre del IDOR en tres capas | ✅ `20260910b_investor_platform_owner_guard.sql` | ✅ **SÍ** | `adversarial-idor-probe.mjs` → 16 ataques, los 16 bloqueados |
 
 Comprobado además que `anon` recibe 401 en las 6 tablas nuevas y que la firma insegura
 `has_role(uuid, text)` **ya no existe** (PostgREST responde `PGRST202`).
@@ -215,7 +215,7 @@ verifica es la RLS real del servidor:
 
 ### 7.1c Sonda adversarial contra producción
 
-`node scripts/adversarial-idor-probe.mjs --yes-production` — **17 ataques, los 17 bloqueados**:
+`node scripts/adversarial-idor-probe.mjs --yes-production` — **16 ataques, los 16 bloqueados**:
 insert y update cruzados de invitación e inversión, upsert `merge-duplicates` para esquivar
 la policy, apropiarse de la oportunidad ajena, leer el snapshot de una invitación de otro,
 reclamar el token ajeno, escribir y firmar en el Storage de la víctima, lectura directa de
@@ -408,6 +408,26 @@ Va en tres pasos: inventario (debe salir `datos_asociados = 0` en todas las fila
 borrado — cuyo `where` repite la condición de seguridad, así que **nunca** borra un
 usuario que tenga datos colgando — y comprobación final. Verificado sobre Postgres real:
 borra los anónimos vacíos y respeta tanto a un anónimo con datos como a un usuario real.
+
+---
+
+## 9.8 Cuarta revisión — endurecimiento
+
+**0 críticos, 0 altos.** Los cinco fallos de las revisiones anteriores siguen cerrados.
+Cuatro hallazgos MEDIO, ninguno explotable con las capas ya aplicadas, todos corregidos
+en `20260910c_investor_platform_hardening.sql` (los tres primeros) y en el código (el cuarto):
+
+| Hallazgo | Comprobado en producción | Corrección |
+|---|---|---|
+| `investment_opportunities.operation_id` no validaba que la operación fuera de quien publica | Sí: HTTP 201 apuntando a la operación de otro | Trigger `tg_enforce_operation_owner`. Rechaza si la operación existe y es de otro; **permite** si aún no está sincronizada, porque exigirla rompería «Preparar para inversores» en una operación recién creada y sin fila no hay tercero al que perjudicar |
+| `investment_activity` aceptaba referencias a entidades ajenas | Sí: HTTP 201 | Trigger `tg_enforce_activity_owner`, que además deriva `owner_id` |
+| `register_invitation_view` y `set_invitation_interest` eran las dos únicas funciones `SECURITY DEFINER` sin comprobación de coherencia — el guard afirmaba «TODOS los caminos» | No explotable (una invitación incoherente ya no se puede crear) | Ambas comprueban `invitation_is_coherent()`. Ahora la afirmación es cierta |
+| `AppGate` reconcedía `promotor` a quien acababa de renunciar a su rol | — | La autoconcesión se acota a cuentas **anteriores** al sistema de roles (`ROLES_LIVE_AT`) |
+
+Detalle técnico: las dos RPC escriben la traza a nombre del **promotor** mientras las
+ejecuta el **inversor**. El trigger de actividad reescribiría `owner_id` al inversor y
+dejaría al promotor sin la trazabilidad que necesita, así que esas inserciones se marcan
+con un ajuste **local** de transacción que el trigger respeta. Cubierto por prueba.
 
 ---
 
