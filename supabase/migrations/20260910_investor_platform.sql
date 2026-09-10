@@ -38,7 +38,15 @@ comment on table public.user_roles is
 create index if not exists user_roles_role_idx on public.user_roles (role);
 
 -- Helper para usar DENTRO de policies sin provocar recursión de RLS.
-create or replace function public.has_role(p_user uuid, p_role text)
+--
+-- Toma SOLO el rol y resuelve el usuario con auth.uid(). La versión anterior recibía
+-- también el uuid del usuario y, siendo `security definer` y ejecutable por cualquier
+-- autenticado, servía para enumerar los roles de CUALQUIER cuenta ajena. No hay ningún
+-- caso legítimo que necesite preguntar por el rol de otro: las policies siempre
+-- preguntan por el del que llama.
+drop function if exists public.has_role(uuid, text);
+
+create or replace function public.has_role(p_role text)
 returns boolean
 language sql
 stable
@@ -47,12 +55,12 @@ set search_path = public, pg_temp
 as $$
   select exists (
     select 1 from public.user_roles ur
-    where ur.user_id = p_user and ur.role = p_role
+    where ur.user_id = auth.uid() and ur.role = p_role
   );
 $$;
 
-revoke all on function public.has_role(uuid, text) from public, anon;
-grant execute on function public.has_role(uuid, text) to authenticated;
+revoke all on function public.has_role(text) from public, anon;
+grant execute on function public.has_role(text) to authenticated;
 
 alter table public.user_roles enable row level security;
 revoke all on table public.user_roles from anon;
@@ -178,13 +186,48 @@ do $$ begin
     create policy "contacts: owner all" on public.investor_contacts
       for all using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
   end if;
-  -- El contacto vinculado puede LEER su propia ficha (para su perfil de inversor).
-  -- No puede editarla ni ver las notas internas: la lectura del inversor va por RPC.
-  if not exists (select 1 from pg_policies where schemaname='public' and tablename='investor_contacts' and policyname='contacts: linked self read') then
-    create policy "contacts: linked self read" on public.investor_contacts
-      for select using (linked_user_id = auth.uid());
+end $$;
+
+-- ⚠️ EL INVERSOR NO TIENE NINGUNA POLICY DE LECTURA SOBRE ESTA TABLA. A propósito.
+--
+-- Hubo aquí una policy `linked_user_id = auth.uid()` para que el inversor viese su
+-- propia ficha. Era un FALLO DE PRIVACIDAD: la RLS filtra FILAS, no COLUMNAS, así que
+-- le daba también `notes` — el CRM privado que el promotor lleva sobre él ("moroso",
+-- "no financiar más"...) —, `status`, `source` y `owner_id`. Que el frontend pidiera
+-- solo unas columnas no protegía nada: basta un `select *` contra la API REST.
+-- Revocar la columna tampoco sirve: los privilegios de columna son por ROL, y promotor
+-- e inversor son ambos `authenticated`, así que habría roto el CRM del promotor.
+-- La solución correcta es la misma que para el resto del módulo: una RPC que devuelve
+-- exactamente los campos que le corresponden.
+do $$ begin
+  if exists (select 1 from pg_policies where schemaname='public' and tablename='investor_contacts' and policyname='contacts: linked self read') then
+    drop policy "contacts: linked self read" on public.investor_contacts;
   end if;
 end $$;
+
+create or replace function public.get_my_investor_profile()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  -- Solo los datos de contacto que le afectan. Nunca `notes`, `status` ni `source`.
+  select coalesce(
+    jsonb_agg(jsonb_build_object(
+      'firstName', c.first_name,
+      'lastName',  c.last_name,
+      'email',     c.email,
+      'phone',     c.phone,
+      'whatsapp',  c.whatsapp
+    )),
+    '[]'::jsonb)
+  from public.investor_contacts c
+  where c.linked_user_id = auth.uid();
+$$;
+
+revoke all on function public.get_my_investor_profile() from public, anon;
+grant execute on function public.get_my_investor_profile() to authenticated;
 
 -- ═════════════════════════════════════════════════════════════════════════════
 -- 4) OPORTUNIDADES — la oferta estructurada a partir de una operación
@@ -409,10 +452,16 @@ do $$ begin
     create policy "investments: owner all" on public.investments
       for all using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
   end if;
-  -- El inversor lee SOLO las suyas.
-  if not exists (select 1 from pg_policies where schemaname='public' and tablename='investments' and policyname='investments: investor read own') then
-    create policy "investments: investor read own" on public.investments
-      for select using (investor_user_id = auth.uid());
+end $$;
+
+-- ⚠️ Mismo motivo que en `investor_contacts`: aquí había una policy de lectura para
+-- el inversor (`investor_user_id = auth.uid()`) que, al filtrar por filas y no por
+-- columnas, le entregaba también `investments.notes` — anotaciones internas del
+-- promotor sobre la operación. El inversor lee sus inversiones por
+-- `list_my_investments()`, que devuelve solo lo que le corresponde.
+do $$ begin
+  if exists (select 1 from pg_policies where schemaname='public' and tablename='investments' and policyname='investments: investor read own') then
+    drop policy "investments: investor read own" on public.investments;
   end if;
 end $$;
 
@@ -1016,7 +1065,14 @@ begin
   end if;
 
   for s in
-    select * from public.investment_shares where status = 'active'
+    -- Se excluyen los accesos SIN destinatario: la RLS anterior exigía email o uid,
+    -- así que nunca fueron legibles por nadie (defecto D7 de docs/INVERSORES.md).
+    -- Migrarlos violaría `opportunity_invitations_addressable` y ABORTARÍA TODA LA
+    -- MIGRACIÓN — verificado: una sola fila así la tumbaba entera y dejaba la base
+    -- de datos sin ninguna tabla creada. Se quedan en `investment_shares`, intactos.
+    select * from public.investment_shares
+     where status = 'active'
+       and coalesce(nullif(btrim(investor_email), ''), '') <> ''
   loop
     -- `investment_shares.operation_id` es text; las tablas nuevas usan uuid.
     begin
@@ -1038,26 +1094,32 @@ begin
 
     if v_opp_id is null then continue; end if;
 
-    v_con_id := null;
-    if s.investor_email is not null then
-      insert into public.investor_contacts (owner_id, first_name, email, source, linked_user_id)
-      values (s.owner_id, split_part(s.investor_email, '@', 1), s.investor_email,
-              'migracion_investment_shares', s.investor_user_id)
-      on conflict (owner_id, email) where email is not null do nothing;
+    insert into public.investor_contacts (owner_id, first_name, email, source, linked_user_id)
+    values (s.owner_id, split_part(s.investor_email, '@', 1), s.investor_email,
+            'migracion_investment_shares', s.investor_user_id)
+    on conflict (owner_id, email) where email is not null do nothing;
 
-      select id into v_con_id
-        from public.investor_contacts
-       where owner_id = s.owner_id and email = public.norm_email(s.investor_email);
-    end if;
+    -- `is not distinct from` y no `=`: el trigger normaliza el email antes de guardarlo,
+    -- y comparar con `=` contra un NULL nunca casa (dejaba el contacto sin enlazar).
+    select id into v_con_id
+      from public.investor_contacts
+     where owner_id = s.owner_id
+       and email is not distinct from public.norm_email(s.investor_email);
 
-    insert into public.opportunity_invitations
-      (opportunity_id, owner_id, contact_id, channel, token, status,
-       invited_email, investor_user_id, visibility, expires_at, created_at)
-    values
-      (v_opp_id, s.owner_id, v_con_id, 'link',
-       coalesce(nullif(s.token, ''), encode(gen_random_bytes(16), 'hex')),
-       'enviada', s.investor_email, s.investor_user_id,
-       coalesce(s.visibility, '{}'::jsonb), s.expires_at, s.created_at)
-    on conflict (token) do nothing;
+    -- Una fila heredada corrupta no puede impedir que se aplique la migración: se
+    -- salta y se deja donde está, en lugar de abortar el conjunto.
+    begin
+      insert into public.opportunity_invitations
+        (opportunity_id, owner_id, contact_id, channel, token, status,
+         invited_email, investor_user_id, visibility, expires_at, created_at)
+      values
+        (v_opp_id, s.owner_id, v_con_id, 'link',
+         coalesce(nullif(s.token, ''), encode(gen_random_bytes(16), 'hex')),
+         'enviada', s.investor_email, s.investor_user_id,
+         coalesce(s.visibility, '{}'::jsonb), s.expires_at, s.created_at)
+      on conflict (token) do nothing;
+    exception when others then
+      continue;
+    end;
   end loop;
 end $$;

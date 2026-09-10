@@ -150,7 +150,9 @@ de promotor y crea directamente el perfil de inversor (§ requisito 5).
 ## 5. ESTADOS
 
 **Oportunidad:** `borrador` → `publicada` → `en_captacion` → `cubierta` → `cerrada` → `liquidada`
-**Invitación:** `pendiente` → `enviada` → `vista` → `interesado` | `descartada` | `revocada` | `caducada`
+**Invitación:** `pendiente` → `enviada` → `vista` → `interesado` | `descartada` | `revocada`
+`caducada` se **calcula** a partir de `expires_at` en cada lectura; nunca se persiste
+en la columna `status`. Así no hace falta ningún proceso que vaya marcando caducidades.
 **Inversión:** `comprometida` → `desembolsada` → `activa` → `liquidada`
 
 Ver la máquina de estados exacta en el código: `src/lib/investorPlatform/states.ts`.
@@ -217,7 +219,32 @@ desbordamiento horizontal, sin errores de consola y con todos los campos etiquet
 | E2E del flujo completo | Depende de que la BD esté aplicada |
 | Notificaciones (nueva oportunidad, actualización) | El modelo lo admite (`investment_activity`); no se ha construido |
 | Subida de documentos POR el inversor | El modelo lo admite; la UI es solo lectura |
-| Paridad completa de la APP | Ver §7.5 |
+| Crear invitaciones desde la APP | React Native no expone `crypto.getRandomValues` sin módulo nativo; `Math.random()` no vale para un token que viaja en una URL pública |
+| Registrar inversiones desde la APP | Fuera del alcance de esta ejecución |
+
+### 7.5 APP
+
+Unificada con la WEB (commit `e64f84d`, rama `feat/plataforma-inversores`):
+sistema paralelo `share.recipients` eliminado, modelo de media unificado, `/inversores`
+y `/oportunidades` con datos reales, y un panel que lee las invitaciones reales y
+permite reenviar y revocar. Crear invitaciones sigue siendo cosa de la WEB, y se dice
+en la interfaz. `npx tsc --noEmit` limpio; lint limpio en los ficheros tocados.
+
+**NO CONFIRMADO:** que la APP apunte al mismo proyecto Supabase que la WEB. Su fichero
+`.env` está protegido por una regla de denegación del entorno y no se pudo leer. Es
+imprescindible confirmarlo antes de dar por buena la paridad.
+
+### 7.6 Fallos corregidos en la revisión de segunda pasada
+
+Una auditoría adversarial independiente sobre el propio commit encontró tres fallos
+reales. Los tres se reprodujeron sobre Postgres antes de tocar nada, y cada uno tiene
+ahora una prueba de regresión:
+
+| Gravedad | Fallo | Corrección |
+|---|---|---|
+| **CRÍTICO** | La policy `contacts: linked self read` daba al inversor su fila entera de `investor_contacts`, incluida `notes` — el CRM privado del promotor sobre él ("moroso", "no financiar"). La RLS filtra FILAS, no COLUMNAS; que el frontend pidiera solo unas columnas no protegía nada frente a un `select *` por REST. Lo mismo con `investments.notes` | Se eliminan ambas policies de lectura del inversor. Sus datos van por `get_my_investor_profile()` y `list_my_investments()`, que devuelven solo lo que le corresponde. Revocar la columna no servía: los privilegios de columna son por rol, y promotor e inversor son ambos `authenticated` |
+| **ALTO** | El backfill insertaba las filas heredadas sin email violando el check `addressable`, y sin manejo de excepción: **una sola fila así abortaba la migración entera** y dejaba la base de datos sin ninguna tabla. Y esas filas existen (defecto D7) | Se excluyen del backfill los accesos sin destinatario (nunca fueron legibles por nadie) y el `insert` se envuelve en `exception ... continue`. Además `email = norm_email(...)` pasa a `is not distinct from`, que sí casa con NULL |
+| **MEDIO** | `has_role(p_user, p_role)` era `SECURITY DEFINER` y ejecutable por cualquier autenticado: permitía enumerar el rol de cualquier cuenta ajena | Pasa a `has_role(p_role)` y resuelve el usuario con `auth.uid()`. No hay caso legítimo que pregunte por el rol de otro |
 
 ---
 

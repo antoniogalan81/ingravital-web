@@ -2,40 +2,36 @@
 
 // /i/perfil — datos del inversor y activación del rol promotor.
 //
-// El inversor ve la ficha de contacto que el promotor tiene de él (solo la suya:
-// la policy `contacts: linked self read` lo garantiza). No la edita desde aquí —
-// esos datos pertenecen al CRM del promotor— pero sí ve qué se está usando para
-// contactarle, que es lo que le afecta.
+// El inversor ve CÓMO le contacta su promotor: nombre, email y teléfono. No lo edita
+// desde aquí (esos datos pertenecen al CRM del promotor), pero sí ve lo que le afecta.
+//
+// Va por `get_my_investor_profile()` y NO por una consulta a `investor_contacts`:
+// la RLS filtra filas, no columnas, así que darle acceso de lectura a esa tabla le
+// entregaría también `notes` — las anotaciones privadas del promotor sobre él.
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { useRoles } from "@/src/contexts/RoleContext";
-import { supabase } from "@/src/lib/supabaseClient";
-
-type LinkedContact = {
-  id: string;
-  first_name: string;
-  last_name: string | null;
-  email: string | null;
-  phone: string | null;
-};
+import { getMyInvestorProfile, type MyInvestorProfile } from "@/src/lib/investorPlatform/service";
 
 export default function PerfilInversorPage() {
   const { user } = useAuth();
   const { hasPromotor, addRole, setArea } = useRoles();
   const router = useRouter();
-  const [contacts, setContacts] = useState<LinkedContact[] | null>(null);
+  const [contacts, setContacts] = useState<MyInvestorProfile[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let active = true;
-    supabase
-      .from("investor_contacts")
-      .select("id, first_name, last_name, email, phone")
-      .then(({ data }) => {
-        if (active) setContacts((data as LinkedContact[]) ?? []);
+    getMyInvestorProfile()
+      .then((rows) => {
+        if (active) setContacts(rows);
+      })
+      .catch((e) => {
+        if (active) setError(e instanceof Error ? e.message : "No se pudieron cargar tus datos.");
       });
     return () => {
       active = false;
@@ -82,6 +78,12 @@ export default function PerfilInversorPage() {
         </p>
       </section>
 
+      {error ? (
+        <div className="re-card p-5">
+          <p className="text-sm text-[var(--negative)]">{error}</p>
+        </div>
+      ) : null}
+
       {me ? (
         <section className="re-card p-5 space-y-3">
           <p className="text-[11px] font-bold uppercase tracking-[0.07em] text-ink-subtle">
@@ -91,7 +93,7 @@ export default function PerfilInversorPage() {
             <div className="flex items-baseline justify-between gap-3 py-2">
               <dt className="text-sm font-semibold text-ink">Nombre</dt>
               <dd className="text-sm text-ink-muted">
-                {[me.first_name, me.last_name].filter(Boolean).join(" ")}
+                {[me.firstName, me.lastName].filter(Boolean).join(" ")}
               </dd>
             </div>
             <div className="flex items-baseline justify-between gap-3 py-2">

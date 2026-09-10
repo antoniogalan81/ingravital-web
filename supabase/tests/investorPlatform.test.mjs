@@ -439,13 +439,13 @@ test("una inversión real solo la ve su inversor", async () => {
   );
 
   await asInvestorA(async () => {
-    const r = await db.query(`select amount from public.investments`);
-    assert.equal(r.rows.length, 1);
-    assert.equal(Number(r.rows[0].amount), 50000);
+    const mias = (await db.query(`select public.list_my_investments() as x`)).rows[0].x;
+    assert.equal(mias.length, 1);
+    assert.equal(Number(mias[0].amount), 50000);
   });
   await asInvestorB(async () => {
-    const r = await db.query(`select count(*)::int n from public.investments`);
-    assert.equal(r.rows[0].n, 0, "el inversor B no puede ver inversiones ajenas");
+    const suyas = (await db.query(`select public.list_my_investments() as x`)).rows[0].x;
+    assert.equal(suyas.length, 0, "el inversor B no puede ver inversiones ajenas");
   });
 });
 
@@ -484,7 +484,7 @@ test("el inversor no lee ninguna tabla interna", async () => {
     assert.equal(ops.rows[0].n, 0, "el inversor jamás accede a la operación del promotor");
 
     const con = await db.query(`select count(*)::int n from public.investor_contacts`);
-    assert.equal(con.rows[0].n, 1, "solo debe ver su propia ficha de contacto vinculada");
+    assert.equal(con.rows[0].n, 0, "ni siquiera su propia ficha: sus datos van por RPC");
   });
 });
 
@@ -677,18 +677,15 @@ test("una inversión registrada ANTES de que el inversor se identifique le llega
   assert.equal(created.investor_user_id, null, "aún no hay usuario al que enlazarla");
 
   await asInvestorA(async () => {
-    // Antes de reclamar no ve nada: la RLS filtra por investor_user_id.
-    const before = await db.query(`select count(*)::int n from public.investments`);
-    assert.equal(before.rows[0].n, 0);
+    // El inversor solo lee sus inversiones por RPC (no tiene policy sobre la tabla).
+    const before = (await db.query(`select public.list_my_investments() as x`)).rows[0].x;
+    assert.equal(before.length, 0, "antes de reclamar no le corresponde ninguna");
 
     await db.query(`select public.claim_invitation('tok-a')`);
 
-    const after = await db.query(`select amount from public.investments`);
-    assert.equal(after.rows.length, 1, "al reclamar debe heredar la inversión de su contacto");
-    assert.equal(Number(after.rows[0].amount), 75000);
-
-    const mine = (await db.query(`select public.list_my_investments() as x`)).rows[0].x;
-    assert.equal(mine.length, 1, "y debe aparecer en «Mis inversiones»");
+    const after = (await db.query(`select public.list_my_investments() as x`)).rows[0].x;
+    assert.equal(after.length, 1, "al reclamar debe heredar la inversión de su contacto");
+    assert.equal(Number(after[0].amount), 75000);
   });
 
   assert.ok(invitation.id, "la invitación existe");
@@ -713,7 +710,110 @@ test("reclamar no roba las inversiones de un contacto ajeno", async () => {
 
   await asInvestorA(async () => {
     await db.query(`select public.claim_invitation('tok-a')`);
-    const r = await db.query(`select count(*)::int n from public.investments`);
-    assert.equal(r.rows[0].n, 0, "solo hereda las inversiones de SU propio contacto");
+    const mias = (await db.query(`select public.list_my_investments() as x`)).rows[0].x;
+    assert.equal(mias.length, 0, "solo hereda las inversiones de SU propio contacto");
+  });
+});
+
+// ── Regresiones encontradas en la revisión adversarial ───────────────────────
+
+test("REGRESIÓN: el inversor NO puede leer las notas internas del CRM ni de la inversión", async () => {
+  // La RLS filtra FILAS, no COLUMNAS. Una policy `linked_user_id = auth.uid()` sobre
+  // investor_contacts le entregaba también `notes` (el CRM privado del promotor sobre
+  // él), `status`, `source` y `owner_id`. Que el frontend pidiera solo unas columnas
+  // no protegía nada: bastaba un `select *` contra la API REST.
+  const { db, actors, opportunity, contact, asInvestorA } = await setup();
+
+  await db.query(`update public.investor_contacts set notes = $1 where id = $2`, [
+    "MOROSO — NO FINANCIAR MÁS",
+    contact.id,
+  ]);
+  await db.query(
+    `insert into public.investments (opportunity_id, owner_id, contact_id, amount, status, notes)
+     values ($1, $2, $3, 1000, 'activa', 'NOTA INTERNA DE LA INVERSIÓN')`,
+    [opportunity, actors.promoA, contact.id],
+  );
+
+  await asInvestorA(async () => {
+    await db.query(`select public.claim_invitation('tok-a')`);
+
+    const c = await db.query(`select count(*)::int n from public.investor_contacts`);
+    assert.equal(c.rows[0].n, 0, "el inversor no debe poder leer investor_contacts directamente");
+
+    const v = await db.query(`select count(*)::int n from public.investments`);
+    assert.equal(v.rows[0].n, 0, "el inversor no debe poder leer investments directamente");
+
+    // Lo que sí debe funcionar: sus datos, por RPC, sin campos internos.
+    const perfil = (await db.query(`select public.get_my_investor_profile() as x`)).rows[0].x;
+    assert.equal(perfil.length, 1, "debe poder ver sus propios datos de contacto");
+    assert.deepEqual(Object.keys(perfil[0]).sort(), ["email", "firstName", "lastName", "phone", "whatsapp"]);
+    assert.ok(!JSON.stringify(perfil).includes("MOROSO"), "el perfil no puede llevar las notas del CRM");
+
+    const mine = (await db.query(`select public.list_my_investments() as x`)).rows[0].x;
+    assert.equal(mine.length, 1, "debe seguir viendo su inversión");
+    assert.ok(
+      !JSON.stringify(mine).includes("NOTA INTERNA"),
+      "list_my_investments no puede devolver las notas internas",
+    );
+  });
+});
+
+test("REGRESIÓN: una fila heredada sin email no tumba la migración", async () => {
+  // `investment_shares.investor_email` es nullable y en producción existen filas así
+  // (defecto D7). El backfill las insertaba violando el check `addressable`, y como el
+  // insert no tenía manejo de excepción reventaba TODO el bloque: la migración se
+  // aplicaba a medias, sin crear ni una tabla.
+  const db = new PGlite();
+  await db.exec(BOOTSTRAP);
+
+  const promo = (await db.query(`insert into auth.users (email) values ('p@t.com') returning id`)).rows[0].id;
+  const op = (
+    await db.query(
+      `insert into public.operaciones_inmobiliarias (id, user_id, data, client_updated_at)
+       values (gen_random_uuid(), $1, '{"name":"Legacy"}'::jsonb, now()) returning id`,
+      [promo],
+    )
+  ).rows[0].id;
+
+  await db.query(
+    `insert into public.investment_shares (owner_id, operation_id, investor_email, token, payload)
+     values ($1, $2, null, 'huerfano', '{"name":"Sin email"}'::jsonb)`,
+    [promo, op],
+  );
+  await db.query(
+    `insert into public.investment_shares (owner_id, operation_id, investor_email, token, payload)
+     values ($1, $2, 'valido@test.com', 'bueno', '{"name":"Con email"}'::jsonb)`,
+    [promo, op],
+  );
+
+  await db.exec(migrationSql()); // no debe lanzar
+
+  const tabla = await db.query(`select to_regclass('public.investor_contacts') as x`);
+  assert.notEqual(tabla.rows[0].x, null, "la migración debe completarse");
+
+  const inv = await db.query(`select token from public.opportunity_invitations order by token`);
+  assert.deepEqual(
+    inv.rows.map((r) => r.token),
+    ["bueno"],
+    "se migra el acceso utilizable y se ignora el huérfano, sin abortar",
+  );
+
+  const quedan = await db.query(`select count(*)::int n from public.investment_shares`);
+  assert.equal(quedan.rows[0].n, 2, "las dos filas de origen siguen intactas");
+});
+
+test("REGRESIÓN: has_role no permite enumerar el rol de otra cuenta", async () => {
+  const { db, actors, asInvestorA } = await setup();
+  await db.query(`insert into public.user_roles (user_id, role) values ($1, 'promotor')`, [actors.promoA]);
+
+  await asInvestorA(async () => {
+    // La firma de dos argumentos ya no existe: no hay forma de preguntar por otro.
+    await assertDenied(db, `select public.has_role($1, 'promotor')`, [actors.promoA]);
+
+    const propio = await db.query(`select public.has_role('inversor') as r`);
+    assert.equal(propio.rows[0].r, false, "todavía no ha reclamado ninguna invitación");
+    await db.query(`select public.claim_invitation('tok-a')`);
+    const despues = await db.query(`select public.has_role('inversor') as r`);
+    assert.equal(despues.rows[0].r, true, "tras reclamar, sí tiene el rol inversor");
   });
 });

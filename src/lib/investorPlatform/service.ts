@@ -650,14 +650,25 @@ export async function setInvitationInterest(
   if (error) throw error;
 }
 
-/** Invitaciones vivas dirigidas al inversor autenticado (la RLS ya filtra). */
-export async function listMyInvitations(): Promise<Invitation[]> {
-  const { data, error } = await supabase
-    .from("opportunity_invitations")
-    .select("*")
-    .order("updated_at", { ascending: false });
+/**
+ * Datos de contacto del inversor autenticado, tal y como los tiene su promotor.
+ *
+ * Va por RPC y NO por consulta directa a `investor_contacts`: la RLS filtra filas,
+ * no columnas, así que una policy de lectura sobre esa tabla le habría entregado
+ * también `notes` — el CRM privado que el promotor lleva sobre él.
+ */
+export type MyInvestorProfile = {
+  firstName: string;
+  lastName: string | null;
+  email: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+};
+
+export async function getMyInvestorProfile(): Promise<MyInvestorProfile[]> {
+  const { data, error } = await supabase.rpc("get_my_investor_profile");
   if (error) throw error;
-  return (data ?? []).map(rowToInvitation);
+  return (data as MyInvestorProfile[]) ?? [];
 }
 
 /** Cabecera de una oportunidad recibida, para pintar la lista sin N llamadas. */
