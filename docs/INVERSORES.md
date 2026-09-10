@@ -18,7 +18,7 @@ completo —promotor → oportunidad → invitación → identificación → vis
 inversión real → seguimiento → histórico— está **verificado contra el proyecto real** (§7),
 igual que el aislamiento entre cuentas (§7.1c).
 
-> ⚠️ **Las TRES migraciones van juntas, y en orden.** `20260910b` cierra un IDOR y redefine cinco funciones de
+> ⚠️ **Las migraciones van juntas y EN ORDEN: `20260910` → `b` → `c` → `d`.** `20260910b` cierra un IDOR y redefine cinco funciones de
 > la primera; `20260910c` endurece y redefine otras dos. Aplicar la primera sin la segunda
 > deja el agujero abierto. **Reaplicar una migración obliga a volver a aplicar las
 > posteriores**, porque cada una sobreescribe funciones de la anterior.
@@ -431,12 +431,39 @@ con un ajuste **local** de transacción que el trigger respeta. Cubierto por pru
 
 ---
 
+## 9.9 `20260910c` no llegó a producción — y cómo se comprobó
+
+Tras aplicarla, una sonda contra producción midió que **sus dos triggers no estaban
+activos**: crear una oportunidad sobre la operación de otro promotor y registrar
+actividad sobre entidades ajenas seguían devolviendo **HTTP 201**.
+
+La migración **es correcta**: aplicada sobre Postgres real crea los cuatro triggers y
+bloquea el ataque. El problema estuvo en su aplicación, no en su contenido — igual que
+le había pasado antes a `20260910b` en su primer intento.
+
+Por eso existe **`20260910d_investor_platform_triggers_only.sql`**: un extracto
+autocontenido y corto de `20260910c`, sin nada más que los dos triggers y las dos RPC
+con la comprobación de coherencia. Es idempotente, está verificado desde el estado
+EXACTO de producción (`20260910` y `b` aplicadas, `c` no) y termina con **4
+comprobaciones que deben salir todas `true`**.
+
+**Cómo saber si hace falta**, sin mirar el esquema:
+
+```bash
+node scripts/adversarial-idor-probe.mjs --yes-production
+```
+
+Con los triggers ausentes da `2 de 23 ataque(s) NO BLOQUEADO(S)`; con ellos aplicados,
+`23 ataques, los 23 BLOQUEADOS`.
+
+---
+
 ## 10. CÓMO APLICAR LAS MIGRACIONES
 
 1. Supabase Dashboard → proyecto de Invergravital → SQL Editor.
 2. Ejecutar en orden los ficheros de `WEB/supabase/migrations/` que aún no estén aplicados.
    Todos son **aditivos e idempotentes**: no hacen `DROP`, `DELETE` ni `TRUNCATE`.
-3. Verificar con las sondas de §0 y con `WEB/scripts/verify-investor-schema.mjs`.
+3. Verificar con `WEB/scripts/verify-investor-schema.mjs`.
 4. Comprobar el flujo real: `node scripts/e2e-investor-flow.mjs --yes-production`.
 
 **Orden obligatorio:** `20260910_investor_platform.sql` y después

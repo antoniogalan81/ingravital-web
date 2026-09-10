@@ -283,9 +283,14 @@ const a13b = await call(atacante, "investment_activity", {
   body: JSON.stringify({ owner_id: victima.id, opportunity_id: oppAtk.id, kind: "creada" }),
 });
 ok(
-  a13b.s === 201 && a13b.b?.[0]?.owner_id === atacante.id,
-  "el owner_id de la actividad lo pone el servidor",
-  `HTTP ${a13b.s} owner=${a13b.b?.[0]?.owner_id === atacante.id ? "derivado" : "del cliente"}`,
+  // Dos resultados válidos: la policy lo rechaza (403) antes de que el trigger actúe,
+  // o el trigger deriva el owner_id correcto. Lo que no vale es que se guarde el
+  // `owner_id` que mandó el cliente.
+  a13b.s >= 400 || a13b.b?.[0]?.owner_id === atacante.id,
+  "no se puede registrar actividad a nombre de otro",
+  `HTTP ${a13b.s} owner=${
+    a13b.b?.[0]?.owner_id === atacante.id ? "derivado" : a13b.s >= 400 ? "rechazado" : "DEL CLIENTE"
+  }`,
 );
 
 sec("14. Las RPC de vista e interés sobre una invitación ajena");
