@@ -39,9 +39,13 @@ begin
     return new;  -- migraciones y tareas del servidor
   end if;
 
+  -- `operaciones_inmobiliarias.id` es TEXT en producción (el bootstrap del repo dice
+  -- UUID, pero la tabla real no lo es) y `operation_id` es UUID: sin el cast, Postgres
+  -- aborta con «operator does not exist: text = uuid» y el trigger rompe el alta de
+  -- CUALQUIER oportunidad.
   select user_id into v_op_owner
     from public.operaciones_inmobiliarias
-   where id = new.operation_id;
+   where id = new.operation_id::text;
 
   if v_op_owner is not null and v_op_owner <> v_uid then
     raise exception 'Esa operación no es tuya' using errcode = '42501';
@@ -360,7 +364,9 @@ select 'set_invitation_interest comprueba coherencia',
                    from pg_proc where proname = 'set_invitation_interest' limit 1), false)
 union all
 select 'no quedan oportunidades sobre operaciones ajenas',
+       -- `operaciones_inmobiliarias.id` es TEXT y `operation_id` es UUID: el join
+       -- necesita el cast o Postgres aborta la migración entera.
        not exists (
          select 1 from public.investment_opportunities p
-           join public.operaciones_inmobiliarias o on o.id = p.operation_id
+           join public.operaciones_inmobiliarias o on o.id = p.operation_id::text
           where o.user_id <> p.owner_id);

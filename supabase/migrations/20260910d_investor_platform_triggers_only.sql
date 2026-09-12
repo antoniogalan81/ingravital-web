@@ -32,9 +32,13 @@ begin
     return new;
   end if;
 
+  -- `operaciones_inmobiliarias.id` es TEXT en producción (el bootstrap del repo dice
+  -- UUID, pero la tabla real no lo es), mientras que `operation_id` sí es UUID. Sin el
+  -- cast, Postgres aborta con «operator does not exist: text = uuid» y el trigger
+  -- rompe el alta de CUALQUIER oportunidad. Verificado contra information_schema.
   select user_id into v_op_owner
     from public.operaciones_inmobiliarias
-   where id = new.operation_id;
+   where id = new.operation_id::text;
 
   -- Si la operación aún no está sincronizada no hay tercero al que perjudicar, y
   -- exigirla rompería «Preparar para inversores» en una operación recién creada.

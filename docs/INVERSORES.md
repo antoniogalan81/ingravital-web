@@ -18,7 +18,8 @@ completo —promotor → oportunidad → invitación → identificación → vis
 inversión real → seguimiento → histórico— está **verificado contra el proyecto real** (§7),
 igual que el aislamiento entre cuentas (§7.1c).
 
-> ⚠️ **Las migraciones van juntas y EN ORDEN: `20260910` → `b` → `c` → `d`.** `20260910b` cierra un IDOR y redefine cinco funciones de
+> ⚠️ **Las migraciones van juntas y EN ORDEN: `20260910` → `b` → `c` → `d`.**
+> **TODAS APLICADAS Y VERIFICADAS EN PRODUCCIÓN.** `20260910b` cierra un IDOR y redefine cinco funciones de
 > la primera; `20260910c` endurece y redefine otras dos. Aplicar la primera sin la segunda
 > deja el agujero abierto. **Reaplicar una migración obliga a volver a aplicar las
 > posteriores**, porque cada una sobreescribe funciones de la anterior.
@@ -189,7 +190,8 @@ Ver la máquina de estados exacta en el código: `src/lib/investorPlatform/state
 | Bloque | Código | Aplicado en producción | Comprobado por |
 |---|---|---|---|
 | Esquema, RLS, RPC, Storage, backfill | ✅ `20260910_investor_platform.sql` | ✅ **SÍ** | `verify-investor-schema.mjs` → 10 tablas + 11 funciones, todo presente y protegido |
-| Cierre del IDOR en tres capas | ✅ `20260910b_investor_platform_owner_guard.sql` | ✅ **SÍ** | `adversarial-idor-probe.mjs` → 16 ataques, los 16 bloqueados |
+| Cierre del IDOR en tres capas | ✅ `20260910b_investor_platform_owner_guard.sql` | ✅ **SÍ** | `adversarial-idor-probe.mjs` → 23 ataques, los 23 bloqueados |
+| Endurecimiento (propiedad de operación y actividad) | ✅ `20260910c` + `20260910d` | ✅ **SÍ** | Verificado en `pg_trigger`/`pg_proc` desde sesión independiente |
 
 Comprobado además que `anon` recibe 401 en las 6 tablas nuevas y que la firma insegura
 `has_role(uuid, text)` **ya no existe** (PostgREST responde `PGRST202`).
@@ -215,7 +217,7 @@ verifica es la RLS real del servidor:
 
 ### 7.1c Sonda adversarial contra producción
 
-`node scripts/adversarial-idor-probe.mjs --yes-production` — **16 ataques, los 16 bloqueados**:
+`node scripts/adversarial-idor-probe.mjs --yes-production` — **23 ataques, los 23 bloqueados**:
 insert y update cruzados de invitación e inversión, upsert `merge-duplicates` para esquivar
 la policy, apropiarse de la oportunidad ajena, leer el snapshot de una invitación de otro,
 reclamar el token ajeno, escribir y firmar en el Storage de la víctima, lectura directa de
@@ -455,6 +457,50 @@ node scripts/adversarial-idor-probe.mjs --yes-production
 
 Con los triggers ausentes da `2 de 23 ataque(s) NO BLOQUEADO(S)`; con ellos aplicados,
 `23 ataques, los 23 BLOQUEADOS`.
+
+---
+
+## 9.10 Cierre — cómo se aplicó y el último fallo encontrado
+
+### La vía que SÍ persiste el DDL
+
+El SQL Editor revería el lote. La vía correcta es el **CLI contra la Management API**:
+
+```bash
+supabase link --project-ref zrstaskwqwuxgelcrwxx
+supabase db query --linked -f supabase/migrations/<fichero>.sql
+supabase unlink
+```
+
+`--linked` va por la Management API y **confirma** el DDL. Comprobado: el
+`system_identifier` del cluster por esa vía (`7642734024280108049`) coincide con el que
+devuelve el SQL Editor, así que es exactamente la misma base.
+
+### El fallo que destapó la primera aplicación real
+
+Al aplicar `20260910d` de verdad, crear **cualquier** oportunidad empezó a fallar con
+`operator does not exist: text = uuid`.
+
+**Causa:** en producción **`operaciones_inmobiliarias.id` es `TEXT`**, no `UUID`.
+`docs/supabase_invergravital_bootstrap.sql` dice `UUID`, pero **la tabla real no lo es**
+— verificado en `information_schema.columns`. El trigger compara esa columna con
+`investment_opportunities.operation_id`, que sí es `UUID`.
+
+**Corregido** con un cast explícito (`new.operation_id::text`) en `20260910c` y `20260910d`,
+más el mismo cast en el `join` de la consulta de verificación de `20260910c`, que abortaba
+la migración entera. El banco de pruebas PGlite modeló esa columna como `UUID` copiando el
+bootstrap: **se ha alineado con producción (`TEXT`)**, que es lo que debe reflejar.
+
+> Para futuras sesiones: **`docs/supabase_invergravital_bootstrap.sql` no es la fuente de
+> verdad del esquema.** Consulta `information_schema` antes de escribir SQL que dependa
+> de un tipo de columna.
+
+### Residuos eliminados
+
+`DIAGNOSTICO-MTW0L4LT`, las funciones `diag_persiste_*`, y **105 usuarios anónimos** de
+prueba con todas sus filas en cascada. Comprobado después: 0 anónimos, 0 contactos, 0
+oportunidades, 0 inversiones. El **único usuario real y sus 59 operaciones quedaron
+intactos**.
 
 ---
 

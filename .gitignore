@@ -46,3 +46,15 @@ next-env.d.ts
 .vercel
 .env*.local
 .gstack/
+
+# ECOAPP ctxops: local code index, never committed
+.codegraph/
+
+# ECOAPP ctxops: local knowledge graph, rebuilt on demand
+graphify-out/
+
+# Credencial temporal de Supabase para aplicar migraciones. NUNCA se versiona.
+.supabase-token
+
+# Estado local del CLI de Supabase (ref del proyecto vinculado)
+supabase/.temp/

@@ -94,8 +94,10 @@ alter table public.profiles enable row level security;
 grant select on table public.profiles to anon;
 grant select, insert, update on table public.profiles to authenticated;
 
+-- OJO: en producción esta columna es TEXT, no UUID (el bootstrap del repo dice UUID
+-- pero la tabla real no lo es). El harness tiene que reflejar producción, no el doc.
 create table if not exists public.operaciones_inmobiliarias (
-  id uuid primary key,
+  id text primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
   data jsonb not null,
   client_updated_at timestamptz not null default now(),
@@ -147,7 +149,7 @@ async function setup() {
   const operation = (
     await db.query(
       `insert into public.operaciones_inmobiliarias (id, user_id, data, client_updated_at)
-       values (gen_random_uuid(), $1, '{"name":"Edificio A"}'::jsonb, now()) returning id`,
+       values (gen_random_uuid()::text, $1, '{"name":"Edificio A"}'::jsonb, now()) returning id`,
       [actors.promoA],
     )
   ).rows[0].id;
@@ -559,7 +561,7 @@ test("el backfill migra investment_shares sin destruirla", async () => {
   const legacyOp = (
     await db.query(
       `insert into public.operaciones_inmobiliarias (id, user_id, data, client_updated_at)
-       values (gen_random_uuid(), $1, '{"name":"Legacy"}'::jsonb, now()) returning id`,
+       values (gen_random_uuid()::text, $1, '{"name":"Legacy"}'::jsonb, now()) returning id`,
       [actors.promoB],
     )
   ).rows[0].id;
@@ -779,7 +781,7 @@ test("REGRESIÓN: una fila heredada sin email no tumba la migración", async () 
   const op = (
     await db.query(
       `insert into public.operaciones_inmobiliarias (id, user_id, data, client_updated_at)
-       values (gen_random_uuid(), $1, '{"name":"Legacy"}'::jsonb, now()) returning id`,
+       values (gen_random_uuid()::text, $1, '{"name":"Legacy"}'::jsonb, now()) returning id`,
       [promo],
     )
   ).rows[0].id;
@@ -869,7 +871,7 @@ test("REGRESIÓN: repuntar una invitación propia a una oportunidad ajena tambi�
   const opB = (
     await db.query(
       `insert into public.operaciones_inmobiliarias (id, user_id, data, client_updated_at)
-       values (gen_random_uuid(), $1, '{}'::jsonb, now()) returning id`,
+       values (gen_random_uuid()::text, $1, '{}'::jsonb, now()) returning id`,
       [actors.promoB],
     )
   ).rows[0].id;
@@ -982,7 +984,7 @@ test("REGRESIÓN: la migración NEUTRALIZA las filas forjadas, no las reasigna",
   const op = (
     await db.query(
       `insert into public.operaciones_inmobiliarias (id, user_id, data, client_updated_at)
-       values (gen_random_uuid(), $1, '{}'::jsonb, now()) returning id`, [victima])
+       values (gen_random_uuid()::text, $1, '{}'::jsonb, now()) returning id`, [victima])
   ).rows[0].id;
   const opp = (
     await db.query(
@@ -1041,7 +1043,7 @@ test("ENDURECIMIENTO: no se publica una oportunidad sobre la operación de otro"
   const opA = (
     await db.query(
       `insert into public.operaciones_inmobiliarias (id, user_id, data, client_updated_at)
-       values (gen_random_uuid(), $1, '{}'::jsonb, now()) returning id`, [actors.promoA])
+       values (gen_random_uuid()::text, $1, '{}'::jsonb, now()) returning id`, [actors.promoA])
   ).rows[0].id;
 
   await asUser(actors.promoB, { email: "promotor.b@test.com" }, async () => {
