@@ -123,10 +123,10 @@ export function mergeById<T extends Identified>(
 
 // Campos de REOperation que son colecciones anidadas con `id` propio y crecen por
 // altas independientes en distintos dispositivos (entrada rápida de gasto/venta/hito,
-// media). Se fusionan por id. NO se incluyen `units`/`costs.tasas`/config: esos se
+// media, gastos y préstamos reales). Se fusionan por id. NO se incluyen `units`/`costs.tasas`/config: esos se
 // editan como un todo coherente en el editor y fusionarlos podría resucitar unidades
 // borradas a propósito o mezclar configuraciones incompatibles → LWW de operación.
-const RE_COLLECTION_FIELDS = ["expenses", "sales", "milestones", "media"] as const;
+const RE_COLLECTION_FIELDS = ["expenses", "sales", "milestones", "media", "realExpenses", "realLoans"] as const;
 
 /**
  * Fusiona dos versiones de una MISMA operación (mismo id) conservando lo de ambos lados:

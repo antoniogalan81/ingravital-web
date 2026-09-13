@@ -7,7 +7,8 @@ import type { REOperation, REUnit, UnitType } from "@/src/lib/realEstate";
 import { DEFAULT_TASAS } from "@/src/lib/realEstate";
 import { calcResults, calcNumTrasteros, calcNumPlazas, calcTINFromCuota, fmtEUR, fmtNum, fmtPct, convertRealEstateOperationType } from "@/src/lib/realEstateCalc";
 import { ScenariosPanel } from "./ScenariosPanel";
-import { TrackingModal } from "./tracking/TrackingModal";
+import { TrackingModal, type TrackingTab } from "./tracking/TrackingModal";
+import { realVsPlanned, type RealVsPlanned } from "@/src/lib/realFinances";
 import { InvestmentFlowMap } from "./charts/InvestmentFlowMap";
 
 type RealEstateCategory = "vivienda" | "local" | "suelo" | "adaptacion";
@@ -174,6 +175,50 @@ function KPI({ label, value, sub, tone }: { label: string; value: string; sub?: 
       <div className="text-[10px] font-semibold text-ink-subtle uppercase tracking-wide mb-1">{label}</div>
       <div className="text-lg font-extrabold tabular-nums" style={{ color: valueColor }}>{value}</div>
       {sub && <div className="text-xs text-ink-muted tabular-nums mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+/** Bloque "Situación real" del Resumen: solo cifras registradas en Finanzas reales. */
+function RealSituation({ real, plannedInvestment, onOpen }: { real: RealVsPlanned; plannedInvestment: number; onOpen: () => void }) {
+  if (!real.hasData) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed border-line px-3 py-2.5 mt-3">
+        <p className="text-xs text-ink-muted">
+          <span className="font-bold text-ink">Situación real:</span> sin gastos ni préstamos reales registrados.
+        </p>
+        <button type="button" onClick={onOpen} className="text-xs font-semibold text-brand hover:underline">Registrar en Finanzas reales ›</button>
+      </div>
+    );
+  }
+  const { spent, loans, spentOfPlannedPct } = real;
+  return (
+    <div className="rounded-xl border border-line mt-3 overflow-hidden" style={{ borderLeft: "4px solid var(--positive)" }}>
+      <div className="flex items-center justify-between gap-2 px-3 pt-2.5">
+        <p className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--positive)" }}>Situación real · Finanzas reales</p>
+        <button type="button" onClick={onOpen} className="text-xs font-semibold text-brand hover:underline">Ver detalle ›</button>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 px-3 py-2.5">
+        <div className="min-w-0">
+          <div className="text-[10px] font-semibold text-ink-subtle uppercase tracking-wide">Gastado real</div>
+          <div className="text-lg font-extrabold tabular-nums text-ink">{spent.count ? fmtEUR(spent.total) : "—"}</div>
+          <div className="text-xs text-ink-muted tabular-nums">
+            {spentOfPlannedPct != null ? `${fmtPct(spentOfPlannedPct)} de ${fmtEUR(plannedInvestment)} previstos` : `${spent.count} gasto${spent.count === 1 ? "" : "s"}`}
+          </div>
+        </div>
+        <div className="min-w-0">
+          <div className="text-[10px] font-semibold text-ink-subtle uppercase tracking-wide">Financiación real</div>
+          <div className="text-lg font-extrabold tabular-nums text-ink">{loans.count ? fmtEUR(loans.financed) : "Sin préstamos"}</div>
+          {loans.monthlyInstallments != null ? <div className="text-xs text-ink-muted tabular-nums">{fmtEUR(loans.monthlyInstallments)}/mes en cuotas</div> : null}
+        </div>
+        {loans.count ? (
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold text-ink-subtle uppercase tracking-wide">Capital pendiente</div>
+            <div className="text-lg font-extrabold tabular-nums text-ink">{loans.outstanding == null ? "Sin dato" : fmtEUR(loans.outstanding)}</div>
+            {loans.outstanding == null ? <div className="text-xs text-ink-muted">falta en algún préstamo activo</div> : null}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -617,8 +662,9 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
 
   // Drawer abierto al montar; al cerrar, animamos la salida antes de desmontar (onClose).
   const [drawerOpen, setDrawerOpen] = useState(true);
-  // Hub de SEGUIMIENTO Y GESTIÓN (gastos, ventas, hitos, rentabilidad, media, compartir, informe).
-  const [showTracking, setShowTracking] = useState(false);
+  // Workspace de la operación abierto en una pestaña concreta (null = cerrado). Tiene dos
+  // áreas: Gestión del proyecto (uso interno) e Inversores. Ver tracking/TrackingModal.
+  const [trackingTab, setTrackingTab] = useState<TrackingTab | null>(null);
   const handleClose = useCallback(() => {
     if (dirtyRef.current) {
       dirtyRef.current = false;
@@ -663,6 +709,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
   }, [op.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const res = useMemo(() => calcResults(draft), [draft]);
+  const real = useMemo(() => realVsPlanned(draft, res), [draft, res]);
 
   const commit = useCallback(
     (patch: Partial<REOperation>) => {
@@ -866,24 +913,37 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
           )}
         </div>
 
-        {/* ── SEGUIMIENTO Y GESTIÓN — acceso destacado y fijo al abrir la operación ── */}
-        <div className="px-4 py-2.5 border-b border-slate-100 bg-white flex-shrink-0">
+        {/* ── Dos áreas de trabajo de la operación, siempre visibles al abrirla ── */}
+        <div className="px-4 py-2.5 border-b border-slate-100 bg-white flex-shrink-0 grid grid-cols-1 sm:grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => setShowTracking(true)}
+            onClick={() => setTrackingTab("inicio")}
             className="group flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-white transition-colors"
             style={{ background: "var(--brand)" }}
           >
-            <svg className="w-5 h-5 flex-shrink-0 opacity-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-5 h-5 flex-shrink-0 opacity-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
             </svg>
             <span className="flex-1 min-w-0">
-              <span className="block text-sm font-bold leading-tight">Seguimiento y gestión</span>
-              <span className="block text-xs text-white/85 leading-tight mt-0.5">
-                Panel · Económico · Ventas · Planificación · Inversores · Informe
-              </span>
+              <span className="block text-sm font-bold leading-tight">Gestión del proyecto</span>
+              <span className="block text-xs text-white/85 leading-tight mt-0.5">Área del promotor · Uso interno</span>
             </span>
-            <span className="text-xl font-light opacity-80 transition-transform group-hover:translate-x-0.5">›</span>
+            <span className="text-xl font-light opacity-80 transition-transform group-hover:translate-x-0.5" aria-hidden="true">›</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTrackingTab("inversores")}
+            className="group flex w-full items-center gap-3 rounded-xl border-2 px-4 py-2.5 text-left transition-colors hover:brightness-[0.98]"
+            style={{ borderColor: "#86652a", background: "var(--accent-soft)", color: "#86652a" }}
+          >
+            <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm font-bold leading-tight">Inversores</span>
+              <span className="block text-xs leading-tight mt-0.5 text-ink-muted">Preparación y gestión de la inversión externa</span>
+            </span>
+            <span className="text-xl font-light opacity-80 transition-transform group-hover:translate-x-0.5" aria-hidden="true">›</span>
           </button>
         </div>
 
@@ -911,6 +971,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
 
           {/* ── SECCIÓN 1: RESUMEN ── */}
           <SectionBlock id="section-resumen" title="Resumen" open={open.resumen} onToggle={() => toggleSection("resumen")}>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-ink-subtle">Previsión · simulador</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <KPI label="Inversión total" value={fmtEUR(res.totalInvestment)} />
               <KPI label="Mi inversión" value={fmtEUR(res.myInvestment)} />
@@ -940,9 +1001,12 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
               {nTrasteros > 0 && <KPI label="Nº trasteros" value={String(nTrasteros)} />}
             </div>
 
+            {/* Situación REAL (Finanzas reales). Separada de la previsión: no la corrige ni la sustituye. */}
+            <RealSituation real={real} plannedInvestment={res.totalInvestment} onOpen={() => setTrackingTab("finanzas")} />
+
             {/* Mapa visual de la inversión — complementa el resumen, no lo sustituye */}
             <div className="mt-3">
-              <InvestmentFlowMap op={draft} res={res} />
+              <InvestmentFlowMap op={draft} res={res} real={real} />
             </div>
           </SectionBlock>
 
@@ -1416,8 +1480,8 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
 
         </div>
 
-        {showTracking && (
-          <TrackingModal op={draft} onPersist={commit} onClose={() => setShowTracking(false)} />
+        {trackingTab && (
+          <TrackingModal op={draft} initialTab={trackingTab} onPersist={commit} onClose={() => setTrackingTab(null)} />
         )}
         </Vaul.Content>
       </Vaul.Portal>

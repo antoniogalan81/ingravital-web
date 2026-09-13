@@ -97,6 +97,79 @@ export type REExpense = {
   updatedAt: string;
 };
 
+// ── Finanzas reales (Gestión del proyecto · uso interno del promotor) ──────────
+//
+// Lo que REALMENTE ha ocurrido en la operación. Es independiente de:
+//  · `REOperation.costs` / `financing` → previsión del simulador (presupuesto y
+//    financiación prevista).
+//  · `REExpense` (pestaña Económico) → control de presupuesto estimado vs real.
+// Nada de lo de aquí se copia desde la previsión ni se publica a los inversores.
+//
+// Los documentos viven en el Google Drive del usuario. Invergravital NO se conecta a
+// Drive: solo guarda enlaces que el usuario pega. Por eso el documento se modela como
+// NOMBRE visible + ENLACE real (el enlace contiene el id estable del archivo); el
+// nombre no se resuelve contra la carpeta ni se usa para abrir nada.
+
+export type REDriveFolder = {
+  url: string; // enlace de carpeta de Google Drive, ya validado
+  label?: string; // nombre opcional para reconocerla (no se lee de Drive)
+  linkedAt: string; // ISO
+};
+
+export type RERealExpense = {
+  id: string;
+  concept: string;
+  amount: number; // importe real incurrido, en €
+  date: string; // ISO (yyyy-mm-dd)
+  category?: REExpenseCategory;
+  notes?: string;
+  documentName?: string; // nombre visible del documento (ej. "Factura fontanería junio.pdf")
+  documentUrl?: string; // enlace real al archivo en Google Drive
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RELoanRateType = "FIJO" | "VARIABLE" | "MIXTO";
+
+export const RE_LOAN_RATE_TYPE_LABEL: Record<RELoanRateType, string> = {
+  FIJO: "Fijo",
+  VARIABLE: "Variable",
+  MIXTO: "Mixto",
+};
+
+export type RELoanPeriodicity = "MENSUAL" | "TRIMESTRAL" | "SEMESTRAL" | "ANUAL";
+
+export const RE_LOAN_PERIODICITY_LABEL: Record<RELoanPeriodicity, string> = {
+  MENSUAL: "Mensual",
+  TRIMESTRAL: "Trimestral",
+  SEMESTRAL: "Semestral",
+  ANUAL: "Anual",
+};
+
+export type RELoanStatus = "ACTIVO" | "AMORTIZADO";
+
+export const RE_LOAN_STATUS_LABEL: Record<RELoanStatus, string> = {
+  ACTIVO: "Activo",
+  AMORTIZADO: "Amortizado",
+};
+
+export type RERealLoan = {
+  id: string;
+  name: string; // entidad / concepto (ej. "Hipoteca Banco X")
+  principal: number; // capital inicial, en €
+  interestRate?: number; // % anual (TIN)
+  rateType?: RELoanRateType;
+  startDate?: string; // ISO
+  termMonths?: number;
+  installment?: number; // cuota, en €
+  periodicity?: RELoanPeriodicity; // de la cuota; ausente = mensual
+  outstanding?: number; // capital pendiente declarado por el usuario
+  status: RELoanStatus;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 // ── Ventas ────────────────────────────────────────────────────────────────────
 
 export type RESaleStatus =
@@ -332,6 +405,16 @@ export function newTrackingId(prefix: string): string {
 export function makeExpense(): REExpense {
   const now = new Date().toISOString();
   return { id: newTrackingId("exp"), category: "OTROS", concept: "", status: "PENDIENTE", createdAt: now, updatedAt: now };
+}
+
+export function makeRealExpense(today: string): RERealExpense {
+  const now = new Date().toISOString();
+  return { id: newTrackingId("rexp"), concept: "", amount: 0, date: today, createdAt: now, updatedAt: now };
+}
+
+export function makeRealLoan(): RERealLoan {
+  const now = new Date().toISOString();
+  return { id: newTrackingId("rloan"), name: "", principal: 0, status: "ACTIVO", createdAt: now, updatedAt: now };
 }
 
 export function makeSale(): RESale {

@@ -148,6 +148,14 @@ test("mergeOperationEntity criterio 2: A añade hito, B añade gasto → ambos s
   assert.deepEqual(ids(merged.expenses as unknown[]), ["e1", "e2"]);
 });
 
+test("mergeOperationEntity: gastos y préstamos reales añadidos en dos dispositivos sobreviven", () => {
+  const local = op({ realExpenses: [item("rx1")], realLoans: [item("rl1")] });
+  const remote = op({ realExpenses: [item("rx2")], realLoans: [], updatedAt: "2024-03-01T00:00:00.000Z" });
+  const merged = mergeOperationEntity(local, remote, true) as unknown as Record<string, unknown>;
+  assert.deepEqual(ids(merged.realExpenses as unknown[]), ["rx1", "rx2"]);
+  assert.deepEqual(ids(merged.realLoans as unknown[]), ["rl1"]);
+});
+
 test("mergeOperationEntity: conserva campos escalares del lado más reciente", () => {
   const local = op({ name: "viejo", purchasePrice: 100, expenses: [item("e1")] });
   const remote = op({ name: "nuevo", purchasePrice: 200, expenses: [item("e2")], updatedAt: "2024-05-01T00:00:00.000Z" });

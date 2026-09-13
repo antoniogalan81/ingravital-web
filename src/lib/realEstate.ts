@@ -1,6 +1,9 @@
 // src/lib/realEstate.ts — Tipos Inversión Inmobiliaria (idénticos a APP/models/realEstate.ts)
 
 import type {
+  REDriveFolder,
+  RERealExpense,
+  RERealLoan,
   REExpense,
   REInvestorSplit,
   REMediaItem,
@@ -135,6 +138,13 @@ export type REOperation = {
   progress?: REProgress;
   investorSplit?: REInvestorSplit;
   share?: REShareSettings;
+
+  // ── FINANZAS REALES (Gestión del proyecto · uso interno). Lo realmente gastado y
+  //    la financiación realmente contratada; NUNCA se deriva de `costs`/`financing`
+  //    (previsión). Colecciones planas para que el merge por id del sync las cubra. ──
+  realExpenses?: RERealExpense[];
+  realLoans?: RERealLoan[];
+  invoicesDriveFolder?: REDriveFolder;
 };
 
 export const DEFAULT_TASAS: RETasa[] = [
