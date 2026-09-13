@@ -89,7 +89,8 @@ export default function SignupPage() {
             .from("user_roles")
             .upsert(
               roles.map((role) => ({ user_id: data.user!.id, role })),
-              { onConflict: "user_id,role" },
+              // DO NOTHING: user_roles no concede UPDATE (ver grantMyRole).
+              { onConflict: "user_id,role", ignoreDuplicates: true },
             );
           if (roleError) {
             // No bloquea el alta: el rol se puede activar luego desde el perfil.

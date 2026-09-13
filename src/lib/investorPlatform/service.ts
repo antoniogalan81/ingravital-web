@@ -48,12 +48,17 @@ export async function getMyRoles(): Promise<UserRole[]> {
   return (data ?? []).map((r) => (r as Row).role as UserRole);
 }
 
-/** Alta idempotente de un rol para el usuario actual. */
+/**
+ * Alta idempotente de un rol para el usuario actual.
+ * `ignoreDuplicates` = ON CONFLICT DO NOTHING, que solo requiere INSERT. Un upsert normal
+ * es ON CONFLICT DO UPDATE y exige UPDATE, que `user_roles` no concede a propósito
+ * (devolvía 403 en cada carga).
+ */
 export async function grantMyRole(role: UserRole): Promise<void> {
   const userId = await requireUserId();
   const { error } = await supabase
     .from("user_roles")
-    .upsert({ user_id: userId, role }, { onConflict: "user_id,role" });
+    .upsert({ user_id: userId, role }, { onConflict: "user_id,role", ignoreDuplicates: true });
   if (error) throw error;
 }
 

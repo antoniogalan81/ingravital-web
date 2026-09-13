@@ -939,6 +939,37 @@ test("REGRESIÓN: un usuario puede renunciar a un rol propio, pero no al de otro
   assert.equal(ajeno.rows[0].n, 1, "el rol de otro usuario sigue intacto");
 });
 
+test("REGRESIÓN: conceder el rol propio es idempotente SIN permiso UPDATE (403 en producción)", async () => {
+  // En producción cada carga devolvía 403 (42501): el cliente hacía upsert con
+  // `resolution=merge-duplicates` (INSERT … ON CONFLICT DO UPDATE), que exige UPDATE
+  // sobre user_roles. La tabla no concede UPDATE a propósito: un rol no se "edita".
+  // El alta idempotente correcta es ON CONFLICT DO NOTHING, que solo necesita INSERT.
+  const { db, actors, asUser } = await setup();
+  await asUser(actors.promoB, {}, async () => {
+    await assertDenied(
+      db,
+      `insert into public.user_roles (user_id, role) values ($1, 'promotor')
+       on conflict (user_id, role) do update set role = excluded.role`,
+      [actors.promoB],
+    );
+    for (let i = 0; i < 2; i++) {
+      await db.query(
+        `insert into public.user_roles (user_id, role) values ($1, 'promotor')
+         on conflict (user_id, role) do nothing`,
+        [actors.promoB],
+      );
+    }
+    const propios = await db.query(`select count(*)::int n from public.user_roles`);
+    assert.equal(propios.rows[0].n, 1, "se concede una sola vez, sin duplicar ni fallar");
+    // Sigue sin poder concedérselo a otro, ni siquiera con DO NOTHING.
+    await assertDenied(
+      db,
+      `insert into public.user_roles (user_id, role) values ($1, 'promotor') on conflict (user_id, role) do nothing`,
+      [actors.promoA],
+    );
+  });
+});
+
 test("REGRESIÓN: una invitación forjada YA EXISTENTE no da acceso ni siquiera por RPC", async () => {
   // Simula el estado tras el ataque: la fila se crea saltándose el trigger (como si
   // se hubiera creado antes del parche) y se comprueba que NINGÚN camino la honra.
