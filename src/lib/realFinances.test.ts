@@ -3,9 +3,20 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { driveFileUrl, driveFolderUrl, parseAmountEs, parseDriveLink, realExpenseTotals, realLoanTotals, realVsPlanned } from "./realFinances.ts";
+import {
+  adoptLegacyRealAmounts,
+  budgetLineReal,
+  driveFileUrl,
+  driveFolderUrl,
+  effectiveRealExpenses,
+  parseAmountEs,
+  parseDriveLink,
+  realExpenseTotals,
+  realLoanTotals,
+  realVsPlanned,
+} from "./realFinances.ts";
 import type { REOperation } from "./realEstate.ts";
-import type { RERealExpense, RERealLoan } from "./realEstateTracking.ts";
+import type { REExpense, RERealExpense, RERealLoan } from "./realEstateTracking.ts";
 
 const FOLDER_ID = "1AbCdEfGhIjKlMnOpQrStUvWxYz";
 const FILE_ID = "1ZyXwVuTsRqPoNmLkJiHgFeDcBa";
@@ -135,4 +146,62 @@ test("importes en formato español, sin inventar ceros", () => {
   assert.equal(parseAmountEs(""), undefined);
   assert.equal(parseAmountEs("abc"), undefined);
   assert.equal(parseAmountEs("12,3,4"), undefined);
+});
+
+const line = (p: Partial<REExpense> & { id: string }): REExpense => ({
+  category: "OBRA",
+  concept: "Fontanería",
+  status: "PENDIENTE",
+  createdAt: "2026-02-01T10:00:00.000Z",
+  updatedAt: "2026-02-01T10:00:00.000Z",
+  ...p,
+});
+
+test("Real de una partida = suma de sus gastos reales vinculados", () => {
+  const rows = [exp({ amount: 1000, budgetLineId: "l1" }), exp({ amount: 250.5, budgetLineId: "l1" }), exp({ amount: 99 })];
+  assert.equal(budgetLineReal(rows, "l1"), 1250.5);
+  assert.equal(budgetLineReal(rows, "l2"), undefined, "sin gastos vinculados no hay Real (no un 0)");
+});
+
+test("importe real legado: cuenta como gasto real y se convierte una sola vez con id determinista", () => {
+  const op = {
+    expenses: [line({ id: "l1", estimated: 5000, real: 4850, date: "2026-06-10" }), line({ id: "l2", estimated: 100 })],
+    realExpenses: [exp({ id: "r1", amount: 300 })],
+  } as REOperation;
+
+  const eff = effectiveRealExpenses(op);
+  assert.equal(eff.length, 2);
+  const legacy = eff.find((e) => e.id === "rexp_legacy_l1");
+  assert.deepEqual([legacy?.amount, legacy?.budgetLineId, legacy?.date, legacy?.concept, legacy?.category], [4850, "l1", "2026-06-10", "Fontanería", "OBRA"]);
+  assert.equal(realExpenseTotals(op).total, 5150, "los totales ya ven el dato legado antes de convertirlo");
+
+  const patch = adoptLegacyRealAmounts(op);
+  assert.ok(patch);
+  assert.equal(patch.expenses?.some((l) => "real" in l), false, "la partida deja de guardar real");
+  assert.equal(patch.expenses?.[0].estimated, 5000, "el resto de la partida no se toca");
+  const migrated = { ...op, ...patch } as REOperation;
+  assert.equal(adoptLegacyRealAmounts(migrated), null, "idempotente");
+  assert.equal(realExpenseTotals(migrated).total, 5150, "sin perder ni duplicar importes");
+
+  // Otro dispositivo convierte lo mismo → mismo id → la fusión por id no duplica.
+  assert.equal(adoptLegacyRealAmounts(op)?.realExpenses?.find((e) => e.id === "rexp_legacy_l1")?.id, "rexp_legacy_l1");
+});
+
+test("una versión antigua que vuelve a escribir real actualiza el gasto convertido, sin duplicarlo", () => {
+  const op = {
+    expenses: [line({ id: "l1", real: 5100 })],
+    realExpenses: [exp({ id: "rexp_legacy_l1", amount: 4850, budgetLineId: "l1", concept: "Fontanería (editado)" })],
+  } as REOperation;
+  const eff = effectiveRealExpenses(op);
+  assert.equal(eff.length, 1);
+  assert.equal(eff[0].amount, 5100);
+  assert.equal(eff[0].concept, "Fontanería (editado)", "conserva lo editado en Finanzas reales");
+});
+
+test("real vacío o 0 en una partida antigua no crea gastos, pero se limpia", () => {
+  const op = { expenses: [line({ id: "l1", real: 0 }), line({ id: "l2", real: undefined })] } as REOperation;
+  assert.equal(effectiveRealExpenses(op).length, 0);
+  const patch = adoptLegacyRealAmounts(op);
+  assert.deepEqual(patch?.realExpenses, []);
+  assert.equal(patch?.expenses?.some((l) => "real" in l), false);
 });

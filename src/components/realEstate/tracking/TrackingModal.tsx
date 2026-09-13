@@ -1,13 +1,12 @@
 "use client";
 
 // WORKSPACE de una operación (WEB). Ocupa toda la pantalla (no drawer-sobre-drawer)
-// y separa DOS ÁREAS que no deben confundirse:
+// y tiene DOS ÁREAS, con un selector siempre visible:
 //   · Gestión del proyecto (área del promotor, uso interno): Inicio · Resumen ·
-//     Económico · Finanzas reales · Ventas · Planificación, con acciones rápidas y la
-//     BARRA-RESUMEN persistente.
-//   · Inversores (preparación y gestión de la inversión externa): Inversores · Informe.
-// El área activa se deriva de la pestaña: navegar a una pestaña de la otra área
-// cambia también de área (y de color de cabecera).
+//     Económico · Finanzas reales · Ventas · Planificación.
+//   · Inversores: el workspace de seguimiento TAL CUAL existía antes de separar las
+//     áreas (mismas pestañas, acciones rápidas y barra-resumen). Su contenido interno
+//     está pendiente de definir: no se reorganiza aquí.
 // No mantiene estado de datos propio: lee `op` (draft vivo del editor) y persiste
 // cada cambio con `onPersist(patch)` → el editor hace commit (JSON sync).
 
@@ -39,7 +38,9 @@ export type TrackingTab = "inicio" | "resumen" | "economico" | "finanzas" | "ven
 
 export type TrackingArea = "gestion" | "inversores";
 
-const AREAS: Record<TrackingArea, { title: string; subtitle: string; color: string; soft: string; tabs: { key: TrackingTab; label: string }[] }> = {
+type TabDef = { key: TrackingTab; label: string };
+
+const AREAS: Record<TrackingArea, { title: string; subtitle: string; color: string; soft: string; tabs: TabDef[] }> = {
   gestion: {
     title: "Gestión del proyecto",
     subtitle: "Área del promotor · Uso interno",
@@ -60,7 +61,13 @@ const AREAS: Record<TrackingArea, { title: string; subtitle: string; color: stri
     // Bronce de la marca oscurecido: --accent no llega a 4.5:1 como texto sobre blanco.
     color: "#86652a",
     soft: "var(--accent-soft)",
+    // Pestañas del workspace anterior, sin cambios.
     tabs: [
+      { key: "inicio", label: "Inicio" },
+      { key: "resumen", label: "Resumen" },
+      { key: "economico", label: "Económico" },
+      { key: "ventas", label: "Ventas" },
+      { key: "planificacion", label: "Planificación" },
       { key: "inversores", label: "Inversores" },
       { key: "informe", label: "Informe" },
     ],
@@ -68,8 +75,6 @@ const AREAS: Record<TrackingArea, { title: string; subtitle: string; color: stri
 };
 
 const AREA_ORDER: TrackingArea[] = ["gestion", "inversores"];
-
-const areaOf = (tab: TrackingTab): TrackingArea => (AREAS.inversores.tabs.some((t) => t.key === tab) ? "inversores" : "gestion");
 
 function QuickAction({ label, onClick, primary = false }: { label: string; onClick: () => void; primary?: boolean }) {
   return (
@@ -88,15 +93,18 @@ function QuickAction({ label, onClick, primary = false }: { label: string; onCli
 
 export function TrackingModal({
   op,
+  initialArea = "gestion",
   initialTab = "inicio",
   onPersist,
   onClose,
 }: {
   op: REOperation;
+  initialArea?: TrackingArea;
   initialTab?: TrackingTab;
   onPersist: (patch: Partial<REOperation>) => void;
   onClose: () => void;
 }) {
+  const [area, setArea] = useState<TrackingArea>(initialArea);
   const [tab, setTab] = useState<TrackingTab>(initialTab);
   const [quick, setQuick] = useState<QuickKind | null>(null);
   // Cada "+ Gasto real" remonta Finanzas reales con el formulario de alta abierto.
@@ -104,7 +112,6 @@ export function TrackingModal({
   // Raíz del workspace: los diálogos de las pestañas se portalizan aquí. El cuerpo animado
   // (`reveal-fast`) crea un contexto de apilado que dejaría el diálogo bajo la cabecera.
   const [overlayRoot, setOverlayRoot] = useState<HTMLDivElement | null>(null);
-  const area = areaOf(tab);
   const areaDef = AREAS[area];
 
   const results = useMemo(() => calcResults(op), [op]);
@@ -143,8 +150,23 @@ export function TrackingModal({
     [op.milestones, onPersist],
   );
 
-  // Navegación desde el Inicio rápido a la pestaña avanzada correspondiente.
-  const navigate = useCallback((target: TrackingTab) => setTab(target), []);
+  // Navegación a una pestaña. Se queda en el área actual si la contiene; si no (p. ej.
+  // "Inversores" desde Gestión del proyecto), cambia al área que la tiene.
+  const navigate = useCallback(
+    (target: TrackingTab) => {
+      if (!AREAS[area].tabs.some((t) => t.key === target)) {
+        setArea(AREAS.gestion.tabs.some((t) => t.key === target) ? "gestion" : "inversores");
+      }
+      setTab(target);
+    },
+    [area],
+  );
+
+  const switchArea = (next: TrackingArea) => {
+    if (next === area) return;
+    setArea(next);
+    setTab(AREAS[next].tabs[0].key);
+  };
 
   return (
     <div ref={setOverlayRoot} className="fixed inset-0 z-[60] flex flex-col bg-white" role="dialog" aria-modal="true" aria-labelledby="tracking-modal-title">
@@ -185,7 +207,7 @@ export function TrackingModal({
                     key={key}
                     type="button"
                     aria-pressed={active}
-                    onClick={() => !active && setTab(def.tabs[0].key)}
+                    onClick={() => switchArea(key)}
                     className={`min-w-0 rounded-xl border-2 px-3 py-2 text-left transition-colors ${active ? "" : "border-line bg-white hover:bg-[var(--surface-alt)]"}`}
                     style={active ? { borderColor: def.color, background: def.soft } : undefined}
                   >
@@ -195,7 +217,7 @@ export function TrackingModal({
                 );
               })}
             </div>
-            {/* Acciones rápidas del área de gestión */}
+            {/* Acciones rápidas */}
             {area === "gestion" ? (
               <div className="flex flex-wrap items-center gap-2">
                 <QuickAction
@@ -212,17 +234,26 @@ export function TrackingModal({
                 <span className="mx-0.5 h-5 w-px bg-[var(--line)]" aria-hidden />
                 <QuickAction label="Media" onClick={() => setTab("resumen")} />
               </div>
-            ) : null}
+            ) : (
+              // Acciones del workspace anterior, sin cambios.
+              <div className="flex flex-wrap items-center gap-2">
+                <QuickAction label="+ Gasto" onClick={() => setQuick("gasto")} primary />
+                <QuickAction label="+ Venta" onClick={() => setQuick("venta")} primary />
+                <QuickAction label="+ Hito" onClick={() => setQuick("hito")} primary />
+                <span className="mx-0.5 h-5 w-px bg-[var(--line)]" aria-hidden />
+                <QuickAction label="Media" onClick={() => navigate("resumen")} />
+                <QuickAction label="Vista inversor" onClick={() => navigate("inversores")} />
+                <QuickAction label="Informe" onClick={() => navigate("informe")} />
+              </div>
+            )}
           </div>
 
-          {/* Barra-resumen persistente (datos internos del promotor) */}
-          {area === "gestion" ? (
-            <div className="border-b border-line">
-              <SummaryBar op={op} results={results} />
-            </div>
-          ) : null}
+          {/* Barra-resumen persistente */}
+          <div className="border-b border-line">
+            <SummaryBar op={op} results={results} />
+          </div>
 
-          {/* Pestañas del área activa */}
+          {/* Tabs del área activa */}
           <div className="flex overflow-x-auto gap-1.5 px-4 sm:px-6 py-2.5 bg-[var(--surface-alt)]">
             {areaDef.tabs.map((t) => {
               const active = t.key === tab;
@@ -232,9 +263,9 @@ export function TrackingModal({
                   type="button"
                   onClick={() => setTab(t.key)}
                   className={`px-3.5 py-1.5 text-sm font-semibold rounded-full whitespace-nowrap border transition-colors flex-shrink-0 ${
-                    active ? "border-transparent text-white shadow-sm" : "border-line bg-white text-ink-muted hover:text-ink hover:border-[var(--line-strong)]"
+                    active ? "border-transparent text-white shadow-sm" : "border-line bg-white text-ink-muted hover:text-brand hover:border-brand hover:bg-[var(--brand-soft)]"
                   }`}
-                  style={active ? { background: areaDef.color } : undefined}
+                  style={active ? { background: "var(--brand)" } : undefined}
                 >
                   {t.label}
                 </button>
@@ -244,7 +275,7 @@ export function TrackingModal({
         </div>
 
         {/* Body */}
-        <div key={tab} className="reveal-fast flex-1 overflow-y-auto px-4 sm:px-6 py-5 bg-[var(--surface-alt)]">
+        <div key={`${area}-${tab}`} className="reveal-fast flex-1 overflow-y-auto px-4 sm:px-6 py-5 bg-[var(--surface-alt)]">
           {tab === "inicio" && (
             <InicioPanel op={op} onQuick={(k) => setQuick(k)} onNavigate={(target) => navigate(target)} />
           )}
@@ -272,7 +303,7 @@ export function TrackingModal({
               onOpenCrm={() => window.open("/inversores", "_blank", "noopener")}
             />
           )}
-          {tab === "informe" && <InformePanel op={op} generatedAt={generatedAt} onPreviewInvestor={() => setTab("inversores")} />}
+          {tab === "informe" && <InformePanel op={op} generatedAt={generatedAt} onPreviewInvestor={() => navigate("inversores")} />}
         </div>
       </div>
 

@@ -3,8 +3,9 @@
 // Pestaña FINANZAS REALES (Gestión del proyecto · uso interno del promotor).
 // Una sola categoría con tres bloques: carpeta de facturas en Drive, gastos reales y
 // financiación real. Escribe `realExpenses`, `realLoans` e `invoicesDriveFolder` en la
-// operación (JSON sync). No lee ni toca la previsión (`costs`, `financing`) ni la hoja
-// de presupuesto (`expenses`).
+// operación (JSON sync). No toca la previsión (`costs`, `financing`). Cada gasto real
+// puede imputarse a una partida de Económico (`budgetLineId`): esa es la ÚNICA fuente de
+// la columna Real de Económico.
 
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
@@ -17,6 +18,7 @@ import {
   makeRealExpense,
   makeRealLoan,
   type REDriveFolder,
+  type REExpense,
   type RERealExpense,
   type RERealLoan,
 } from "@/src/lib/realEstateTracking";
@@ -52,6 +54,7 @@ export function FinanzasRealesPanel({
   onChange: (patch: Partial<RealFinancePatch>) => void;
 }) {
   const expenses = useMemo(() => (Array.isArray(op.realExpenses) ? op.realExpenses : []), [op.realExpenses]);
+  const budgetLines = useMemo(() => (Array.isArray(op.expenses) ? op.expenses : []), [op.expenses]);
   const loans = useMemo(() => (Array.isArray(op.realLoans) ? op.realLoans : []), [op.realLoans]);
   const spent = useMemo(() => realExpenseTotals(op), [op]);
   const loanTotals = useMemo(() => realLoanTotals(op), [op]);
@@ -149,7 +152,7 @@ export function FinanzasRealesPanel({
         ) : (
           <ul className="re-card divide-y divide-[var(--line)] overflow-hidden">
             {sortedExpenses.map((e) => (
-              <ExpenseRow key={e.id} e={e} onEdit={() => setExpenseDialog({ item: e, isNew: false })} onRemove={() => removeExpense(e)} />
+              <ExpenseRow key={e.id} e={e} budgetLines={budgetLines} onEdit={() => setExpenseDialog({ item: e, isNew: false })} onRemove={() => removeExpense(e)} />
             ))}
           </ul>
         )}
@@ -190,6 +193,7 @@ export function FinanzasRealesPanel({
               initial={expenseDialog.item}
               isNew={expenseDialog.isNew}
               folderUrl={folderUrl}
+              budgetLines={budgetLines}
               onSave={saveExpense}
               onClose={() => setExpenseDialog(null)}
             />
@@ -257,7 +261,8 @@ function RowActions({ onEdit, onRemove, label }: { onEdit: () => void; onRemove:
   );
 }
 
-function ExpenseRow({ e, onEdit, onRemove }: { e: RERealExpense; onEdit: () => void; onRemove: () => void }) {
+function ExpenseRow({ e, budgetLines, onEdit, onRemove }: { e: RERealExpense; budgetLines: REExpense[]; onEdit: () => void; onRemove: () => void }) {
+  const line = e.budgetLineId ? budgetLines.find((l) => l.id === e.budgetLineId) : undefined;
   return (
     <li className="flex items-center gap-3 px-4 py-2.5 bg-white">
       <span className="w-[4.75rem] shrink-0 text-xs tabular-nums text-ink-subtle">{fmtDate(e.date)}</span>
@@ -266,6 +271,9 @@ function ExpenseRow({ e, onEdit, onRemove }: { e: RERealExpense; onEdit: () => v
           {e.concept}
           {e.category ? <span className="ml-2 text-[11px] font-normal text-ink-subtle">{RE_EXPENSE_CATEGORY_LABEL[e.category]}</span> : null}
         </p>
+        {line ? (
+          <p className="text-[11px] text-ink-subtle truncate">Partida: {line.concept?.trim() || RE_EXPENSE_CATEGORY_LABEL[line.category]}</p>
+        ) : null}
         <div className="min-w-0 mt-0.5">
           <DocumentLink e={e} />
         </div>

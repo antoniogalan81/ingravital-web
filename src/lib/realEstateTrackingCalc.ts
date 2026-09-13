@@ -14,8 +14,10 @@ import {
   type REExpense,
   type REExpenseCategory,
   type RESale,
+  type RERealExpense,
   type RESaleStatus,
 } from "./realEstateTracking";
+import { budgetLineReal, effectiveRealExpenses } from "./realFinances";
 
 const n0 = (v: number | undefined | null): number =>
   Number.isFinite(v as number) ? (v as number) : 0;
@@ -54,20 +56,31 @@ export type ExpenseTotals = {
   paidPct: number | null; // paid / base (real||estimated); null si no hay base
 };
 
-/** Base de referencia de un gasto para calcular pendiente: real si existe, si no estimado. */
-function expenseBase(e: REExpense): number {
-  if (isNum(e.real)) return n0(e.real);
+/** Base de una partida para calcular pendiente: su Real (gastos vinculados) si existe; si no, el estimado. */
+function expenseBase(e: REExpense, realExpenses: RERealExpense[]): number {
+  const real = budgetLineReal(realExpenses, e.id);
+  if (isNum(real)) return real;
   return n0(e.estimated);
 }
 
+/** Categoría con la que cuenta un gasto real: la suya, la de su partida o "Otros". */
+function realExpenseCategory(r: RERealExpense, lines: REExpense[]): REExpenseCategory {
+  if (r.category) return r.category;
+  const line = r.budgetLineId ? lines.find((l) => l.id === r.budgetLineId) : undefined;
+  return line?.category ?? "OTROS";
+}
+
+// El Real sale SIEMPRE de Finanzas reales (`effectiveRealExpenses`): una sola fuente de
+// verdad. Estimado, pagado y estado siguen siendo datos de las partidas de Económico.
 export function expensesByCategory(op: REOperation): ExpenseAggregate[] {
   const expenses = Array.isArray(op?.expenses) ? op.expenses : [];
+  const realExpenses = effectiveRealExpenses(op);
   return RE_EXPENSE_CATEGORIES.map(({ key, label }) => {
     const rows = expenses.filter((e) => e.category === key);
     const estimated = rows.reduce((s, e) => s + n0(e.estimated), 0);
-    const real = rows.reduce((s, e) => s + n0(e.real), 0);
+    const real = realExpenses.filter((r) => realExpenseCategory(r, expenses) === key).reduce((s, r) => s + n0(r.amount), 0);
     const paid = rows.reduce((s, e) => s + n0(e.paid), 0);
-    const base = rows.reduce((s, e) => s + expenseBase(e), 0);
+    const base = rows.reduce((s, e) => s + expenseBase(e, realExpenses), 0);
     const pending = Math.max(0, base - paid);
     return {
       category: key,
@@ -79,18 +92,19 @@ export function expensesByCategory(op: REOperation): ExpenseAggregate[] {
       diff: real - estimated,
       count: rows.length,
     };
-  }).filter((a) => a.count > 0);
+  }).filter((a) => a.count > 0 || a.real !== 0);
 }
 
 export function expenseTotals(op: REOperation): ExpenseTotals {
   const expenses = Array.isArray(op?.expenses) ? op.expenses : [];
+  const realExpenses = effectiveRealExpenses(op);
   const estimated = expenses.reduce((s, e) => s + n0(e.estimated), 0);
-  const real = expenses.reduce((s, e) => s + n0(e.real), 0);
+  const real = realExpenses.reduce((s, r) => s + n0(r.amount), 0);
   const paid = expenses.reduce((s, e) => s + n0(e.paid), 0);
-  const base = expenses.reduce((s, e) => s + expenseBase(e), 0);
+  const base = expenses.reduce((s, e) => s + expenseBase(e, realExpenses), 0);
   const pending = Math.max(0, base - paid);
   return {
-    hasData: expenses.length > 0,
+    hasData: expenses.length > 0 || realExpenses.length > 0,
     count: expenses.length,
     estimated,
     real,

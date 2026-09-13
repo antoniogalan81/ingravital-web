@@ -2,6 +2,8 @@
 
 // Panel GASTOS estilo hoja de cálculo. Tabla editable + resumen por categoría con
 // barras estimado vs real. Persiste el array `expenses` en la operación (JSON sync).
+// La columna Real NO se edita aquí: es la suma de los gastos de Finanzas reales
+// vinculados a cada partida (única fuente de verdad del gasto real).
 
 import { useMemo, useRef, useState } from "react";
 import type { REOperation } from "@/src/lib/realEstate";
@@ -18,6 +20,7 @@ import {
 } from "@/src/lib/realEstateTracking";
 import { fmtEUR } from "@/src/lib/realEstateCalc";
 import { expensesByCategory, expenseTotals } from "@/src/lib/realEstateTrackingCalc";
+import { budgetLineReal, effectiveRealExpenses } from "@/src/lib/realFinances";
 import {
   DataTable,
   TextCellInput,
@@ -47,6 +50,8 @@ export function GastosPanel({
   const expenses = useMemo(() => (Array.isArray(op.expenses) ? op.expenses : []), [op.expenses]);
   const totals = useMemo(() => expenseTotals(op), [op]);
   const byCat = useMemo(() => expensesByCategory(op), [op]);
+  const realExpenses = useMemo(() => effectiveRealExpenses(op), [op]);
+  const lineReal = (id: string) => budgetLineReal(realExpenses, id);
 
   const [catFilter, setCatFilter] = useState<REExpenseCategory | "all">("all");
   const [statusFilter, setStatusFilter] = useState<REExpenseStatus | "all">("all");
@@ -77,8 +82,9 @@ export function GastosPanel({
   };
 
   const rowAccent = (r: REExpense): string | undefined => {
-    if (r.estimated == null && r.real == null) return undefined;
-    const diff = (r.real ?? 0) - (r.estimated ?? 0);
+    const real = lineReal(r.id);
+    if (r.estimated == null && real == null) return undefined;
+    const diff = (real ?? 0) - (r.estimated ?? 0);
     return diff > 0 ? "var(--negative)" : diff < 0 ? "var(--positive)" : undefined;
   };
 
@@ -123,7 +129,17 @@ export function GastosPanel({
       header: "Real",
       width: "7rem",
       align: "right",
-      cell: (r) => <NumberCellInput value={r.real} onChange={(v) => update(r.id, { real: v })} />,
+      cell: (r) => {
+        const real = lineReal(r.id);
+        return (
+          <span
+            className="block px-2 text-right tabular-nums text-ink"
+            title="Suma de los gastos reales vinculados a esta partida en Finanzas reales"
+          >
+            {real == null ? <span className="text-ink-subtle">—</span> : fmtEUR(real)}
+          </span>
+        );
+      },
     },
     {
       key: "diff",
@@ -132,8 +148,9 @@ export function GastosPanel({
       align: "right",
       cell: (r) => {
         const est = Number.isFinite(r.estimated as number) ? (r.estimated as number) : 0;
-        const real = Number.isFinite(r.real as number) ? (r.real as number) : 0;
-        if (r.estimated == null && r.real == null)
+        const lr = lineReal(r.id);
+        const real = lr ?? 0;
+        if (r.estimated == null && lr == null)
           return <span className="text-ink-subtle">—</span>;
         const diff = real - est;
         return (
@@ -199,7 +216,10 @@ export function GastosPanel({
       {/* Barra de acción: entrada rápida guiada (formulario con todos los campos) */}
       {onQuickAdd ? (
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-ink-subtle">Introduce gastos con formulario guiado o directamente en la tabla.</p>
+          <p className="text-xs text-ink-subtle">
+            Introduce gastos con formulario guiado o directamente en la tabla. La columna Real suma los gastos registrados en
+            Finanzas reales vinculados a cada partida.
+          </p>
           <button
             type="button"
             onClick={onQuickAdd}

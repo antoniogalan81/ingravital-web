@@ -10,7 +10,7 @@
 
 // Solo imports de tipos: el módulo se prueba con `node --test` sin bundler.
 import type { REOperation, REResults } from "./realEstate";
-import type { RELoanPeriodicity, RERealExpense, RERealLoan } from "./realEstateTracking";
+import type { REExpense, RELoanPeriodicity, RERealExpense, RERealLoan } from "./realEstateTracking";
 
 export const RE_LOAN_PERIODS_PER_YEAR: Record<RELoanPeriodicity, number> = {
   MENSUAL: 12,
@@ -95,6 +95,82 @@ export function parseAmountEs(input: string): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+// ── Fuente única del gasto real ───────────────────────────────────────────────
+//
+// El gasto real vive SOLO en `realExpenses`. La columna "Real" de Económico ya no se
+// escribe: es la suma de los gastos reales vinculados a cada partida (`budgetLineId`).
+//
+// Datos antiguos: una partida puede traer todavía `real` (escrito antes de la
+// unificación, o por una versión vieja de la APP). Ese importe se trata como un gasto
+// real vinculado con id DETERMINISTA (`rexp_legacy_<partida>`): WEB y APP generan el
+// mismo id, así que la fusión por id del sync no lo duplica. Si la partida vuelve a
+// traer `real`, ese valor más reciente sustituye al del gasto con ese id.
+
+export const LEGACY_REAL_EXPENSE_PREFIX = "rexp_legacy_";
+
+const hasLegacyReal = (e: REExpense): boolean => e != null && Object.prototype.hasOwnProperty.call(e, "real");
+
+function legacyRealExpense(line: REExpense, previous?: RERealExpense): RERealExpense {
+  const date = line.date || (line.createdAt ?? "").slice(0, 10);
+  return {
+    ...(previous ?? {}),
+    id: `${LEGACY_REAL_EXPENSE_PREFIX}${line.id}`,
+    concept: previous?.concept || line.concept?.trim() || "Partida sin concepto",
+    amount: line.real as number,
+    date: previous?.date || date,
+    category: previous?.category ?? line.category,
+    budgetLineId: line.id,
+    createdAt: previous?.createdAt ?? line.createdAt ?? new Date().toISOString(),
+    updatedAt: line.updatedAt ?? previous?.updatedAt ?? new Date().toISOString(),
+  };
+}
+
+/** Gastos reales de la operación, incluidos los importes `real` legados aún sin convertir. */
+export function effectiveRealExpenses(op: Pick<REOperation, "realExpenses" | "expenses">): RERealExpense[] {
+  const rows: RERealExpense[] = Array.isArray(op?.realExpenses) ? op.realExpenses : [];
+  const lines: REExpense[] = Array.isArray(op?.expenses) ? op.expenses : [];
+  const legacy = lines.filter((l) => hasLegacyReal(l) && isNum(l.real) && l.real !== 0);
+  if (!legacy.length) return rows;
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const out = [...rows];
+  for (const line of legacy) {
+    const id = `${LEGACY_REAL_EXPENSE_PREFIX}${line.id}`;
+    const next = legacyRealExpense(line, byId.get(id));
+    const idx = out.findIndex((r) => r.id === id);
+    if (idx >= 0) out[idx] = next;
+    else out.push(next);
+  }
+  return out;
+}
+
+/**
+ * Patch que convierte los `real` legados en gastos reales y los retira de las partidas.
+ * `null` si no hay nada que convertir (la operación ya está unificada).
+ */
+export function adoptLegacyRealAmounts(
+  op: Pick<REOperation, "realExpenses" | "expenses">,
+): Pick<REOperation, "realExpenses" | "expenses"> | null {
+  const lines: REExpense[] = Array.isArray(op?.expenses) ? op.expenses : [];
+  if (!lines.some(hasLegacyReal)) return null;
+  return {
+    realExpenses: effectiveRealExpenses(op),
+    expenses: lines.map((l) => {
+      if (!hasLegacyReal(l)) return l;
+      const { real: _legacy, ...rest } = l;
+      return rest;
+    }),
+  };
+}
+
+/** "Real" de una partida de Económico: suma de sus gastos reales; undefined si no tiene. */
+export function budgetLineReal(realExpenses: RERealExpense[], lineId: string): number | undefined {
+  let total: number | undefined;
+  for (const r of realExpenses) {
+    if (r.budgetLineId === lineId && isNum(r.amount)) total = (total ?? 0) + r.amount;
+  }
+  return total;
+}
+
 // ── Agregados ─────────────────────────────────────────────────────────────────
 
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -106,8 +182,8 @@ export type RealExpenseTotals = {
   lastDate: string | null;
 };
 
-export function realExpenseTotals(op: Pick<REOperation, "realExpenses">): RealExpenseTotals {
-  const rows: RERealExpense[] = Array.isArray(op?.realExpenses) ? op.realExpenses : [];
+export function realExpenseTotals(op: Pick<REOperation, "realExpenses" | "expenses">): RealExpenseTotals {
+  const rows = effectiveRealExpenses(op);
   let total = 0;
   let withoutDocument = 0;
   let lastDate: string | null = null;

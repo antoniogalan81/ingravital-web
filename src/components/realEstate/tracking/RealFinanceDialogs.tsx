@@ -7,9 +7,11 @@
 import { useEffect, useRef, useState } from "react";
 import {
   RE_EXPENSE_CATEGORIES,
+  RE_EXPENSE_CATEGORY_LABEL,
   RE_LOAN_PERIODICITY_LABEL,
   RE_LOAN_RATE_TYPE_LABEL,
   RE_LOAN_STATUS_LABEL,
+  type REExpense,
   type REExpenseCategory,
   type RELoanPeriodicity,
   type RELoanRateType,
@@ -119,6 +121,7 @@ type ExpenseForm = {
   amount: string;
   date: string;
   category: REExpenseCategory | "";
+  budgetLineId: string;
   documentName: string;
   documentUrl: string;
   notes: string;
@@ -129,6 +132,7 @@ const expenseForm = (e: RERealExpense): ExpenseForm => ({
   amount: e.amount ? numText(e.amount) : "",
   date: e.date,
   category: e.category ?? "",
+  budgetLineId: e.budgetLineId ?? "",
   documentName: e.documentName ?? "",
   documentUrl: e.documentUrl ?? "",
   notes: e.notes ?? "",
@@ -138,12 +142,15 @@ export function RealExpenseDialog({
   initial,
   isNew,
   folderUrl,
+  budgetLines = [],
   onSave,
   onClose,
 }: {
   initial: RERealExpense;
   isNew: boolean;
   folderUrl?: string;
+  /** Partidas de Económico a las que se puede imputar el gasto (alimentan su columna Real). */
+  budgetLines?: REExpense[];
   onSave: (e: RERealExpense, addAnother: boolean) => void;
   onClose: () => void;
 }) {
@@ -183,6 +190,7 @@ export function RealExpenseDialog({
       amount: amount as number,
       date: f.date,
       ...(f.category ? { category: f.category } : {}),
+      ...(f.budgetLineId ? { budgetLineId: f.budgetLineId } : {}),
       ...(f.documentName.trim() ? { documentName: f.documentName.trim() } : {}),
       ...(url ? { documentUrl: url } : {}),
       ...(f.notes.trim() ? { notes: f.notes.trim() } : {}),
@@ -223,6 +231,17 @@ export function RealExpenseDialog({
           ))}
         </select>
       </Field>
+      {budgetLines.length > 0 || f.budgetLineId ? (
+        <Field label="Partida de Económico" hint="Su columna Real suma los gastos reales vinculados a cada partida.">
+          <select className={`${FIELD_CLS} cursor-pointer`} value={f.budgetLineId} onChange={(e) => set({ budgetLineId: e.target.value })}>
+            <option value="">Sin partida</option>
+            {budgetLines.map((l) => (
+              <option key={l.id} value={l.id}>{l.concept?.trim() || RE_EXPENSE_CATEGORY_LABEL[l.category]}</option>
+            ))}
+            {f.budgetLineId && !budgetLines.some((l) => l.id === f.budgetLineId) ? <option value={f.budgetLineId}>Partida eliminada</option> : null}
+          </select>
+        </Field>
+      ) : null}
 
       <fieldset className="rounded-xl border border-line p-3 space-y-3">
         <legend className="px-1 text-xs font-bold text-ink">Factura o documento <span className="font-normal text-ink-subtle">(opcional)</span></legend>

@@ -7,8 +7,8 @@ import type { REOperation, REUnit, UnitType } from "@/src/lib/realEstate";
 import { DEFAULT_TASAS } from "@/src/lib/realEstate";
 import { calcResults, calcNumTrasteros, calcNumPlazas, calcTINFromCuota, fmtEUR, fmtNum, fmtPct, convertRealEstateOperationType } from "@/src/lib/realEstateCalc";
 import { ScenariosPanel } from "./ScenariosPanel";
-import { TrackingModal, type TrackingTab } from "./tracking/TrackingModal";
-import { realVsPlanned, type RealVsPlanned } from "@/src/lib/realFinances";
+import { TrackingModal, type TrackingArea, type TrackingTab } from "./tracking/TrackingModal";
+import { adoptLegacyRealAmounts, realVsPlanned, type RealVsPlanned } from "@/src/lib/realFinances";
 import { InvestmentFlowMap } from "./charts/InvestmentFlowMap";
 
 type RealEstateCategory = "vivienda" | "local" | "suelo" | "adaptacion";
@@ -612,6 +612,16 @@ function UnitCard({
   );
 }
 
+/**
+ * Copia editable de la operación. Si trae importes "real" antiguos en Económico, ya
+ * vienen convertidos en gastos de Finanzas reales (única fuente del gasto real).
+ */
+function toDraft(op: REOperation): REOperation {
+  const copy: REOperation = JSON.parse(JSON.stringify(op));
+  const patch = adoptLegacyRealAmounts(copy);
+  return patch ? { ...copy, ...patch } : copy;
+}
+
 // ==================== SECTION NAV CONFIG ====================
 
 const SECTION_NAV = [
@@ -638,7 +648,7 @@ interface RealEstateModalProps {
 }
 
 export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: RealEstateModalProps) {
-  const [draft, setDraft] = useState<REOperation>(() => JSON.parse(JSON.stringify(op)));
+  const [draft, setDraft] = useState<REOperation>(() => toDraft(op));
   // Ref con el draft SIEMPRE actual. Un `commit` disparado tras un `await` (subida de
   // archivo, etc.) debe fusionar su patch sobre el estado MÁS RECIENTE, no sobre el
   // snapshot capturado al iniciar la operación asíncrona; si no, se descartaban en
@@ -664,7 +674,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
   const [drawerOpen, setDrawerOpen] = useState(true);
   // Workspace de la operación abierto en una pestaña concreta (null = cerrado). Tiene dos
   // áreas: Gestión del proyecto (uso interno) e Inversores. Ver tracking/TrackingModal.
-  const [trackingTab, setTrackingTab] = useState<TrackingTab | null>(null);
+  const [tracking, setTracking] = useState<{ area: TrackingArea; tab: TrackingTab } | null>(null);
   const handleClose = useCallback(() => {
     if (dirtyRef.current) {
       dirtyRef.current = false;
@@ -705,7 +715,9 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
 
   // Sync draft if op changes externally
   useEffect(() => {
-    setDraft(JSON.parse(JSON.stringify(op)));
+    setDraft(toDraft(op));
+    // Persiste la conversión de importes "real" antiguos (no marca la edición como sucia).
+    if (adoptLegacyRealAmounts(op)) onSave({ ...toDraft(op), updatedAt: new Date().toISOString() });
   }, [op.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const res = useMemo(() => calcResults(draft), [draft]);
@@ -917,7 +929,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
         <div className="px-4 py-2.5 border-b border-slate-100 bg-white flex-shrink-0 grid grid-cols-1 sm:grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => setTrackingTab("inicio")}
+            onClick={() => setTracking({ area: "gestion", tab: "inicio" })}
             className="group flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-white transition-colors"
             style={{ background: "var(--brand)" }}
           >
@@ -932,7 +944,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
           </button>
           <button
             type="button"
-            onClick={() => setTrackingTab("inversores")}
+            onClick={() => setTracking({ area: "inversores", tab: "inicio" })}
             className="group flex w-full items-center gap-3 rounded-xl border-2 px-4 py-2.5 text-left transition-colors hover:brightness-[0.98]"
             style={{ borderColor: "#86652a", background: "var(--accent-soft)", color: "#86652a" }}
           >
@@ -1002,7 +1014,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
             </div>
 
             {/* Situación REAL (Finanzas reales). Separada de la previsión: no la corrige ni la sustituye. */}
-            <RealSituation real={real} plannedInvestment={res.totalInvestment} onOpen={() => setTrackingTab("finanzas")} />
+            <RealSituation real={real} plannedInvestment={res.totalInvestment} onOpen={() => setTracking({ area: "gestion", tab: "finanzas" })} />
 
             {/* Mapa visual de la inversión — complementa el resumen, no lo sustituye */}
             <div className="mt-3">
@@ -1480,8 +1492,8 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
 
         </div>
 
-        {trackingTab && (
-          <TrackingModal op={draft} initialTab={trackingTab} onPersist={commit} onClose={() => setTrackingTab(null)} />
+        {tracking && (
+          <TrackingModal op={draft} initialArea={tracking.area} initialTab={tracking.tab} onPersist={commit} onClose={() => setTracking(null)} />
         )}
         </Vaul.Content>
       </Vaul.Portal>

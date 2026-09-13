@@ -187,11 +187,11 @@ function GastoFields({ draft, patch, firstRef, error }: FieldsProps<REExpense>) 
         />
       </div>
       <Text label="Proveedor" value={draft.provider} onChange={(v) => patch({ provider: v || undefined })} placeholder="—" />
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         <Num label="Estimado (€)" value={draft.estimated} onChange={(v) => patch({ estimated: v })} />
-        <Num label="Real (€)" value={draft.real} onChange={(v) => patch({ real: v })} />
         <Num label="Pagado (€)" value={draft.paid} onChange={(v) => patch({ paid: v })} />
       </div>
+      <p className="text-[11px] text-ink-subtle">El importe real se registra en Finanzas reales, vinculado a esta partida.</p>
       <div className="grid grid-cols-2 gap-3">
         <DateField label="Fecha" value={draft.date} onChange={(v) => patch({ date: v })} />
         <Text label="Factura (enlace/nombre)" value={draft.invoiceName ?? draft.invoiceUri} onChange={(v) => patch({ invoiceName: v || undefined, invoiceUri: /^https?:\/\//i.test(v) ? v : draft.invoiceUri })} placeholder="—" />

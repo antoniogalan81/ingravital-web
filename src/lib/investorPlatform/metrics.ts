@@ -13,6 +13,7 @@
 import type { REOperation, REResults } from "../realEstate";
 import { RE_EXPENSE_CATEGORY_LABEL, RE_SALE_STATUS_LABEL } from "../realEstateTracking";
 import { expenseTotals, profitability, progressMetrics, salesStats } from "../realEstateTrackingCalc";
+import { budgetLineReal, effectiveRealExpenses } from "../realFinances";
 import { toMediaRef, type MediaRef, type OpportunityMetrics } from "./types";
 
 /**
@@ -36,6 +37,7 @@ export function buildOpportunityMetrics(
     price: s.realPrice ?? s.estimatedPrice ?? undefined,
   }));
 
+  const realExpenses = effectiveRealExpenses(op);
   const gastos = (op.expenses ?? []).map((e) => {
     const invoice: MediaRef | null = toMediaRef({
       bucket: e.invoiceBucket,
@@ -45,7 +47,7 @@ export function buildOpportunityMetrics(
     return {
       concept: e.concept || RE_EXPENSE_CATEGORY_LABEL[e.category],
       category: RE_EXPENSE_CATEGORY_LABEL[e.category],
-      amount: e.real ?? e.estimated ?? undefined,
+      amount: budgetLineReal(realExpenses, e.id) ?? e.estimated ?? undefined,
       ...(invoice ? { invoice } : {}),
     };
   });

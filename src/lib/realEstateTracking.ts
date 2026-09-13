@@ -82,7 +82,13 @@ export type REExpense = {
   concept: string;
   provider?: string;
   estimated?: number; // importe estimado (presupuestado)
-  real?: number; // importe real (facturado)
+  /**
+   * @deprecated Importe real LEGADO. La única fuente de verdad del gasto real son los
+   * `RERealExpense` (Finanzas reales); el "Real" de una partida se deriva de los gastos
+   * reales vinculados (`budgetLineId`). Se conserva solo para leer datos antiguos: al
+   * abrir la operación se convierte en un gasto real (ver `adoptLegacyRealAmounts`).
+   */
+  real?: number;
   paid?: number; // cantidad ya pagada (para calcular pendiente)
   status: REExpenseStatus;
   date?: string; // ISO (yyyy-mm-dd)
@@ -125,6 +131,7 @@ export type RERealExpense = {
   notes?: string;
   documentName?: string; // nombre visible del documento (ej. "Factura fontanería junio.pdf")
   documentUrl?: string; // enlace real al archivo en Google Drive
+  budgetLineId?: string; // partida de Económico (`REExpense.id`) a la que imputa este gasto
   createdAt: string;
   updatedAt: string;
 };
