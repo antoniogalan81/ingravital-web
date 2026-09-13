@@ -95,6 +95,90 @@ export function parseAmountEs(input: string): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+// ── Borrado con marca (tombstone) y fusión de sincronización ───────────────────
+//
+// Un gasto o préstamo real borrado NO desaparece de la lista sincronizable: se queda con
+// `deletedAt` (y `updatedAt` = ese instante). Así su borrado viaja a los demás
+// dispositivos y gana a las copias antiguas que aún lo tengan activo. La UI, los totales,
+// Económico, Resumen, mapa y métricas del inversor solo ven los ACTIVOS.
+//
+// Regla de conflicto (por id): gana la versión con `updatedAt` más reciente; en empate,
+// gana el borrado. Una edición legítima POSTERIOR a un borrado lo revive; una copia
+// anterior, nunca. Las marcas se conservan sin caducidad: el volumen es de decenas de
+// elementos por operación.
+//
+// Clientes con código anterior tratan `deletedAt` como un campo desconocido: conservan la
+// marca al fusionar y reenviar (no la pierden), aunque mostrarían el elemento hasta
+// recargar con la versión nueva.
+
+export type RealFinanceItem = { id: string; updatedAt?: string; deletedAt?: string };
+
+export const isActiveRealFinanceItem = (x: { deletedAt?: string } | null | undefined): boolean => !!x && !x.deletedAt;
+
+function versionOf(x: RealFinanceItem): number {
+  const t = Date.parse(x.updatedAt ?? x.deletedAt ?? "");
+  return Number.isFinite(t) ? t : Number.NEGATIVE_INFINITY;
+}
+
+/** Marca un elemento como borrado. La marca siempre es posterior a su última versión. */
+export function markRealFinanceDeleted<T extends RealFinanceItem>(item: T, nowISO: string = new Date().toISOString()): T {
+  const now = Date.parse(nowISO);
+  const stamp = new Date(Math.max(Number.isFinite(now) ? now : Date.now(), versionOf(item) + 1)).toISOString();
+  return { ...item, deletedAt: stamp, updatedAt: stamp };
+}
+
+/**
+ * Fusión por id con tombstones. Orden estable: primero `a`, después los ids nuevos de `b`.
+ * Elementos sin id (datos ajenos) se conservan tal cual desde `a`.
+ */
+export function mergeRealFinanceItems<T extends RealFinanceItem>(a: T[] | undefined, b: T[] | undefined): T[] {
+  const winners = new Map<string, T>();
+  const order: string[] = [];
+  const noId: T[] = [];
+  for (const [side, list] of [["a", a], ["b", b]] as const) {
+    for (const x of Array.isArray(list) ? list : []) {
+      if (!x || typeof x.id !== "string" || !x.id) {
+        if (side === "a" && x) noId.push(x);
+        continue;
+      }
+      const current = winners.get(x.id);
+      if (!current) {
+        winners.set(x.id, x);
+        order.push(x.id);
+        continue;
+      }
+      const vx = versionOf(x);
+      const vc = versionOf(current);
+      if (vx > vc || (vx === vc && !!x.deletedAt && !current.deletedAt)) winners.set(x.id, x);
+    }
+  }
+  return [...order.map((id) => winners.get(id) as T), ...noId];
+}
+
+/**
+ * Fusiona `realExpenses` y `realLoans` de dos copias de la MISMA operación. Solo devuelve
+ * las claves que existen en alguna de las dos, para no añadir campos a operaciones que no
+ * los usan.
+ */
+export function mergeRealFinancesOf(
+  local: Pick<REOperation, "realExpenses" | "realLoans"> | null | undefined,
+  remote: Pick<REOperation, "realExpenses" | "realLoans"> | null | undefined,
+): Partial<Pick<REOperation, "realExpenses" | "realLoans">> {
+  const out: Partial<Pick<REOperation, "realExpenses" | "realLoans">> = {};
+  if (Array.isArray(local?.realExpenses) || Array.isArray(remote?.realExpenses)) {
+    out.realExpenses = mergeRealFinanceItems(local?.realExpenses, remote?.realExpenses);
+  }
+  if (Array.isArray(local?.realLoans) || Array.isArray(remote?.realLoans)) {
+    out.realLoans = mergeRealFinanceItems(local?.realLoans, remote?.realLoans);
+  }
+  return out;
+}
+
+/** Préstamos reales activos (sin los borrados). */
+export function activeRealLoans(op: Pick<REOperation, "realLoans">): RERealLoan[] {
+  return (Array.isArray(op?.realLoans) ? op.realLoans : []).filter(isActiveRealFinanceItem);
+}
+
 // ── Fuente única del gasto real ───────────────────────────────────────────────
 //
 // El gasto real vive SOLO en `realExpenses`. La columna "Real" de Económico ya no se
@@ -125,8 +209,8 @@ function legacyRealExpense(line: REExpense, previous?: RERealExpense): RERealExp
   };
 }
 
-/** Gastos reales de la operación, incluidos los importes `real` legados aún sin convertir. */
-export function effectiveRealExpenses(op: Pick<REOperation, "realExpenses" | "expenses">): RERealExpense[] {
+/** Todos los gastos reales (con marcas de borrado), incluidos los `real` legados sin convertir. */
+function realExpensesWithLegacy(op: Pick<REOperation, "realExpenses" | "expenses">): RERealExpense[] {
   const rows: RERealExpense[] = Array.isArray(op?.realExpenses) ? op.realExpenses : [];
   const lines: REExpense[] = Array.isArray(op?.expenses) ? op.expenses : [];
   const legacy = lines.filter((l) => hasLegacyReal(l) && isNum(l.real) && l.real !== 0);
@@ -135,12 +219,19 @@ export function effectiveRealExpenses(op: Pick<REOperation, "realExpenses" | "ex
   const out = [...rows];
   for (const line of legacy) {
     const id = `${LEGACY_REAL_EXPENSE_PREFIX}${line.id}`;
-    const next = legacyRealExpense(line, byId.get(id));
+    const previous = byId.get(id);
+    if (previous?.deletedAt) continue; // borrado: un `real` antiguo no lo revive
+    const next = legacyRealExpense(line, previous);
     const idx = out.findIndex((r) => r.id === id);
     if (idx >= 0) out[idx] = next;
     else out.push(next);
   }
   return out;
+}
+
+/** Gastos reales ACTIVOS de la operación, incluidos los importes `real` legados aún sin convertir. */
+export function effectiveRealExpenses(op: Pick<REOperation, "realExpenses" | "expenses">): RERealExpense[] {
+  return realExpensesWithLegacy(op).filter(isActiveRealFinanceItem);
 }
 
 /**
@@ -153,7 +244,7 @@ export function adoptLegacyRealAmounts(
   const lines: REExpense[] = Array.isArray(op?.expenses) ? op.expenses : [];
   if (!lines.some(hasLegacyReal)) return null;
   return {
-    realExpenses: effectiveRealExpenses(op),
+    realExpenses: realExpensesWithLegacy(op),
     expenses: lines.map((l) => {
       if (!hasLegacyReal(l)) return l;
       const { real: _legacy, ...rest } = l;
@@ -182,7 +273,7 @@ export function isRealFinancesEnabled(
   op: Pick<REOperation, "realFinancesEnabled" | "realExpenses" | "realLoans" | "invoicesDriveFolder" | "expenses">,
 ): boolean {
   if (typeof op?.realFinancesEnabled === "boolean") return op.realFinancesEnabled;
-  return effectiveRealExpenses(op).length > 0 || (Array.isArray(op?.realLoans) && op.realLoans.length > 0) || !!op?.invoicesDriveFolder;
+  return effectiveRealExpenses(op).length > 0 || activeRealLoans(op).length > 0 || !!op?.invoicesDriveFolder;
 }
 
 // ── Agregados ─────────────────────────────────────────────────────────────────
@@ -220,7 +311,7 @@ export type RealLoanTotals = {
 };
 
 export function realLoanTotals(op: Pick<REOperation, "realLoans">): RealLoanTotals {
-  const rows: RERealLoan[] = Array.isArray(op?.realLoans) ? op.realLoans : [];
+  const rows = activeRealLoans(op);
   const active = rows.filter((l) => l.status !== "AMORTIZADO");
   const financed = rows.reduce((s, l) => s + (isNum(l.principal) ? l.principal : 0), 0);
   const outstanding = active.every((l) => isNum(l.outstanding))

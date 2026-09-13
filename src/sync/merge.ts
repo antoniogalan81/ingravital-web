@@ -4,6 +4,7 @@
 // (`merge.test.ts`) y para dejar clara la política de resolución de conflictos.
 
 import type { SupabaseRow, SyncableEntity } from "./types";
+import { mergeRealFinancesOf } from "../lib/realFinances";
 
 /**
  * ¿El registro remoto es más nuevo que el local? (last-write-wins por timestamp).
@@ -123,10 +124,15 @@ export function mergeById<T extends Identified>(
 
 // Campos de REOperation que son colecciones anidadas con `id` propio y crecen por
 // altas independientes en distintos dispositivos (entrada rápida de gasto/venta/hito,
-// media, gastos y préstamos reales). Se fusionan por id. NO se incluyen `units`/`costs.tasas`/config: esos se
+// media). Se fusionan por id. NO se incluyen `units`/`costs.tasas`/config: esos se
 // editan como un todo coherente en el editor y fusionarlos podría resucitar unidades
 // borradas a propósito o mezclar configuraciones incompatibles → LWW de operación.
-const RE_COLLECTION_FIELDS = ["expenses", "sales", "milestones", "media", "realExpenses", "realLoans"] as const;
+const RE_COLLECTION_FIELDS = ["expenses", "sales", "milestones", "media"] as const;
+
+// Gastos y préstamos REALES usan borrado con marca (`deletedAt`) y su propia fusión
+// (`mergeRealFinancesOf`): el borrado más reciente gana a una copia antigua activa y la
+// marca se conserva para seguir propagándose. Ver src/lib/realFinances.ts.
+const RE_TOMBSTONED_FIELDS = ["realExpenses", "realLoans"] as const;
 
 /**
  * Fusiona dos versiones de una MISMA operación (mismo id) conservando lo de ambos lados:
@@ -157,6 +163,8 @@ export function mergeOperationEntity<T extends SyncableEntity>(
     }
   }
 
+  Object.assign(merged, mergeRealFinancesOf(l as never, r as never));
+
   const lShare = l.share as Record<string, unknown> | undefined;
   const rShare = r.share as Record<string, unknown> | undefined;
   if (lShare || rShare) {
@@ -184,7 +192,7 @@ export function operationSignature(op: SyncableEntity): string {
   const o = op as unknown as Record<string, unknown>;
   const parts: string[] = [`u:${(o.updatedAt as string) ?? ""}`];
   const collections: { key: string; arr: Identified[] | undefined }[] = [
-    ...RE_COLLECTION_FIELDS.map((f) => ({ key: f, arr: o[f] as Identified[] | undefined })),
+    ...[...RE_COLLECTION_FIELDS, ...RE_TOMBSTONED_FIELDS].map((f) => ({ key: f, arr: o[f] as Identified[] | undefined })),
     {
       key: "share.recipients",
       arr: (o.share as Record<string, unknown> | undefined)?.recipients as Identified[] | undefined,
@@ -193,12 +201,26 @@ export function operationSignature(op: SyncableEntity): string {
   for (const { key, arr } of collections) {
     const items = Array.isArray(arr) ? arr : [];
     const sig = items
-      .map((x) => `${x?.id ?? "?"}:${x?.updatedAt ?? ""}:${x?.deleted ? "d" : ""}`)
+      .map((x) => `${x?.id ?? "?"}:${x?.updatedAt ?? ""}:${x?.deleted || (x as { deletedAt?: string })?.deletedAt ? "d" : ""}`)
       .sort()
       .join(",");
     parts.push(`${key}=[${sig}]`);
   }
   return parts.join("|");
+}
+
+/**
+ * Contenido a subir de una operación cuando la fila ya existe en Supabase.
+ *
+ * El push sube la operación ENTERA. Sin esto, un dispositivo con una copia antigua que
+ * editara cualquier cosa borraba del servidor las marcas de borrado de gastos/préstamos
+ * reales (y resucitaba lo borrado). Aquí se conserva todo lo local (escalares y resto de
+ * colecciones, como hasta ahora) y solo `realExpenses`/`realLoans` se fusionan con lo
+ * remoto: un borrado remoto más nuevo gana y un alta remota se conserva.
+ */
+export function mergeOperationForPush<T extends SyncableEntity>(local: T, remoteData: Record<string, unknown> | null | undefined): T {
+  if (!remoteData) return local;
+  return { ...local, ...mergeRealFinancesOf(local as never, remoteData as never) } as T;
 }
 
 /**

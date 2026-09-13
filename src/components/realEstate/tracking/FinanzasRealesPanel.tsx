@@ -25,7 +25,15 @@ import {
   type RERealLoan,
 } from "@/src/lib/realEstateTracking";
 import { fmtEUR } from "@/src/lib/realEstateCalc";
-import { driveFileUrl, driveFolderUrl, realExpenseTotals, realLoanTotals } from "@/src/lib/realFinances";
+import {
+  activeRealLoans,
+  driveFileUrl,
+  driveFolderUrl,
+  isActiveRealFinanceItem,
+  markRealFinanceDeleted,
+  realExpenseTotals,
+  realLoanTotals,
+} from "@/src/lib/realFinances";
 import { RealExpenseDialog, RealLoanDialog } from "./RealFinanceDialogs";
 import { DriveFolderCard } from "./DriveFolderCard";
 
@@ -52,9 +60,12 @@ export function FinanzasRealesPanel({
   overlayRoot?: HTMLElement | null;
   onChange: (patch: Partial<RealFinancePatch>) => void;
 }) {
-  const expenses = useMemo(() => (Array.isArray(op.realExpenses) ? op.realExpenses : []), [op.realExpenses]);
+  // Listas completas (con borrados marcados) para escribir; activas para mostrar.
+  const allExpenses = useMemo(() => (Array.isArray(op.realExpenses) ? op.realExpenses : []), [op.realExpenses]);
+  const allLoans = useMemo(() => (Array.isArray(op.realLoans) ? op.realLoans : []), [op.realLoans]);
+  const expenses = useMemo(() => allExpenses.filter(isActiveRealFinanceItem), [allExpenses]);
   const budgetLines = useMemo(() => (Array.isArray(op.expenses) ? op.expenses : []), [op.expenses]);
-  const loans = useMemo(() => (Array.isArray(op.realLoans) ? op.realLoans : []), [op.realLoans]);
+  const loans = useMemo(() => activeRealLoans(op), [op]);
   const spent = useMemo(() => realExpenseTotals(op), [op]);
   const loanTotals = useMemo(() => realLoanTotals(op), [op]);
   const folderUrl = op.invoicesDriveFolder ? driveFolderUrl(op.invoicesDriveFolder.url) ?? undefined : undefined;
@@ -84,11 +95,12 @@ export function FinanzasRealesPanel({
 
   const removeExpense = (e: RERealExpense) => {
     if (!window.confirm(`¿Eliminar el gasto "${e.concept}"? No borra nada en Google Drive.`)) return;
-    onChange({ realExpenses: expenses.filter((x) => x.id !== e.id) });
+    // Borrado con marca: se sincroniza y gana a copias antiguas en otros dispositivos.
+    onChange({ realExpenses: allExpenses.map((x) => (x.id === e.id ? markRealFinanceDeleted(x) : x)) });
   };
 
   const saveLoan = (item: RERealLoan) => {
-    onChange({ realLoans: upsert(loans, item) });
+    onChange({ realLoans: upsert(allLoans, item) });
     setLoanDialog(null);
   };
 
@@ -96,7 +108,7 @@ export function FinanzasRealesPanel({
 
   const removeLoan = (l: RERealLoan) => {
     if (!window.confirm(`¿Eliminar el préstamo "${l.name}"?`)) return;
-    onChange({ realLoans: loans.filter((x) => x.id !== l.id) });
+    onChange({ realLoans: allLoans.map((x) => (x.id === l.id ? markRealFinanceDeleted(x) : x)) });
   };
 
   return (

@@ -132,6 +132,8 @@ export type RERealExpense = {
   documentName?: string; // nombre visible del documento (ej. "Factura fontanería junio.pdf")
   documentUrl?: string; // enlace real al archivo en Google Drive
   budgetLineId?: string; // partida de Económico (`REExpense.id`) a la que imputa este gasto
+  /** Borrado (tombstone): el elemento se conserva para que el borrado se sincronice. */
+  deletedAt?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -173,6 +175,8 @@ export type RERealLoan = {
   outstanding?: number; // capital pendiente declarado por el usuario
   status: RELoanStatus;
   notes?: string;
+  /** Borrado (tombstone): el elemento se conserva para que el borrado se sincronice. */
+  deletedAt?: string;
   createdAt: string;
   updatedAt: string;
 };

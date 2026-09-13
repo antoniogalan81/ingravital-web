@@ -4,6 +4,7 @@
 
 import { supabase } from "@/src/lib/supabaseClient";
 import { ENTITY_CONFIGS, EntityKey, SupabaseRow, SyncableEntity } from "./types";
+import { mergeOperationForPush } from "./merge";
 
 // Re-export de la lógica de fusión pura (mantiene la API previa de este módulo).
 export {
@@ -209,6 +210,10 @@ export async function pushItem(
     deleted_at: item.deleted ? now : null,
   };
 
+  if (entityKey === "realEstateOperations" && !item.deleted) {
+    return pushOperationMerged(config.tableName, record, item);
+  }
+
   const { error } = await supabase.from(config.tableName).upsert(record, { onConflict: "id" });
 
   if (error) {
@@ -217,6 +222,51 @@ export async function pushItem(
   }
 
   return { error: null };
+}
+
+const PUSH_MERGE_ATTEMPTS = 3;
+
+/**
+ * Push de una operación: leer fila → fusionar gastos/préstamos reales → escribir SOLO si
+ * la fila no ha cambiado desde la lectura (`client_updated_at`). Evita que una copia
+ * antigua pise marcas de borrado o altas hechas en otro dispositivo. Si hay carrera se
+ * reintenta; si persiste, el item queda dirty y se reintenta en el siguiente push.
+ */
+async function pushOperationMerged(
+  tableName: string,
+  record: { id: string; user_id: string; data: Record<string, unknown>; client_updated_at: string; deleted_at: string | null },
+  item: SyncableEntity,
+): Promise<{ error: string | null }> {
+  for (let attempt = 0; attempt < PUSH_MERGE_ATTEMPTS; attempt++) {
+    const { data: existing, error: readError } = await supabase
+      .from(tableName)
+      .select("data, client_updated_at")
+      .eq("id", record.id)
+      .maybeSingle();
+    if (readError) return { error: readError.message };
+
+    if (!existing) {
+      const { error } = await supabase.from(tableName).upsert(record, { onConflict: "id" });
+      return { error: error ? error.message : null };
+    }
+
+    const merged = mergeOperationForPush(item, existing.data as Record<string, unknown> | null);
+    const update = supabase
+      .from(tableName)
+      .update({
+        data: { ...merged, updatedAt: record.client_updated_at },
+        client_updated_at: record.client_updated_at,
+        deleted_at: record.deleted_at,
+      })
+      .eq("id", record.id);
+    const { data: written, error } = await (existing.client_updated_at == null
+      ? update.is("client_updated_at", null)
+      : update.eq("client_updated_at", existing.client_updated_at)
+    ).select("id");
+    if (error) return { error: error.message };
+    if (written && written.length > 0) return { error: null };
+  }
+  return { error: "La operación cambió en otro dispositivo durante la sincronización; se reintentará." };
 }
 
 export async function pushDelete(
