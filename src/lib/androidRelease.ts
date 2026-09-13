@@ -14,7 +14,7 @@
  * convertía en una descarga rota.
  *
  * Todos los valores están tomados del propio artefacto compilado por EAS
- * (build 7, 2026-07-29), no de la configuración del proyecto.
+ * (build 8, 2026-09-13), no de la configuración del proyecto.
  */
 
 /** Ruta estable y pública. Es la que se enlaza desde fuera (agalan.es incluido). */
@@ -22,7 +22,7 @@ export const ANDROID_DOWNLOAD_PATH = "/download/android";
 
 /** Asset real del release de GitHub al que redirige la ruta estable. */
 export const ANDROID_RELEASE_URL =
-  "https://github.com/antoniogalan81/ingravital-web/releases/download/v1.0.2/invergravital.apk";
+  "https://github.com/antoniogalan81/ingravital-web/releases/download/v1.0.2-build8/invergravital.apk";
 
 /** Nombre del archivo tal y como llega al dispositivo. */
 export const APK_FILENAME = "invergravital.apk";
@@ -30,15 +30,15 @@ export const APK_FILENAME = "invergravital.apk";
 export const ANDROID_RELEASE = {
   appName: "Invergravital",
   versionName: "1.0.2",
-  versionCode: 7,
+  versionCode: 8,
   applicationId: "com.agalansevilla.Invergravitalapp",
   /** Fecha de publicación del release. */
-  publishedAt: "2026-07-29",
+  publishedAt: "2026-09-13",
   /** Tamaño real del archivo, en bytes. */
-  sizeBytes: 127_667_322,
+  sizeBytes: 127_784_762,
   /** minSdkVersion 24. */
   minAndroid: "7.0",
-  sha256: "c20107a7be107c5eb29abad9b77ade81c797fb651fd6b768509a2a090b4285d4",
+  sha256: "45c17bdf2d1de07496c561b394357c768322be0997a6af9a4a367c1cb1436327",
 } as const;
 
 /** Tamaño legible, redondeado a una decimal (p. ej. «121,8 MB»). */
