@@ -1,6 +1,8 @@
 "use client";
 
-// Pestaña FINANZAS REALES (Gestión del proyecto · uso interno del promotor).
+// Bloque FINANZAS REALES de la ficha (Gestión del proyecto · uso interno del promotor).
+// Se muestra dentro de un SectionBlock de RealEstateModal cuando el interruptor
+// "Registrar finanzas reales" está activo, con el lenguaje visual de esos bloques.
 // Una sola categoría con tres bloques: carpeta de facturas en Drive, gastos reales y
 // financiación real. Escribe `realExpenses`, `realLoans` e `invoicesDriveFolder` en la
 // operación (JSON sync). No toca la previsión (`costs`, `financing`). Cada gasto real
@@ -42,15 +44,12 @@ const fmtDate = (iso?: string) => {
 
 export function FinanzasRealesPanel({
   op,
-  startWithNewExpense = false,
   overlayRoot,
   onChange,
 }: {
   op: REOperation;
-  /** Nodo donde montar los diálogos (raíz del workspace); sin él, se montan en línea. */
+  /** Nodo donde montar los diálogos (dentro del drawer de la ficha); sin él, en línea. */
   overlayRoot?: HTMLElement | null;
-  /** Abre el alta de gasto al montar (acción rápida "+ Gasto real"). */
-  startWithNewExpense?: boolean;
   onChange: (patch: Partial<RealFinancePatch>) => void;
 }) {
   const expenses = useMemo(() => (Array.isArray(op.realExpenses) ? op.realExpenses : []), [op.realExpenses]);
@@ -60,9 +59,7 @@ export function FinanzasRealesPanel({
   const loanTotals = useMemo(() => realLoanTotals(op), [op]);
   const folderUrl = op.invoicesDriveFolder ? driveFolderUrl(op.invoicesDriveFolder.url) ?? undefined : undefined;
 
-  const [expenseDialog, setExpenseDialog] = useState<{ item: RERealExpense; isNew: boolean } | null>(() =>
-    startWithNewExpense ? { item: makeRealExpense(todayISO()), isNew: true } : null,
-  );
+  const [expenseDialog, setExpenseDialog] = useState<{ item: RERealExpense; isNew: boolean } | null>(null);
   const [loanDialog, setLoanDialog] = useState<{ item: RERealLoan; isNew: boolean } | null>(null);
 
   const sortedExpenses = useMemo(
@@ -73,10 +70,16 @@ export function FinanzasRealesPanel({
   const upsert = <T extends { id: string }>(list: T[], item: T) =>
     list.some((x) => x.id === item.id) ? list.map((x) => (x.id === item.id ? item : x)) : [...list, item];
 
-  // Varios guardados seguidos ("Guardar y añadir otro") parten de la lista más reciente.
+  // "Guardar y añadir otro": el siguiente registro parte de una copia del que se acaba de
+  // guardar (mismos valores, id nuevo). Varios guardados seguidos usan la lista más reciente.
   const saveExpense = (item: RERealExpense, addAnother: boolean) => {
     onChange({ realExpenses: upsert(Array.isArray(op.realExpenses) ? op.realExpenses : [], item) });
-    setExpenseDialog(addAnother ? { item: makeRealExpense(item.date), isNew: true } : null);
+    if (!addAnother) {
+      setExpenseDialog(null);
+      return;
+    }
+    const fresh = makeRealExpense(item.date);
+    setExpenseDialog({ item: { ...item, id: fresh.id, createdAt: fresh.createdAt, updatedAt: fresh.updatedAt }, isNew: true });
   };
 
   const removeExpense = (e: RERealExpense) => {
@@ -97,30 +100,26 @@ export function FinanzasRealesPanel({
   };
 
   return (
-    <div className="space-y-5">
-      {/* Qué es esta sección + cifras reales */}
-      <section className="re-card p-4 space-y-3">
-        <div>
-          <h3 className="text-base font-extrabold text-ink tracking-tight">Finanzas reales</h3>
-          <p className="text-xs text-ink-subtle mt-0.5">
-            Lo que realmente se ha gastado y la financiación realmente contratada. No incluye presupuestos ni previsiones.
-          </p>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 border-t border-line pt-3">
-          <Figure
-            label="Gastado real"
-            value={spent.count ? fmtEUR(spent.total) : "—"}
-            sub={spent.count ? `${spent.count} gasto${spent.count === 1 ? "" : "s"}${spent.withoutDocument ? ` · ${spent.withoutDocument} sin documento` : ""}` : "sin gastos"}
-          />
-          <Figure label="Capital financiado" value={loanTotals.count ? fmtEUR(loanTotals.financed) : "—"} sub={loanTotals.count ? `${loanTotals.activeCount} activo${loanTotals.activeCount === 1 ? "" : "s"}` : "sin préstamos"} />
-          <Figure
-            label="Capital pendiente"
-            value={!loanTotals.count ? "—" : loanTotals.outstanding == null ? "Sin dato" : fmtEUR(loanTotals.outstanding)}
-            sub={loanTotals.count && loanTotals.outstanding == null ? "falta en algún préstamo" : undefined}
-          />
-          <Figure label="Cuotas al mes" value={loanTotals.monthlyInstallments == null ? "—" : fmtEUR(loanTotals.monthlyInstallments)} />
-        </div>
-      </section>
+    <div className="space-y-3">
+      <p className="text-xs text-ink-subtle">
+        Lo que realmente se ha gastado y la financiación realmente contratada. No incluye presupuestos ni previsiones.
+      </p>
+
+      {/* Cifras reales */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <Figure
+          label="Gastado real"
+          value={spent.count ? fmtEUR(spent.total) : "—"}
+          sub={spent.count ? `${spent.count} gasto${spent.count === 1 ? "" : "s"}${spent.withoutDocument ? ` · ${spent.withoutDocument} sin documento` : ""}` : "sin gastos"}
+        />
+        <Figure label="Capital financiado" value={loanTotals.count ? fmtEUR(loanTotals.financed) : "—"} sub={loanTotals.count ? `${loanTotals.activeCount} activo${loanTotals.activeCount === 1 ? "" : "s"}` : "sin préstamos"} />
+        <Figure
+          label="Capital pendiente"
+          value={!loanTotals.count ? "—" : loanTotals.outstanding == null ? "Sin dato" : fmtEUR(loanTotals.outstanding)}
+          sub={loanTotals.count && loanTotals.outstanding == null ? "falta en algún préstamo" : undefined}
+        />
+        <Figure label="Cuotas al mes" value={loanTotals.monthlyInstallments == null ? "—" : fmtEUR(loanTotals.monthlyInstallments)} />
+      </div>
 
       <DriveFolderCard
         folder={op.invoicesDriveFolder}
@@ -129,61 +128,58 @@ export function FinanzasRealesPanel({
       />
 
       {/* Gastos reales */}
-      <section className="space-y-2.5">
+      <div className="rounded-xl border border-line p-3 space-y-2" style={{ background: "var(--surface-alt)" }}>
         <div className="flex items-center justify-between gap-3">
-          <div>
-            <h4 className="text-sm font-extrabold text-ink">Gastos reales</h4>
+          <div className="min-w-0">
+            <div className="text-xs font-bold text-ink-muted uppercase tracking-wide">Gastos reales</div>
             <p className="text-[11px] text-ink-subtle">Dinero incurrido o pagado. Se puede registrar sin factura y asociarla después.</p>
           </div>
           <button
             type="button"
             onClick={() => setExpenseDialog({ item: makeRealExpense(todayISO()), isNew: true })}
-            className="rounded-lg px-3.5 py-2 text-sm font-semibold text-white whitespace-nowrap shrink-0 transition-colors"
-            style={{ background: "var(--brand)" }}
+            className="px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-200 bg-white rounded-lg hover:bg-blue-50 transition-colors whitespace-nowrap shrink-0"
           >
             + Registrar gasto
           </button>
         </div>
 
         {sortedExpenses.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-line bg-white px-4 py-6 text-center text-sm text-ink-muted">
-            Aún no hay gastos reales registrados.
-          </div>
+          <p className="text-xs text-ink-subtle py-1">Aún no hay gastos reales registrados.</p>
         ) : (
-          <ul className="re-card divide-y divide-[var(--line)] overflow-hidden">
+          <ul className="divide-y divide-[var(--line)] overflow-hidden rounded-lg border border-line bg-white">
             {sortedExpenses.map((e) => (
               <ExpenseRow key={e.id} e={e} budgetLines={budgetLines} onEdit={() => setExpenseDialog({ item: e, isNew: false })} onRemove={() => removeExpense(e)} />
             ))}
           </ul>
         )}
-      </section>
+      </div>
 
       {/* Financiación real (opcional) */}
-      <section className="space-y-2.5">
+      <div className="rounded-xl border border-line p-3 space-y-2" style={{ background: "var(--surface-alt)" }}>
         <div className="flex items-center justify-between gap-3">
-          <div>
-            <h4 className="text-sm font-extrabold text-ink">Financiación real</h4>
-            <p className="text-[11px] text-ink-subtle">Opcional. Préstamos realmente firmados para esta operación (no la financiación prevista del simulador).</p>
+          <div className="min-w-0">
+            <div className="text-xs font-bold text-ink-muted uppercase tracking-wide">Financiación real</div>
+            <p className="text-[11px] text-ink-subtle">Opcional. Préstamos realmente firmados para esta operación (no la financiación prevista).</p>
           </div>
           <button
             type="button"
             onClick={() => setLoanDialog({ item: makeRealLoan(), isNew: true })}
-            className="rounded-lg border border-line bg-white px-3.5 py-2 text-sm font-semibold text-ink whitespace-nowrap shrink-0 hover:bg-[var(--surface-alt)] transition-colors"
+            className="px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 bg-white rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
           >
             + Añadir préstamo
           </button>
         </div>
 
         {loans.length === 0 ? (
-          <p className="text-xs text-ink-subtle px-1">Sin préstamos registrados.</p>
+          <p className="text-xs text-ink-subtle py-1">Sin préstamos registrados.</p>
         ) : (
-          <ul className="grid gap-2.5 sm:grid-cols-2">
+          <ul className="grid gap-2 sm:grid-cols-2">
             {loans.map((l) => (
               <LoanCard key={l.id} l={l} onEdit={() => setLoanDialog({ item: l, isNew: false })} onRemove={() => removeLoan(l)} />
             ))}
           </ul>
         )}
-      </section>
+      </div>
 
       {overlay(
         <>
@@ -209,10 +205,10 @@ export function FinanzasRealesPanel({
 
 function Figure({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="min-w-0">
-      <p className="kpi-label">{label}</p>
-      <p className="text-lg font-extrabold tabular-nums tracking-tight leading-tight mt-0.5 text-ink truncate">{value}</p>
-      {sub ? <p className="text-[11px] text-ink-subtle truncate">{sub}</p> : null}
+    <div className="min-w-0 rounded-xl border border-line p-3" style={{ background: "var(--surface-alt)" }}>
+      <div className="text-[10px] font-semibold text-ink-subtle uppercase tracking-wide mb-1">{label}</div>
+      <div className="text-lg font-extrabold tabular-nums text-ink truncate">{value}</div>
+      {sub ? <div className="text-xs text-ink-muted truncate mt-0.5">{sub}</div> : null}
     </div>
   );
 }
@@ -265,12 +261,13 @@ function ExpenseRow({ e, budgetLines, onEdit, onRemove }: { e: RERealExpense; bu
   const line = e.budgetLineId ? budgetLines.find((l) => l.id === e.budgetLineId) : undefined;
   return (
     <li className="flex items-center gap-3 px-4 py-2.5 bg-white">
-      <span className="w-[4.75rem] shrink-0 text-xs tabular-nums text-ink-subtle">{fmtDate(e.date)}</span>
+      <span className="hidden sm:block w-[4.75rem] shrink-0 text-xs tabular-nums text-ink-subtle">{fmtDate(e.date)}</span>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-ink truncate">
           {e.concept}
           {e.category ? <span className="ml-2 text-[11px] font-normal text-ink-subtle">{RE_EXPENSE_CATEGORY_LABEL[e.category]}</span> : null}
         </p>
+        <p className="sm:hidden text-[11px] tabular-nums text-ink-subtle">{fmtDate(e.date)}</p>
         {line ? (
           <p className="text-[11px] text-ink-subtle truncate">Partida: {line.concept?.trim() || RE_EXPENSE_CATEGORY_LABEL[line.category]}</p>
         ) : null}
@@ -294,7 +291,7 @@ function LoanCard({ l, onEdit, onRemove }: { l: RERealLoan; onEdit: () => void; 
     l.startDate ? `desde ${fmtDate(l.startDate)}` : null,
   ].filter(Boolean);
   return (
-    <li className="re-card p-3.5 space-y-2">
+    <li className="rounded-lg border border-line bg-white p-3 space-y-2">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-bold text-ink truncate">{l.name}</p>

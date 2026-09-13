@@ -145,6 +145,8 @@ export type REOperation = {
   realExpenses?: RERealExpense[];
   realLoans?: RERealLoan[];
   invoicesDriveFolder?: REDriveFolder;
+  /** Interruptor "Registrar finanzas reales" de la ficha. Ausente = activo si ya hay datos reales. */
+  realFinancesEnabled?: boolean;
 };
 
 export const DEFAULT_TASAS: RETasa[] = [

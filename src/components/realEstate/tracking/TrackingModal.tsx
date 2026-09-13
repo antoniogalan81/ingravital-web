@@ -1,12 +1,13 @@
 "use client";
 
-// WORKSPACE de una operación (WEB). Ocupa toda la pantalla (no drawer-sobre-drawer)
-// y tiene DOS ÁREAS, con un selector siempre visible:
-//   · Gestión del proyecto (área del promotor, uso interno): Inicio · Resumen ·
-//     Económico · Finanzas reales · Ventas · Planificación.
-//   · Inversores: el workspace de seguimiento TAL CUAL existía antes de separar las
-//     áreas (mismas pestañas, acciones rápidas y barra-resumen). Su contenido interno
-//     está pendiente de definir: no se reorganiza aquí.
+// WORKSPACE del área INVERSORES de una operación (WEB) — rediseño UX.
+// "Gestión del proyecto" es la ficha principal de la operación (RealEstateModal); este
+// workspace es el área Inversores y conserva su contenido tal cual (pendiente de definir).
+// Selector de área arriba: "Gestión del proyecto" vuelve a la ficha.
+// Ocupa toda la pantalla (no drawer-sobre-drawer): cabecera con acciones rápidas,
+// BARRA-RESUMEN persistente (KPIs + presupuesto + desviación visible en todas las
+// pestañas) y 6 pestañas agrupadas por uso real:
+//   Resumen · Económico · Ventas · Planificación · Inversores · Informe.
 // No mantiene estado de datos propio: lee `op` (draft vivo del editor) y persiste
 // cada cambio con `onPersist(patch)` → el editor hace commit (JSON sync).
 
@@ -31,50 +32,61 @@ import { VentasPanel } from "./VentasPanel";
 import { HitosPanel } from "./HitosPanel";
 import { InversoresPanel } from "./InversoresPanel";
 import { InformePanel } from "./InformePanel";
-import { FinanzasRealesPanel } from "./FinanzasRealesPanel";
 import { QuickEntryModal, type QuickKind } from "./QuickEntryModal";
 
-export type TrackingTab = "inicio" | "resumen" | "economico" | "finanzas" | "ventas" | "planificacion" | "inversores" | "informe";
+type TabKey = "inicio" | "resumen" | "economico" | "ventas" | "planificacion" | "inversores" | "informe";
 
-export type TrackingArea = "gestion" | "inversores";
+const TABS: { key: TabKey; label: string }[] = [
+  { key: "inicio", label: "Inicio" },
+  { key: "resumen", label: "Resumen" },
+  { key: "economico", label: "Económico" },
+  { key: "ventas", label: "Ventas" },
+  { key: "planificacion", label: "Planificación" },
+  { key: "inversores", label: "Inversores" },
+  { key: "informe", label: "Informe" },
+];
 
-type TabDef = { key: TrackingTab; label: string };
+// Bronce de la marca oscurecido: --accent no llega a 4.5:1 como texto sobre blanco.
+export const INVESTOR_COLOR = "#86652a";
 
-const AREAS: Record<TrackingArea, { title: string; subtitle: string; color: string; soft: string; tabs: TabDef[] }> = {
-  gestion: {
-    title: "Gestión del proyecto",
-    subtitle: "Área del promotor · Uso interno",
-    color: "var(--brand)",
-    soft: "var(--brand-soft)",
-    tabs: [
-      { key: "inicio", label: "Inicio" },
-      { key: "resumen", label: "Resumen" },
-      { key: "economico", label: "Económico" },
-      { key: "finanzas", label: "Finanzas reales" },
-      { key: "ventas", label: "Ventas" },
-      { key: "planificacion", label: "Planificación" },
-    ],
-  },
-  inversores: {
-    title: "Inversores",
-    subtitle: "Preparación y gestión de la inversión externa",
-    // Bronce de la marca oscurecido: --accent no llega a 4.5:1 como texto sobre blanco.
-    color: "#86652a",
-    soft: "var(--accent-soft)",
-    // Pestañas del workspace anterior, sin cambios.
-    tabs: [
-      { key: "inicio", label: "Inicio" },
-      { key: "resumen", label: "Resumen" },
-      { key: "economico", label: "Económico" },
-      { key: "ventas", label: "Ventas" },
-      { key: "planificacion", label: "Planificación" },
-      { key: "inversores", label: "Inversores" },
-      { key: "informe", label: "Informe" },
-    ],
-  },
-};
-
-const AREA_ORDER: TrackingArea[] = ["gestion", "inversores"];
+/**
+ * Selector de las dos áreas de una operación. Lo usan la ficha (Gestión del proyecto) y
+ * este workspace (Inversores); pulsar el área inactiva navega a la otra pantalla.
+ */
+export function AreaSwitch({
+  active,
+  onGestion,
+  onInversores,
+}: {
+  active: "gestion" | "inversores";
+  onGestion?: () => void;
+  onInversores?: () => void;
+}) {
+  const areas = [
+    { key: "gestion" as const, title: "Gestión del proyecto", subtitle: "Área del promotor · Uso interno", color: "var(--brand)", soft: "var(--brand-soft)", onClick: onGestion },
+    { key: "inversores" as const, title: "Inversores", subtitle: "Preparación y gestión de la inversión externa", color: INVESTOR_COLOR, soft: "var(--accent-soft)", onClick: onInversores },
+  ];
+  return (
+    <div className="grid grid-cols-2 gap-2" role="group" aria-label="Área de trabajo">
+      {areas.map((a) => {
+        const isActive = a.key === active;
+        return (
+          <button
+            key={a.key}
+            type="button"
+            aria-pressed={isActive}
+            onClick={() => !isActive && a.onClick?.()}
+            className={`min-w-0 rounded-xl border-2 px-3 py-2 text-left transition-colors ${isActive ? "cursor-default" : "border-line bg-white hover:bg-[var(--surface-alt)]"}`}
+            style={isActive ? { borderColor: a.color, background: a.soft } : undefined}
+          >
+            <span className="block text-sm font-extrabold leading-tight truncate" style={{ color: isActive ? a.color : "var(--ink)" }}>{a.title}</span>
+            <span className="block text-[11px] leading-tight mt-0.5 text-ink-subtle truncate">{a.subtitle}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function QuickAction({ label, onClick, primary = false }: { label: string; onClick: () => void; primary?: boolean }) {
   return (
@@ -93,26 +105,15 @@ function QuickAction({ label, onClick, primary = false }: { label: string; onCli
 
 export function TrackingModal({
   op,
-  initialArea = "gestion",
-  initialTab = "inicio",
   onPersist,
   onClose,
 }: {
   op: REOperation;
-  initialArea?: TrackingArea;
-  initialTab?: TrackingTab;
   onPersist: (patch: Partial<REOperation>) => void;
   onClose: () => void;
 }) {
-  const [area, setArea] = useState<TrackingArea>(initialArea);
-  const [tab, setTab] = useState<TrackingTab>(initialTab);
+  const [tab, setTab] = useState<TabKey>("inicio");
   const [quick, setQuick] = useState<QuickKind | null>(null);
-  // Cada "+ Gasto real" remonta Finanzas reales con el formulario de alta abierto.
-  const [newRealExpense, setNewRealExpense] = useState(0);
-  // Raíz del workspace: los diálogos de las pestañas se portalizan aquí. El cuerpo animado
-  // (`reveal-fast`) crea un contexto de apilado que dejaría el diálogo bajo la cabecera.
-  const [overlayRoot, setOverlayRoot] = useState<HTMLDivElement | null>(null);
-  const areaDef = AREAS[area];
 
   const results = useMemo(() => calcResults(op), [op]);
   const now = useMemo(() => new Date().toISOString(), []);
@@ -150,26 +151,11 @@ export function TrackingModal({
     [op.milestones, onPersist],
   );
 
-  // Navegación a una pestaña. Se queda en el área actual si la contiene; si no (p. ej.
-  // "Inversores" desde Gestión del proyecto), cambia al área que la tiene.
-  const navigate = useCallback(
-    (target: TrackingTab) => {
-      if (!AREAS[area].tabs.some((t) => t.key === target)) {
-        setArea(AREAS.gestion.tabs.some((t) => t.key === target) ? "gestion" : "inversores");
-      }
-      setTab(target);
-    },
-    [area],
-  );
-
-  const switchArea = (next: TrackingArea) => {
-    if (next === area) return;
-    setArea(next);
-    setTab(AREAS[next].tabs[0].key);
-  };
+  // Navegación desde el Inicio rápido a la pestaña avanzada correspondiente.
+  const navigate = useCallback((target: TabKey) => setTab(target), []);
 
   return (
-    <div ref={setOverlayRoot} className="fixed inset-0 z-[60] flex flex-col bg-white" role="dialog" aria-modal="true" aria-labelledby="tracking-modal-title">
+    <div className="fixed inset-0 z-[60] flex flex-col bg-white" role="dialog" aria-modal="true" aria-labelledby="tracking-modal-title">
       <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col min-h-0">
         {/* Zona superior fija (cabecera + resumen + tabs) con elevación */}
         <div className="flex-shrink-0 bg-white relative z-10" style={{ boxShadow: "var(--shadow-sm)" }}>
@@ -177,8 +163,8 @@ export function TrackingModal({
           <div className="flex flex-col gap-3 border-b border-line px-4 sm:px-6 py-3.5">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[10px] uppercase tracking-[0.16em] font-bold" style={{ color: areaDef.color }}>
-                  {areaDef.title} <span className="text-ink-subtle">· {areaDef.subtitle}</span>
+                <p className="text-[10px] uppercase tracking-[0.16em] font-bold" style={{ color: INVESTOR_COLOR }}>
+                  Inversores <span className="text-ink-subtle">· Preparación y gestión de la inversión externa</span>
                 </p>
                 <div className="flex items-center gap-2.5 mt-1 min-w-0">
                   <h2 id="tracking-modal-title" className="text-2xl font-extrabold text-ink tracking-tight truncate">{op.name || "Operación"}</h2>
@@ -197,55 +183,17 @@ export function TrackingModal({
                 Cerrar
               </button>
             </div>
-            {/* Selector de ÁREA: siempre visible, deja claro dónde se está trabajando */}
-            <div className="grid grid-cols-2 gap-2" role="group" aria-label="Área de trabajo">
-              {AREA_ORDER.map((key) => {
-                const def = AREAS[key];
-                const active = key === area;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => switchArea(key)}
-                    className={`min-w-0 rounded-xl border-2 px-3 py-2 text-left transition-colors ${active ? "" : "border-line bg-white hover:bg-[var(--surface-alt)]"}`}
-                    style={active ? { borderColor: def.color, background: def.soft } : undefined}
-                  >
-                    <span className="block text-sm font-extrabold leading-tight truncate" style={{ color: active ? def.color : "var(--ink)" }}>{def.title}</span>
-                    <span className="block text-[11px] leading-tight mt-0.5 text-ink-subtle truncate">{def.subtitle}</span>
-                  </button>
-                );
-              })}
+            <AreaSwitch active="inversores" onGestion={onClose} />
+            {/* Acciones rápidas: crear (primarias, abren entrada rápida) · ver (secundarias) */}
+            <div className="flex flex-wrap items-center gap-2">
+              <QuickAction label="+ Gasto" onClick={() => setQuick("gasto")} primary />
+              <QuickAction label="+ Venta" onClick={() => setQuick("venta")} primary />
+              <QuickAction label="+ Hito" onClick={() => setQuick("hito")} primary />
+              <span className="mx-0.5 h-5 w-px bg-[var(--line)]" aria-hidden />
+              <QuickAction label="Media" onClick={() => setTab("resumen")} />
+              <QuickAction label="Vista inversor" onClick={() => setTab("inversores")} />
+              <QuickAction label="Informe" onClick={() => setTab("informe")} />
             </div>
-            {/* Acciones rápidas */}
-            {area === "gestion" ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <QuickAction
-                  label="+ Gasto real"
-                  onClick={() => {
-                    setTab("finanzas");
-                    setNewRealExpense((n) => n + 1);
-                  }}
-                  primary
-                />
-                <QuickAction label="+ Gasto (presupuesto)" onClick={() => setQuick("gasto")} />
-                <QuickAction label="+ Venta" onClick={() => setQuick("venta")} />
-                <QuickAction label="+ Hito" onClick={() => setQuick("hito")} />
-                <span className="mx-0.5 h-5 w-px bg-[var(--line)]" aria-hidden />
-                <QuickAction label="Media" onClick={() => setTab("resumen")} />
-              </div>
-            ) : (
-              // Acciones del workspace anterior, sin cambios.
-              <div className="flex flex-wrap items-center gap-2">
-                <QuickAction label="+ Gasto" onClick={() => setQuick("gasto")} primary />
-                <QuickAction label="+ Venta" onClick={() => setQuick("venta")} primary />
-                <QuickAction label="+ Hito" onClick={() => setQuick("hito")} primary />
-                <span className="mx-0.5 h-5 w-px bg-[var(--line)]" aria-hidden />
-                <QuickAction label="Media" onClick={() => navigate("resumen")} />
-                <QuickAction label="Vista inversor" onClick={() => navigate("inversores")} />
-                <QuickAction label="Informe" onClick={() => navigate("informe")} />
-              </div>
-            )}
           </div>
 
           {/* Barra-resumen persistente */}
@@ -253,9 +201,9 @@ export function TrackingModal({
             <SummaryBar op={op} results={results} />
           </div>
 
-          {/* Tabs del área activa */}
+          {/* Tabs */}
           <div className="flex overflow-x-auto gap-1.5 px-4 sm:px-6 py-2.5 bg-[var(--surface-alt)]">
-            {areaDef.tabs.map((t) => {
+            {TABS.map((t) => {
               const active = t.key === tab;
               return (
                 <button
@@ -275,7 +223,7 @@ export function TrackingModal({
         </div>
 
         {/* Body */}
-        <div key={`${area}-${tab}`} className="reveal-fast flex-1 overflow-y-auto px-4 sm:px-6 py-5 bg-[var(--surface-alt)]">
+        <div key={tab} className="reveal-fast flex-1 overflow-y-auto px-4 sm:px-6 py-5 bg-[var(--surface-alt)]">
           {tab === "inicio" && (
             <InicioPanel op={op} onQuick={(k) => setQuick(k)} onNavigate={(target) => navigate(target)} />
           )}
@@ -290,9 +238,6 @@ export function TrackingModal({
             />
           )}
           {tab === "economico" && <GastosPanel op={op} onChange={(expenses: REExpense[]) => onPersist({ expenses })} onQuickAdd={() => setQuick("gasto")} />}
-          {tab === "finanzas" && (
-            <FinanzasRealesPanel key={newRealExpense} op={op} overlayRoot={overlayRoot} startWithNewExpense={newRealExpense > 0} onChange={(patch) => onPersist(patch)} />
-          )}
           {tab === "ventas" && <VentasPanel op={op} results={results} onChange={(sales: RESale[]) => onPersist({ sales })} onQuickAdd={() => setQuick("venta")} />}
           {tab === "planificacion" && <HitosPanel op={op} onChange={(milestones: REMilestone[]) => onPersist({ milestones })} onQuickAdd={() => setQuick("hito")} />}
           {tab === "inversores" && (
@@ -303,7 +248,7 @@ export function TrackingModal({
               onOpenCrm={() => window.open("/inversores", "_blank", "noopener")}
             />
           )}
-          {tab === "informe" && <InformePanel op={op} generatedAt={generatedAt} onPreviewInvestor={() => navigate("inversores")} />}
+          {tab === "informe" && <InformePanel op={op} generatedAt={generatedAt} onPreviewInvestor={() => setTab("inversores")} />}
         </div>
       </div>
 

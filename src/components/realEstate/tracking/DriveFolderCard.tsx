@@ -75,15 +75,15 @@ export function DriveFolderCard({
   };
 
   return (
-    <section className="re-card p-4 space-y-3" aria-labelledby="drive-folder-title">
+    <section className="rounded-xl border border-line p-3 space-y-3" style={{ background: "var(--surface-alt)" }} aria-labelledby="drive-folder-title">
       <div className="flex flex-wrap sm:flex-nowrap items-start gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg" style={{ background: "var(--brand-soft)", color: "var(--brand)" }} aria-hidden="true">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white border border-line" style={{ color: "var(--brand)" }} aria-hidden="true">
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
           </svg>
         </span>
         <div className="min-w-0 flex-1">
-          <h4 id="drive-folder-title" className="text-sm font-extrabold text-ink">Carpeta de facturas en Google Drive</h4>
+          <h4 id="drive-folder-title" className="text-xs font-bold text-ink-muted uppercase tracking-wide">Carpeta de facturas en Google Drive</h4>
           {!editing && linkedUrl ? (
             <>
               <p className="text-sm font-semibold text-ink truncate mt-0.5">{folder?.label || "Carpeta de Google Drive"}</p>

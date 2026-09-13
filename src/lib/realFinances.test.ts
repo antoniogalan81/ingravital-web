@@ -9,6 +9,7 @@ import {
   driveFileUrl,
   driveFolderUrl,
   effectiveRealExpenses,
+  isRealFinancesEnabled,
   parseAmountEs,
   parseDriveLink,
   realExpenseTotals,
@@ -204,4 +205,13 @@ test("real vacío o 0 en una partida antigua no crea gastos, pero se limpia", ()
   const patch = adoptLegacyRealAmounts(op);
   assert.deepEqual(patch?.realExpenses, []);
   assert.equal(patch?.expenses?.some((l) => "real" in l), false);
+});
+
+test("interruptor Registrar finanzas reales: manda lo guardado; si no, activo solo con datos", () => {
+  assert.equal(isRealFinancesEnabled({} as REOperation), false, "operación sin datos → desactivado");
+  assert.equal(isRealFinancesEnabled({ realLoans: [loan({})] } as REOperation), true);
+  assert.equal(isRealFinancesEnabled({ invoicesDriveFolder: { url: "x", linkedAt: "" } } as REOperation), true);
+  assert.equal(isRealFinancesEnabled({ expenses: [line({ id: "l1", real: 10 })] } as REOperation), true, "real antiguo cuenta como dato");
+  assert.equal(isRealFinancesEnabled({ realFinancesEnabled: false, realExpenses: [exp({ amount: 5 })] } as REOperation), false);
+  assert.equal(isRealFinancesEnabled({ realFinancesEnabled: true } as REOperation), true);
 });

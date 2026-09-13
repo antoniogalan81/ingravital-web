@@ -171,6 +171,20 @@ export function budgetLineReal(realExpenses: RERealExpense[], lineId: string): n
   return total;
 }
 
+// ── Interruptor de la ficha ───────────────────────────────────────────────────
+
+/**
+ * ¿Se muestra "Finanzas reales" en la ficha? Manda el interruptor guardado; si nunca se ha
+ * tocado, está activo solo cuando la operación ya tiene datos reales (así no se ocultan).
+ * Desactivarlo oculta la sección y la situación real, pero no borra datos.
+ */
+export function isRealFinancesEnabled(
+  op: Pick<REOperation, "realFinancesEnabled" | "realExpenses" | "realLoans" | "invoicesDriveFolder" | "expenses">,
+): boolean {
+  if (typeof op?.realFinancesEnabled === "boolean") return op.realFinancesEnabled;
+  return effectiveRealExpenses(op).length > 0 || (Array.isArray(op?.realLoans) && op.realLoans.length > 0) || !!op?.invoicesDriveFolder;
+}
+
 // ── Agregados ─────────────────────────────────────────────────────────────────
 
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);

@@ -7,8 +7,9 @@ import type { REOperation, REUnit, UnitType } from "@/src/lib/realEstate";
 import { DEFAULT_TASAS } from "@/src/lib/realEstate";
 import { calcResults, calcNumTrasteros, calcNumPlazas, calcTINFromCuota, fmtEUR, fmtNum, fmtPct, convertRealEstateOperationType } from "@/src/lib/realEstateCalc";
 import { ScenariosPanel } from "./ScenariosPanel";
-import { TrackingModal, type TrackingArea, type TrackingTab } from "./tracking/TrackingModal";
-import { adoptLegacyRealAmounts, realVsPlanned, type RealVsPlanned } from "@/src/lib/realFinances";
+import { AreaSwitch, TrackingModal } from "./tracking/TrackingModal";
+import { FinanzasRealesPanel } from "./tracking/FinanzasRealesPanel";
+import { adoptLegacyRealAmounts, isRealFinancesEnabled, realVsPlanned, type RealVsPlanned } from "@/src/lib/realFinances";
 import { InvestmentFlowMap } from "./charts/InvestmentFlowMap";
 
 type RealEstateCategory = "vivienda" | "local" | "suelo" | "adaptacion";
@@ -181,16 +182,7 @@ function KPI({ label, value, sub, tone }: { label: string; value: string; sub?: 
 
 /** Bloque "Situación real" del Resumen: solo cifras registradas en Finanzas reales. */
 function RealSituation({ real, plannedInvestment, onOpen }: { real: RealVsPlanned; plannedInvestment: number; onOpen: () => void }) {
-  if (!real.hasData) {
-    return (
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed border-line px-3 py-2.5 mt-3">
-        <p className="text-xs text-ink-muted">
-          <span className="font-bold text-ink">Situación real:</span> sin gastos ni préstamos reales registrados.
-        </p>
-        <button type="button" onClick={onOpen} className="text-xs font-semibold text-brand hover:underline">Registrar en Finanzas reales ›</button>
-      </div>
-    );
-  }
+  if (!real.hasData) return null;
   const { spent, loans, spentOfPlannedPct } = real;
   return (
     <div className="rounded-xl border border-line mt-3 overflow-hidden" style={{ borderLeft: "4px solid var(--positive)" }}>
@@ -672,9 +664,11 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
 
   // Drawer abierto al montar; al cerrar, animamos la salida antes de desmontar (onClose).
   const [drawerOpen, setDrawerOpen] = useState(true);
-  // Workspace de la operación abierto en una pestaña concreta (null = cerrado). Tiene dos
-  // áreas: Gestión del proyecto (uso interno) e Inversores. Ver tracking/TrackingModal.
-  const [tracking, setTracking] = useState<{ area: TrackingArea; tab: TrackingTab } | null>(null);
+  // Esta ficha ES el área "Gestión del proyecto". El área Inversores es el workspace de
+  // seguimiento (tracking/TrackingModal), que se abre encima.
+  const [showInvestors, setShowInvestors] = useState(false);
+  // Destino de los diálogos de Finanzas reales: dentro del drawer (su trampa de foco).
+  const [overlayRoot, setOverlayRoot] = useState<HTMLDivElement | null>(null);
   const handleClose = useCallback(() => {
     if (dirtyRef.current) {
       dirtyRef.current = false;
@@ -710,6 +704,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
     financiacion: false,
     resultados: false,
     escenarios: false,
+    finanzas: true,
     tasas: false,
   });
 
@@ -722,6 +717,16 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
 
   const res = useMemo(() => calcResults(draft), [draft]);
   const real = useMemo(() => realVsPlanned(draft, res), [draft, res]);
+  const realFinancesOn = isRealFinancesEnabled(draft);
+  const navSections = realFinancesOn
+    ? [SECTION_NAV[0], { key: "finanzas" as const, label: "Finanzas reales" }, ...SECTION_NAV.slice(1)]
+    : SECTION_NAV;
+  const goToSection = (key: keyof typeof open) => {
+    setOpen((prev) => ({ ...prev, [key]: true }));
+    requestAnimationFrame(() => {
+      document.getElementById(`section-${key}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  };
 
   const commit = useCallback(
     (patch: Partial<REOperation>) => {
@@ -925,52 +930,18 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
           )}
         </div>
 
-        {/* ── Dos áreas de trabajo de la operación, siempre visibles al abrirla ── */}
-        <div className="px-4 py-2.5 border-b border-slate-100 bg-white flex-shrink-0 grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => setTracking({ area: "gestion", tab: "inicio" })}
-            className="group flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-white transition-colors"
-            style={{ background: "var(--brand)" }}
-          >
-            <svg className="w-5 h-5 flex-shrink-0 opacity-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-            <span className="flex-1 min-w-0">
-              <span className="block text-sm font-bold leading-tight">Gestión del proyecto</span>
-              <span className="block text-xs text-white/85 leading-tight mt-0.5">Área del promotor · Uso interno</span>
-            </span>
-            <span className="text-xl font-light opacity-80 transition-transform group-hover:translate-x-0.5" aria-hidden="true">›</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setTracking({ area: "inversores", tab: "inicio" })}
-            className="group flex w-full items-center gap-3 rounded-xl border-2 px-4 py-2.5 text-left transition-colors hover:brightness-[0.98]"
-            style={{ borderColor: "#86652a", background: "var(--accent-soft)", color: "#86652a" }}
-          >
-            <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            <span className="flex-1 min-w-0">
-              <span className="block text-sm font-bold leading-tight">Inversores</span>
-              <span className="block text-xs leading-tight mt-0.5 text-ink-muted">Preparación y gestión de la inversión externa</span>
-            </span>
-            <span className="text-xl font-light opacity-80 transition-transform group-hover:translate-x-0.5" aria-hidden="true">›</span>
-          </button>
+        {/* ── Áreas de la operación: esta ficha es Gestión del proyecto ── */}
+        <div className="px-4 py-2.5 border-b border-slate-100 bg-white flex-shrink-0">
+          <AreaSwitch active="gestion" onInversores={() => setShowInvestors(true)} />
         </div>
 
         {/* Section nav */}
         <div className="flex overflow-x-auto gap-1.5 px-4 py-2 border-b border-slate-100 flex-shrink-0 bg-white">
-          {SECTION_NAV.map((s) => (
+          {navSections.map((s) => (
             <button
               key={s.key}
               type="button"
-              onClick={() => {
-                setOpen((prev) => ({ ...prev, [s.key]: true }));
-                requestAnimationFrame(() => {
-                  document.getElementById(`section-${s.key}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-                });
-              }}
+              onClick={() => goToSection(s.key)}
               className="px-3 py-1 text-xs font-semibold rounded-full whitespace-nowrap border border-line text-ink-muted hover:text-brand hover:border-brand hover:bg-[var(--brand-soft)] transition-colors flex-shrink-0"
             >
               {s.label}
@@ -1014,13 +985,50 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
             </div>
 
             {/* Situación REAL (Finanzas reales). Separada de la previsión: no la corrige ni la sustituye. */}
-            <RealSituation real={real} plannedInvestment={res.totalInvestment} onOpen={() => setTracking({ area: "gestion", tab: "finanzas" })} />
+            {realFinancesOn && <RealSituation real={real} plannedInvestment={res.totalInvestment} onOpen={() => goToSection("finanzas")} />}
 
             {/* Mapa visual de la inversión — complementa el resumen, no lo sustituye */}
             <div className="mt-3">
-              <InvestmentFlowMap op={draft} res={res} real={real} />
+              <InvestmentFlowMap op={draft} res={res} real={realFinancesOn ? real : undefined} />
+            </div>
+
+            {/* Interruptor de Finanzas reales (opcional por operación) */}
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <div className="min-w-0">
+                <span className="block text-sm font-medium text-slate-700">Registrar finanzas reales</span>
+                <span className="block text-xs text-ink-subtle">
+                  Gastos reales, financiación contratada y facturas en Drive. Desactivarlo oculta la sección; no borra datos.
+                </span>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={realFinancesOn}
+                aria-label="Registrar finanzas reales"
+                onClick={() => {
+                  const next = !realFinancesOn;
+                  commit({ realFinancesEnabled: next });
+                  if (next) goToSection("finanzas");
+                }}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${realFinancesOn ? "bg-brand" : "bg-slate-200"}`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${realFinancesOn ? "translate-x-6" : "translate-x-1"}`} />
+              </button>
             </div>
           </SectionBlock>
+
+          {/* ── FINANZAS REALES (opcional) ── */}
+          {realFinancesOn && (
+            <SectionBlock
+              id="section-finanzas"
+              title="Finanzas reales"
+              badge={real.spent.count ? fmtEUR(real.spent.total) : undefined}
+              open={open.finanzas}
+              onToggle={() => toggleSection("finanzas")}
+            >
+              <FinanzasRealesPanel op={draft} overlayRoot={overlayRoot} onChange={(patch) => commit(patch)} />
+            </SectionBlock>
+          )}
 
           {/* ── SECCIÓN 2: DATOS INMUEBLE ── */}
           <SectionBlock id="section-datos" title="Datos inmueble" open={open.datos} onToggle={() => toggleSection("datos")}>
@@ -1492,9 +1500,10 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
 
         </div>
 
-        {tracking && (
-          <TrackingModal op={draft} initialArea={tracking.area} initialTab={tracking.tab} onPersist={commit} onClose={() => setTracking(null)} />
+        {showInvestors && (
+          <TrackingModal op={draft} onPersist={commit} onClose={() => setShowInvestors(false)} />
         )}
+        <div ref={setOverlayRoot} />
         </Vaul.Content>
       </Vaul.Portal>
     </Vaul.Root>
