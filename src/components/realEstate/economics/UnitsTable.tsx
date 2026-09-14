@@ -106,7 +106,7 @@ export function UnitsTable({ op, results, onEdit, onBulkEdit, overlayRoot, readO
         )
       ) : null}
       <div className="max-h-[70vh] overflow-auto rounded-xl border border-line bg-white">
-        <table className="w-full min-w-[1000px] border-collapse text-xs">
+        <table className="w-full min-w-[1010px] border-collapse text-xs">
           <colgroup>
             <col className="w-[116px]" />
             <col className="w-[92px]" />
@@ -114,7 +114,7 @@ export function UnitsTable({ op, results, onEdit, onBulkEdit, overlayRoot, readO
             <col className="w-[98px]" />
             <col className="w-[88px]" />
             <col className="w-[98px]" />
-            <col className="w-[92px]" />
+            <col className="w-[102px]" />
             <col className="w-[98px]" />
             <col className="w-[104px]" />
             <col className="w-[58px]" />

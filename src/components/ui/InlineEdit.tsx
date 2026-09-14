@@ -104,7 +104,7 @@ export function InlineText({ label, value, onChange, readOnly, placeholder }: { 
 
 /** Importe. `base` se muestra atenuado cuando la unidad no tiene valor propio. */
 export function InlineAmount({ label, value, own = true, onChange, readOnly, suffix = "" }: { label: string; value: number | null; own?: boolean; onChange: (v: number | null) => void; readOnly?: boolean; suffix?: string }) {
-  const shown = value == null ? <Empty /> : <span className={own ? "font-semibold text-ink" : "text-ink-subtle"} title={own ? undefined : "Base del Proyecto"}>{fmtEUR(value)}{suffix}</span>;
+  const shown = value == null ? <Empty /> : <span className={`whitespace-nowrap ${own ? "font-semibold text-ink" : "text-ink-subtle"}`} title={own ? undefined : "Base del Proyecto"}>{fmtEUR(value)}{suffix}</span>;
   return (
     <InlineTextLike
       label={label}
