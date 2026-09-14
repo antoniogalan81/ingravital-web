@@ -38,7 +38,7 @@ export function parseEsDate(text: string): { ok: true; iso: string | null } | { 
   return parsed ? { ok: true, iso: parsed } : { ok: false };
 }
 
-const MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+export const MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 export const WEEKDAYS = ["L", "M", "X", "J", "V", "S", "D"];
 
 export type YearMonth = { year: number; month: number };
@@ -53,6 +53,14 @@ export function addMonths({ year, month }: YearMonth, delta: number): YearMonth 
   const total = year * 12 + month + delta;
   return { year: Math.floor(total / 12), month: ((total % 12) + 12) % 12 };
 }
+
+/** Selector de año del calendario: página de 12 años que empieza en `start` (‹ › mueven 12). */
+export function yearPage(start: number): number[] {
+  return Array.from({ length: 12 }, (_, i) => start + i);
+}
+
+/** Primera página de años que contiene `year` (con 5 años antes para ir atrás cómodamente). */
+export const yearPageStart = (year: number): number => year - 5;
 
 /** Hoy en hora local como ISO (el día que ve el usuario, no el de UTC). */
 export function localTodayISO(now: Date = new Date()): string {
@@ -101,7 +109,6 @@ export type UnitRow = {
   baseRent: number | null;
   // Previsión
   completionDateEstimated?: string;
-  depositDateEstimated?: string;
   saleDateEstimated?: string;
   // Realidad
   depositDate?: string;
@@ -135,7 +142,6 @@ export function projectUnitRows(op: Pick<REOperation, "sales" | "units">, res: R
         rentOwn: isNum(s.rentMonthly),
         baseRent: eff?.baseRent ?? null,
         completionDateEstimated: s.completionDateEstimated,
-        depositDateEstimated: s.depositDateEstimated,
         saleDateEstimated: s.saleDateEstimated,
         depositDate: s.depositDate,
         deposit: isNum(s.deposit) ? s.deposit : null,
@@ -183,7 +189,6 @@ export type UnitField =
   | "price"
   | "rent"
   | "completionDateEstimated"
-  | "depositDateEstimated"
   | "saleDateEstimated"
   | "deposit"
   | "depositDate"
@@ -191,7 +196,7 @@ export type UnitField =
   | "buyer"
   | "forRent";
 
-type UnitValue = string | number | boolean | null | undefined;
+export type UnitValue = string | number | boolean | null | undefined;
 
 const empty = (v: UnitValue) => v == null || v === "" || (typeof v === "number" && !Number.isFinite(v));
 
@@ -260,5 +265,37 @@ export function editUnitFields(op: Pick<REOperation, "sales">, res: REResults, r
   let sales = editUnit(op, res, row, fields[0], patch[fields[0]], makeId, nowISO);
   const id = row.saleId ?? sales[sales.length - 1].id;
   for (const field of fields.slice(1)) sales = sales.map((s) => (s.id === id ? withUnitField(s, field, patch[field], nowISO) : s));
+  return sales;
+}
+
+// ── Edición de varias unidades a la vez ───────────────────────────────────────
+
+export type UnitPatch = Partial<Record<UnitField, UnitValue>>;
+
+/** Valor de un campo tal como se ve en la fila (precio y renta: los efectivos). Sin dato = null. */
+export function unitRowValue(row: UnitRow, field: UnitField): string | number | boolean | null {
+  const v = field === "saleDate" ? row.saleDate : row[field];
+  return v === undefined || v === "" ? null : v;
+}
+
+/**
+ * Valor común de un campo en las unidades seleccionadas. Si difieren: `mixed` y SIN valor
+ * (no se elige ninguno de ellos; solo lo que escriba el usuario se aplica a todas).
+ */
+export function commonUnitValue(rows: UnitRow[], field: UnitField): { mixed: boolean; value: string | number | boolean | null } {
+  const values = rows.map((r) => unitRowValue(r, field));
+  if (!values.length) return { mixed: false, value: null };
+  return values.every((v) => v === values[0]) ? { mixed: false, value: values[0] } : { mixed: true, value: null };
+}
+
+/**
+ * Edición masiva: aplica SOLO los campos del parche a cada unidad seleccionada y devuelve UNA
+ * lista de fichas (una sola actualización de la operación). El resto de campos no se toca; las
+ * unidades sin ficha la crean. El precio y la renta son valores propios, no la base del Proyecto.
+ */
+export function editUnitsBulk(op: Pick<REOperation, "sales">, res: REResults, rows: UnitRow[], patch: UnitPatch, makeId: () => string, nowISO: string): RESale[] {
+  let sales: RESale[] = Array.isArray(op.sales) ? op.sales : [];
+  if (!Object.keys(patch).length) return sales;
+  for (const row of rows) sales = editUnitFields({ sales }, res, row, patch, makeId, nowISO);
   return sales;
 }

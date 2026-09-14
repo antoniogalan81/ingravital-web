@@ -22,6 +22,7 @@ import {
 import { parseAmountEs } from "@/src/lib/realFinances";
 import { fmtEUR } from "@/src/lib/realEstateCalc";
 import { Dialog, FIELD_CLS, Field, PrimaryButton, SecondaryButton } from "../tracking/RealFinanceDialogs";
+import { DateInput } from "@/src/components/ui/InlineEdit";
 
 const numText = (v: number | undefined) => (v == null || !Number.isFinite(v) ? "" : v.toLocaleString("es-ES", { maximumFractionDigits: 2 }));
 const parseOptional = (s: string): number | undefined | "invalid" => {
@@ -166,7 +167,6 @@ export function SaleUnitDialog({
     // Un solo precio por unidad (un "precio real" antiguo manda si existe).
     estimatedPrice: numText(initial.realPrice ?? initial.estimatedPrice),
     rentMonthly: numText(initial.rentMonthly),
-    depositDateEstimated: initial.depositDateEstimated ?? "",
     depositDate: initial.depositDate ?? "",
     deposit: numText(initial.deposit),
     forRent: initial.forRent === true,
@@ -214,7 +214,6 @@ export function SaleUnitDialog({
       estimatedPrice: typeof est === "number" ? est : undefined,
       rentMonthly: typeof rent === "number" ? rent : undefined,
       realPrice: undefined,
-      depositDateEstimated: f.depositDateEstimated || undefined,
       depositDate: f.depositDate || undefined,
       deposit: typeof deposit === "number" ? deposit : undefined,
       forRent: f.forRent || undefined,
@@ -235,7 +234,7 @@ export function SaleUnitDialog({
 
   const date = (key: keyof typeof f, label: string) => (
     <Field label={label} error={errors[key]}>
-      <input type="date" className={FIELD_CLS} value={f[key] as string} onChange={(e) => set({ [key]: e.target.value } as Partial<typeof f>)} />
+      <DateInput label={label} className={FIELD_CLS} value={f[key] as string} onChange={(iso) => set({ [key]: iso ?? "" } as Partial<typeof f>)} />
     </Field>
   );
 
@@ -282,7 +281,6 @@ export function SaleUnitDialog({
         <legend className="px-1 text-[10px] font-bold uppercase tracking-wide text-ink-subtle">Previsto</legend>
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-3">
           {date("completionDateEstimated", "Terminación")}
-          {date("depositDateEstimated", "Señal")}
           {date("saleDateEstimated", "Venta")}
           {date("collectionDateEstimated", "Cobro")}
           <Field label="Precio de la unidad" error={errors.estimatedPrice} hint="Vacío: el precio base del Proyecto">
@@ -322,7 +320,7 @@ export function SaleUnitDialog({
           ) : null}
           {payments.map((p, i) => (
             <div key={p.id} className="flex items-start gap-2">
-              <input type="date" aria-label={`Fecha del cobro ${i + 1}`} className={FIELD_CLS} value={p.date} onChange={(e) => setPayments((ps) => ps.map((x) => (x.id === p.id ? { ...x, date: e.target.value } : x)))} />
+              <DateInput label={`Fecha del cobro ${i + 1}`} className={FIELD_CLS} value={p.date} onChange={(iso) => setPayments((ps) => ps.map((x) => (x.id === p.id ? { ...x, date: iso ?? "" } : x)))} />
               <input aria-label={`Importe del cobro ${i + 1}`} className={`${FIELD_CLS} tabular-nums`} inputMode="decimal" value={p.amount} placeholder="Importe" onChange={(e) => setPayments((ps) => ps.map((x) => (x.id === p.id ? { ...x, amount: e.target.value } : x)))} />
               <button type="button" onClick={() => setPayments((ps) => ps.filter((x) => x.id !== p.id))} className="rounded-lg px-2 py-2 text-xs font-semibold text-ink-subtle hover:text-[var(--negative)]" aria-label={`Quitar cobro ${i + 1}`}>
                 Quitar

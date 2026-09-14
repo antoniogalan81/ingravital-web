@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { fmtEUR } from "@/src/lib/realEstateCalc";
-import { addMonths, calendarMonth, formatEsDate, localTodayISO, monthOf, parseEsAmount, parseEsDate, WEEKDAYS } from "@/src/lib/unitEditing";
+import { addMonths, calendarMonth, formatEsDate, localTodayISO, monthOf, MONTHS, parseEsAmount, parseEsDate, WEEKDAYS, yearPage, yearPageStart } from "@/src/lib/unitEditing";
 
 const VALUE_CLS =
   "block w-full min-h-8 rounded-md px-1.5 py-1 text-left text-xs tabular-nums hover:bg-[var(--brand-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)] disabled:cursor-default disabled:hover:bg-transparent";
@@ -150,41 +150,82 @@ export function InlineSelect<T extends string>({ label, value, options, onChange
   );
 }
 
-/** Calendario de un mes (lunes a domingo). Abre en el mes de la fecha o en el actual. */
-export function CalendarCard({ value, onPick, onClear, onClose }: { value?: string; onPick: (iso: string) => void; onClear: () => void; onClose: () => void }) {
+/**
+ * CALENDARIO ÚNICO (mismo comportamiento que la APP). Cabecera ‹ Mes Año ›: las flechas cambian
+ * de mes; el mes abre la lista de meses y el año una página de 12 años (‹ › saltan 12). Abre en
+ * el mes de la fecha o en el actual. Días, «Hoy», «Borrar» y «Cerrar». Solo texto ISO.
+ */
+export function CalendarCard({ value, onPick, onClear, onClose, allowClear = true }: { value?: string; onPick: (iso: string) => void; onClear: () => void; onClose: () => void; allowClear?: boolean }) {
   const [ym, setYm] = useState(() => monthOf(value));
-  const { label, weeks } = calendarMonth(ym.year, ym.month);
+  const [mode, setMode] = useState<"days" | "months" | "years">("days");
+  const [yearStart, setYearStart] = useState(() => yearPageStart(monthOf(value).year));
+  const { weeks } = calendarMonth(ym.year, ym.month);
   const today = localTodayISO();
+  const step = (delta: number) => {
+    if (mode === "years") setYearStart((y) => y + delta * 12);
+    else if (mode === "months") setYm((m) => ({ ...m, year: m.year + delta }));
+    else setYm((m) => addMonths(m, delta));
+  };
+  const nav = "h-8 w-8 rounded-md text-ink hover:bg-[var(--surface-alt)]";
+  const chip = (on: boolean) => `rounded-md px-2 py-1 text-sm font-bold capitalize ${on ? "bg-[var(--brand-soft)] text-brand" : "text-ink hover:bg-[var(--surface-alt)]"}`;
+  const cell = (on: boolean) => `h-10 rounded-md text-xs tabular-nums ${on ? "bg-[var(--brand)] font-bold text-white" : "text-ink hover:bg-[var(--brand-soft)]"}`;
   return (
     <div role="dialog" aria-label="Calendario" className="w-72 rounded-xl border border-line bg-white p-3 shadow-xl">
       <div className="mb-2 flex items-center justify-between">
-        <button type="button" onClick={() => setYm((m) => addMonths(m, -1))} className="h-8 w-8 rounded-md text-ink hover:bg-[var(--surface-alt)]" aria-label="Mes anterior">‹</button>
-        <span className="text-sm font-bold capitalize text-ink" aria-live="polite">{label}</span>
-        <button type="button" onClick={() => setYm((m) => addMonths(m, 1))} className="h-8 w-8 rounded-md text-ink hover:bg-[var(--surface-alt)]" aria-label="Mes siguiente">›</button>
+        <button type="button" onClick={() => step(-1)} className={nav} aria-label={mode === "years" ? "Años anteriores" : mode === "months" ? "Año anterior" : "Mes anterior"}>‹</button>
+        <span className="flex items-center gap-1" aria-live="polite">
+          <button type="button" onClick={() => setMode(mode === "months" ? "days" : "months")} aria-label={`Elegir mes: ${MONTHS[ym.month]}`} className={chip(mode === "months")}>{MONTHS[ym.month]}</button>
+          <button
+            type="button"
+            onClick={() => {
+              setYearStart(yearPageStart(ym.year));
+              setMode(mode === "years" ? "days" : "years");
+            }}
+            aria-label={`Elegir año: ${ym.year}`}
+            className={chip(mode === "years")}
+          >
+            {ym.year} ▾
+          </button>
+        </span>
+        <button type="button" onClick={() => step(1)} className={nav} aria-label={mode === "years" ? "Años siguientes" : mode === "months" ? "Año siguiente" : "Mes siguiente"}>›</button>
       </div>
-      <div className="grid grid-cols-7 gap-0.5 text-center">
-        {WEEKDAYS.map((d) => (
-          <span key={d} className="py-1 text-[10px] font-bold text-ink-subtle">{d}</span>
-        ))}
-        {weeks.flat().map((iso, i) =>
-          iso ? (
-            <button
-              key={iso}
-              type="button"
-              onClick={() => onPick(iso)}
-              aria-label={formatEsDate(iso)}
-              aria-pressed={iso === value}
-              className={`h-8 rounded-md text-xs tabular-nums ${iso === value ? "bg-[var(--brand)] font-bold text-white" : iso === today ? "font-bold text-brand ring-1 ring-[var(--brand)]" : "text-ink hover:bg-[var(--brand-soft)]"}`}
-            >
-              {Number(iso.slice(8))}
-            </button>
-          ) : (
-            <span key={`e${i}`} />
-          ),
-        )}
-      </div>
+      {mode === "years" ? (
+        <div className="grid grid-cols-3 gap-1">
+          {yearPage(yearStart).map((y) => (
+            <button key={y} type="button" aria-label={`Año ${y}`} aria-pressed={y === ym.year} onClick={() => { setYm((m) => ({ ...m, year: y })); setMode("days"); }} className={cell(y === ym.year)}>{y}</button>
+          ))}
+        </div>
+      ) : mode === "months" ? (
+        <div className="grid grid-cols-3 gap-1">
+          {MONTHS.map((name, i) => (
+            <button key={name} type="button" aria-label={`Mes ${name}`} aria-pressed={i === ym.month} onClick={() => { setYm((m) => ({ ...m, month: i })); setMode("days"); }} className={`${cell(i === ym.month)} capitalize`}>{name.slice(0, 3)}</button>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-7 gap-0.5 text-center">
+          {WEEKDAYS.map((d) => (
+            <span key={d} className="py-1 text-[10px] font-bold text-ink-subtle">{d}</span>
+          ))}
+          {weeks.flat().map((iso, i) =>
+            iso ? (
+              <button
+                key={iso}
+                type="button"
+                onClick={() => onPick(iso)}
+                aria-label={formatEsDate(iso)}
+                aria-pressed={iso === value}
+                className={`h-8 rounded-md text-xs tabular-nums ${iso === value ? "bg-[var(--brand)] font-bold text-white" : iso === today ? "font-bold text-brand ring-1 ring-[var(--brand)]" : "text-ink hover:bg-[var(--brand-soft)]"}`}
+              >
+                {Number(iso.slice(8))}
+              </button>
+            ) : (
+              <span key={`e${i}`} />
+            ),
+          )}
+        </div>
+      )}
       <div className="mt-2 flex items-center justify-between border-t border-line pt-2">
-        <button type="button" onClick={onClear} className="rounded-md px-2 py-1 text-xs font-semibold text-ink-subtle hover:text-[var(--negative)]">Borrar</button>
+        {allowClear ? <button type="button" onClick={onClear} className="rounded-md px-2 py-1 text-xs font-semibold text-ink-subtle hover:text-[var(--negative)]">Borrar</button> : <span />}
         <div className="flex gap-1">
           <button type="button" onClick={() => onPick(today)} className="rounded-md px-2 py-1 text-xs font-semibold text-brand hover:bg-[var(--brand-soft)]">Hoy</button>
           <button type="button" onClick={onClose} className="rounded-md px-2 py-1 text-xs font-semibold text-ink hover:bg-[var(--surface-alt)]">Cerrar</button>
@@ -194,18 +235,65 @@ export function CalendarCard({ value, onPick, onClear, onClose }: { value?: stri
   );
 }
 
+/** Capa con el calendario, dentro de `target` (la ventana donde está el campo) para no quedar bloqueada. */
+export function CalendarOverlay({ target, value, onPick, onClose, allowClear = true }: { target: HTMLElement | null; value?: string; onPick: (iso: string | null) => void; onClose: () => void; allowClear?: boolean }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+  if (!target) return null;
+  return createPortal(
+    <div data-inline-edit="" className="fixed inset-0 z-[90] flex items-center justify-center bg-black/20 p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <CalendarCard value={value} allowClear={allowClear} onPick={onPick} onClear={() => onPick(null)} onClose={onClose} />
+    </div>,
+    target,
+  );
+}
+
+/** Ventana (diálogo o panel) que contiene un elemento; si no hay, el documento. */
+const overlayTargetOf = (el: HTMLElement | null): HTMLElement | null =>
+  (el?.closest('[role="dialog"], [data-vaul-drawer]') as HTMLElement | null) ?? (typeof document !== "undefined" ? document.body : null);
+
+/** Campo de fecha (formularios y tablas): muestra DD/MM/AAAA y abre el calendario único. */
+export function DateInput({ value, onChange, label, className, placeholder = "DD/MM/AAAA", allowClear = true }: { value?: string | null; onChange: (iso: string | null) => void; label: string; className?: string; placeholder?: string; allowClear?: boolean }) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const [target, setTarget] = useState<HTMLElement | null>(null);
+  const shown = formatEsDate(value);
+  return (
+    <>
+      <button ref={ref} type="button" aria-label={`${label}: ${shown || "sin fecha"}`} onClick={() => setTarget(overlayTargetOf(ref.current))} className={`flex items-center gap-1.5 text-left tabular-nums ${className ?? ""}`}>
+        <svg className="h-3.5 w-3.5 shrink-0 text-ink-subtle" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+        <span className={shown ? "text-ink" : "text-ink-subtle"}>{shown || placeholder}</span>
+      </button>
+      {target ? (
+        <CalendarOverlay
+          target={target}
+          value={value ?? undefined}
+          allowClear={allowClear}
+          onClose={() => setTarget(null)}
+          onPick={(iso) => {
+            setTarget(null);
+            if (iso !== (value ?? null)) onChange(iso);
+          }}
+        />
+      ) : null}
+    </>
+  );
+}
+
 /**
  * Fecha: clic en el valor para escribirla (DD/MM/AAAA) o en el icono para elegirla en el
  * calendario. El calendario se abre en `overlayRoot` (dentro de la ficha) o en el documento.
  */
 export function InlineDate({ label, value, onChange, readOnly, overlayRoot }: { label: string; value?: string; onChange: (iso: string | null) => void; readOnly?: boolean; overlayRoot?: HTMLElement | null }) {
   const [calendar, setCalendar] = useState(false);
-  useEffect(() => {
-    if (!calendar) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setCalendar(false);
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [calendar]);
   const pick = (iso: string | null) => {
     setCalendar(false);
     if (iso !== (value ?? null)) onChange(iso);
@@ -234,14 +322,7 @@ export function InlineDate({ label, value, onChange, readOnly, overlayRoot }: { 
           </svg>
         </button>
       )}
-      {calendar && target
-        ? createPortal(
-            <div data-inline-edit="" className="fixed inset-0 z-[80] flex items-center justify-center bg-black/20 p-4" onMouseDown={(e) => e.target === e.currentTarget && setCalendar(false)}>
-              <CalendarCard value={value} onPick={pick} onClear={() => pick(null)} onClose={() => setCalendar(false)} />
-            </div>,
-            target,
-          )
-        : null}
+      {calendar ? <CalendarOverlay target={target} value={value} onPick={pick} onClose={() => setCalendar(false)} /> : null}
     </div>
   );
 }

@@ -20,6 +20,7 @@ import {
   type RERealLoan,
 } from "@/src/lib/realEstateTracking";
 import { driveFileUrl, parseAmountEs } from "@/src/lib/realFinances";
+import { DateInput } from "@/src/components/ui/InlineEdit";
 
 export const FIELD_CLS =
   "w-full rounded-lg border border-line bg-white px-2.5 py-2 text-sm text-ink placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400";
@@ -222,7 +223,7 @@ export function RealExpenseDialog({
           <input className={`${FIELD_CLS} tabular-nums`} inputMode="decimal" value={f.amount} onChange={(e) => set({ amount: e.target.value })} placeholder="4.850" />
         </Field>
         <Field label="Fecha" required error={errors.date}>
-          <input type="date" className={FIELD_CLS} value={f.date} onChange={(e) => set({ date: e.target.value })} />
+          <DateInput label="Fecha" className={FIELD_CLS} value={f.date} allowClear={false} onChange={(iso) => set({ date: iso ?? "" })} />
         </Field>
       </div>
       <Field label="Categoría">
@@ -439,7 +440,7 @@ export function RealLoanDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Fecha de inicio" error={errors.startDate}>
-              <input type="date" className={FIELD_CLS} value={f.startDate} onChange={(e) => set({ startDate: e.target.value })} />
+              <DateInput label="Fecha de inicio" className={FIELD_CLS} value={f.startDate} onChange={(iso) => set({ startDate: iso ?? "" })} />
             </Field>
             <Field label="Plazo (meses)" error={errors.termMonths}>
               <input className={`${FIELD_CLS} tabular-nums`} inputMode="numeric" value={f.termMonths} onChange={(e) => set({ termMonths: e.target.value })} placeholder="240" />

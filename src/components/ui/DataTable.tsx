@@ -6,6 +6,7 @@
 // los inputs compartidos exportados abajo (evita duplicar lógica de edición).
 
 import { useState, type ReactNode } from "react";
+import { DateInput } from "./InlineEdit";
 
 export type DataTableColumn<T> = {
   key: string;
@@ -232,21 +233,17 @@ export function SelectCellInput<V extends string>({
   );
 }
 
+/** Fecha de una celda: el calendario único (mes, año, Hoy, Borrar). */
 export function DateCellInput({
   value,
   onChange,
+  label = "Fecha",
 }: {
   value: string | undefined;
   onChange: (v: string | undefined) => void;
+  label?: string;
 }) {
-  return (
-    <input
-      type="date"
-      value={value ?? ""}
-      onChange={(e) => onChange(e.target.value || undefined)}
-      className={`${cellInputCls} text-ink-muted`}
-    />
-  );
+  return <DateInput label={label} value={value} onChange={(iso) => onChange(iso ?? undefined)} className={cellInputCls} placeholder="—" />;
 }
 
 export default DataTable;

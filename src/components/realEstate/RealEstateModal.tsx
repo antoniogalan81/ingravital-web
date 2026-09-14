@@ -23,9 +23,9 @@ import { RE_EXPENSE_CATEGORY_LABEL, newTrackingId, type REExpense, type RESale }
 import { ProjectExpenses } from "./economics/ProjectExpenses";
 import { ProjectSales } from "./economics/ProjectSales";
 import { PlannedCostDialog, SaleUnitDialog, makePlannedCost, makeSaleUnit } from "./economics/EconomicsDialogs";
-import { UnitsTable, type UnitEdit } from "./economics/UnitsTable";
+import { UnitsTable, type UnitBulkEdit, type UnitEdit } from "./economics/UnitsTable";
 import { isInlineEditing } from "@/src/components/ui/InlineEdit";
-import { editUnit } from "@/src/lib/unitEditing";
+import { editUnit, editUnitsBulk } from "@/src/lib/unitEditing";
 
 type RealEstateCategory = "vivienda" | "local" | "suelo" | "adaptacion";
 
@@ -783,6 +783,11 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
     const cur = draftRef.current;
     commit({ sales: editUnit(cur, calcResults(cur), row, field, value, () => newTrackingId("sale"), new Date().toISOString()) });
   };
+  // Editar seleccionadas: una sola actualización con los campos tocados en todas las unidades.
+  const editUnitsSelected: UnitBulkEdit = (rows, patch) => {
+    const cur = draftRef.current;
+    commit({ sales: editUnitsBulk(cur, calcResults(cur), rows, patch, () => newTrackingId("sale"), new Date().toISOString()) });
+  };
 
   // Sync draft if op changes externally
   useEffect(() => {
@@ -1021,7 +1026,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
         </button>
         {salesTable ? (
           <div className="mt-2">
-            <UnitsTable op={draft} results={res} onEdit={editUnitField} overlayRoot={overlayRoot} />
+            <UnitsTable op={draft} results={res} onEdit={editUnitField} onBulkEdit={editUnitsSelected} overlayRoot={overlayRoot} />
           </div>
         ) : null}
       </div>
@@ -1385,7 +1390,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
                 <p className="text-xs font-bold text-ink">Unidades · previsión y realidad</p>
                 <p className="text-[11px] text-ink-subtle">Haz clic en cualquier dato para cambiarlo. Precio y renta en gris: base del Proyecto; al escribir uno propio, lo sustituye en todos los cálculos.</p>
               </div>
-              <UnitsTable op={draft} results={res} onEdit={editUnitField} overlayRoot={overlayRoot} />
+              <UnitsTable op={draft} results={res} onEdit={editUnitField} onBulkEdit={editUnitsSelected} overlayRoot={overlayRoot} />
             </div>
           </SectionBlock>
 

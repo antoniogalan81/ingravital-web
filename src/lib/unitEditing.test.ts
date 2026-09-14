@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import type { REOperation } from "./realEstate.ts";
 import { calcResults } from "./realEstateCalc.ts";
 import { projectUnitTypes, projectSalesSummary, saleCollected, scaleOperation } from "./projectEconomics.ts";
-import { calendarMonth, editUnit, editUnitFields, formatEsDate, monthOf, parseEsAmount, parseEsDate, projectUnitRows, type UnitRow } from "./unitEditing.ts";
+import { calendarMonth, commonUnitValue, editUnit, editUnitFields, editUnitsBulk, formatEsDate, monthOf, parseEsAmount, parseEsDate, projectUnitRows, yearPage, yearPageStart, type UnitRow } from "./unitEditing.ts";
 
 const NOW = "2026-09-14T10:00:00.000Z";
 const op0 = (extra: Partial<REOperation> = {}): REOperation =>
@@ -49,6 +49,9 @@ test("calendario: semanas de lunes a domingo; abre en el mes de la fecha o en el
   assert.equal(mar.weeks[0].indexOf("2026-03-01"), 6, "1 de marzo de 2026 es domingo");
   assert.deepEqual(monthOf("2027-02-15", new Date(2026, 8, 14)), { year: 2027, month: 1 });
   assert.deepEqual(monthOf(undefined, new Date(2026, 8, 14)), { year: 2026, month: 8 });
+  // Selector de año: páginas de 12 años; tres años atrás sin pulsar 36 veces «mes anterior».
+  assert.deepEqual(yearPage(yearPageStart(2026)), [2021, 2022, 2023, 2024, 2025, 2026, 2027, 2028, 2029, 2030, 2031, 2032]);
+  assert.equal(yearPage(yearPageStart(2026) - 12)[0], 2009);
 });
 
 test("importes en formato español: miles con punto, decimales con coma; vacío borra", () => {
@@ -102,7 +105,6 @@ test("precio de venta real antiguo (realPrice): se lee como precio de la unidad 
 test("previsión y realidad: fechas, señal, venta, comprador y alquiler; vacíos sin \"\" ni 0", () => {
   let op = op0();
   op = edit(op, "Vivienda 2", "completionDateEstimated", "2027-02-15");
-  op = edit(op, "Vivienda 2", "depositDateEstimated", "2027-03-01");
   op = edit(op, "Vivienda 2", "saleDateEstimated", "2027-04-30");
   op = edit(op, "Vivienda 2", "deposit", 6000);
   let s = op.sales![0];
@@ -114,8 +116,8 @@ test("previsión y realidad: fechas, señal, venta, comprador y alquiler; vacío
   op = edit(op, "Vivienda 2", "forRent", true);
   s = op.sales![0];
   assert.deepEqual(
-    { c: s.completionDateEstimated, se: s.depositDateEstimated, ve: s.saleDateEstimated, d: s.deposit, dd: s.depositDate, v: s.date, st: s.status, b: s.buyer, r: s.forRent },
-    { c: "2027-02-15", se: "2027-03-01", ve: "2027-04-30", d: 6000, dd: "2026-10-01", v: "2027-05-02", st: "VENDIDO", b: "Laura Pérez", r: true },
+    { c: s.completionDateEstimated, ve: s.saleDateEstimated, d: s.deposit, dd: s.depositDate, v: s.date, st: s.status, b: s.buyer, r: s.forRent },
+    { c: "2027-02-15", ve: "2027-04-30", d: 6000, dd: "2026-10-01", v: "2027-05-02", st: "VENDIDO", b: "Laura Pérez", r: true },
   );
   assert.equal(s.estimatedPrice, undefined, "activar alquiler o vender no borra ni copia el precio");
   assert.equal(projectSalesSummary(op, calcResults(op), NOW).groups[0].rows[0].soldAmount, 180000);
@@ -207,6 +209,47 @@ test("destino en garajes, locales y parcelas; los escenarios escalan cada flujo 
   const scaled = calcResults(scaleOperation(cur, { sale: 1.1, rent: 0.5 }));
   assert.equal(Math.round(scaled.totalSales), Math.round(1.1 * res.totalSales));
   assert.equal(scaled.monthlyRentIncome, 0.5 * res.monthlyRentIncome);
+});
+
+test("selección múltiple: solo cambian los campos tocados y la edición individual posterior manda", () => {
+  let op = op0();
+  const bulk = (o: REOperation, titles: string[] | "all", patch: Parameters<typeof editUnitsBulk>[3]): REOperation => {
+    const rows = rowsOf(o).filter((r) => titles === "all" || titles.includes(r.title));
+    return { ...o, sales: editUnitsBulk(o, calcResults(o), rows, patch, makeId, NOW) };
+  };
+  op = edit(op, "Vivienda 2", "buyer", "Previo");
+  op = bulk(op, "all", { completionDateEstimated: "2027-06-30" });
+  assert.equal(op.sales!.length, 6, "las 5 unidades sin ficha la crean; la que ya tenía se reutiliza");
+  assert.deepEqual(rowsOf(op).map((r) => r.completionDateEstimated), Array(6).fill("2027-06-30"));
+  assert.equal(row(op, "Vivienda 2").buyer, "Previo", "el resto de campos no se toca");
+  assert.ok(rowsOf(op).every((r) => r.status === "DISPONIBLE" && !r.priceOwn && !r.rentOwn));
+
+  op = edit(op, "Vivienda 4", "completionDateEstimated", "2027-05-15");
+  assert.deepEqual(rowsOf(op).map((r) => r.completionDateEstimated), ["2027-06-30", "2027-06-30", "2027-06-30", "2027-05-15", "2027-06-30", "2027-06-30"]);
+
+  op = bulk(op, ["Vivienda 1", "Vivienda 2", "Vivienda 3"], { price: 185000 });
+  assert.deepEqual(rowsOf(op).map((r) => [r.price, r.priceOwn]), [[185000, true], [185000, true], [185000, true], [180000, false], [180000, false], [180000, false]]);
+  assert.equal(op.units[0].salePriceTotal, 180000, "editar seleccionadas no cambia la base de la tipología");
+  assert.equal(calcResults(op).totalSales, 3 * 185000 + 3 * 180000);
+
+  op = bulk(op, ["Vivienda 1", "Vivienda 2", "Vivienda 3"], { forRent: true });
+  const res = calcResults(op);
+  assert.deepEqual([res.rentSplit, res.totalSales, res.monthlyRentIncome], [true, 3 * 180000, 3 * 900], "destino en lote: esas tres pasan a alquiler, recalculado");
+  assert.deepEqual(editUnitsBulk(op, res, rowsOf(op), {}, makeId, NOW), op.sales, "sin campos tocados no cambia nada");
+});
+
+test("selección múltiple: valores diferentes no eligen ninguno; solo lo escrito se aplica a todas", () => {
+  let op = op0();
+  op = edit(op, "Vivienda 1", "buyer", "A");
+  op = edit(op, "Vivienda 2", "buyer", "B");
+  const sel = () => rowsOf(op).filter((r) => r.title === "Vivienda 1" || r.title === "Vivienda 2");
+  assert.deepEqual(commonUnitValue(sel(), "buyer"), { mixed: true, value: null });
+  assert.deepEqual(commonUnitValue(sel(), "price"), { mixed: false, value: 180000 });
+  assert.deepEqual(commonUnitValue(sel(), "completionDateEstimated"), { mixed: false, value: null });
+  const before = JSON.stringify(op.sales);
+  assert.equal(JSON.stringify(editUnitsBulk(op, calcResults(op), sel(), {}, makeId, NOW)), before, "sin tocar el campo, nada cambia");
+  op = { ...op, sales: editUnitsBulk(op, calcResults(op), sel(), { buyer: "C" }, makeId, NOW) };
+  assert.deepEqual(sel().map((r) => r.buyer), ["C", "C"]);
 });
 
 test("cobrado: señal + cobros; un cobrado antiguo sin detalle se respeta", () => {
