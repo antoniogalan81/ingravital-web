@@ -1,43 +1,21 @@
 "use client";
 
-// Entrada rápida de GASTO / VENTA / HITO. Formulario compacto con TODOS los campos
-// del modelo, autofoco, "Guardar" y "Guardar y añadir otro", y validación real.
-// NO duplica el modelo: usa las mismas fábricas (makeExpense/makeSale/makeMilestone)
-// y escribe en los MISMOS arrays de la operación mediante los callbacks onSave*.
+// Entrada rápida de HITO del área Inversores. Formulario compacto con autofoco, "Guardar"
+// y "Guardar y añadir otro". Gastos y ventas NO se crean aquí: se editan en Gestión del
+// proyecto (única fuente); `QuickKind` los mantiene para que el Inicio pueda llevar allí.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  RE_EXPENSE_CATEGORIES,
-  RE_EXPENSE_STATUS_LABEL,
-  RE_SALE_STATUS_LABEL,
-  RE_SALE_STATUSES,
   RE_MILESTONE_STATUS_LABEL,
   RE_MILESTONE_STATUSES,
-  makeExpense,
-  makeSale,
   makeMilestone,
-  type REExpense,
-  type REExpenseCategory,
-  type REExpenseStatus,
-  type RESale,
-  type RESaleStatus,
   type REMilestone,
   type REMilestoneStatus,
 } from "@/src/lib/realEstateTracking";
 
 export type QuickKind = "gasto" | "venta" | "hito";
 
-const TITLES: Record<QuickKind, { title: string; subtitle: string; requiredLabel: string }> = {
-  gasto: { title: "Gasto rápido", subtitle: "Registra un gasto sin abrir la tabla completa.", requiredLabel: "Indica el concepto del gasto." },
-  venta: { title: "Venta rápida", subtitle: "Añade una unidad o activo y su estado comercial.", requiredLabel: "Indica la unidad o activo." },
-  hito: { title: "Hito rápido", subtitle: "Planifica un hito y sus fechas.", requiredLabel: "Indica el nombre del hito." },
-};
-
-function makeByKind(kind: QuickKind): REExpense | RESale | REMilestone {
-  if (kind === "gasto") return makeExpense();
-  if (kind === "venta") return makeSale();
-  return makeMilestone();
-}
+const META = { title: "Hito rápido", subtitle: "Planifica un hito y sus fechas.", requiredLabel: "Indica el nombre del hito." };
 
 /** Parseo numérico tolerante: vacío → undefined, no numérico → undefined. */
 function toNum(v: string): number | undefined {
@@ -47,24 +25,18 @@ function toNum(v: string): number | undefined {
 }
 
 export function QuickEntryModal({
-  kind,
-  onSaveExpense,
-  onSaveSale,
   onSaveMilestone,
   onClose,
 }: {
-  kind: QuickKind;
-  onSaveExpense: (e: REExpense) => void;
-  onSaveSale: (s: RESale) => void;
   onSaveMilestone: (m: REMilestone) => void;
   onClose: () => void;
 }) {
-  const [draft, setDraft] = useState<REExpense | RESale | REMilestone>(() => makeByKind(kind));
+  const [draft, setDraft] = useState<REMilestone>(() => makeMilestone());
   const [error, setError] = useState<string | null>(null);
   const [savedCount, setSavedCount] = useState(0);
   const firstFieldRef = useRef<HTMLInputElement>(null);
 
-  const meta = TITLES[kind];
+  const meta = META;
 
   useEffect(() => {
     firstFieldRef.current?.focus();
@@ -76,8 +48,7 @@ export function QuickEntryModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // El campo obligatorio es el "nombre" de la fila (concept / title / title).
-  const requiredValue = kind === "gasto" ? (draft as REExpense).concept : (draft as RESale | REMilestone).title;
+  const requiredValue = draft.title;
 
   const commit = useCallback(
     (addAnother: boolean) => {
@@ -86,13 +57,10 @@ export function QuickEntryModal({
         firstFieldRef.current?.focus();
         return;
       }
-      const stamped = { ...draft, updatedAt: new Date().toISOString() };
-      if (kind === "gasto") onSaveExpense(stamped as REExpense);
-      else if (kind === "venta") onSaveSale(stamped as RESale);
-      else onSaveMilestone(stamped as REMilestone);
+      onSaveMilestone({ ...draft, updatedAt: new Date().toISOString() });
 
       if (addAnother) {
-        setDraft(makeByKind(kind));
+        setDraft(makeMilestone());
         setError(null);
         setSavedCount((c) => c + 1);
         firstFieldRef.current?.focus();
@@ -100,11 +68,11 @@ export function QuickEntryModal({
         onClose();
       }
     },
-    [draft, kind, meta.requiredLabel, onClose, onSaveExpense, onSaveMilestone, onSaveSale, requiredValue],
+    [draft, meta.requiredLabel, onClose, onSaveMilestone, requiredValue],
   );
 
-  const patch = (p: Partial<REExpense> | Partial<RESale> | Partial<REMilestone>) => {
-    setDraft((d) => ({ ...d, ...p }) as REExpense | RESale | REMilestone);
+  const patch = (p: Partial<REMilestone>) => {
+    setDraft((d) => ({ ...d, ...p }));
     if (error) setError(null);
   };
 
@@ -133,9 +101,7 @@ export function QuickEntryModal({
 
         {/* Body */}
         <form className="overflow-y-auto px-5 py-4 space-y-3" onKeyDown={onFormKeyDown} onSubmit={(e) => e.preventDefault()}>
-          {kind === "gasto" ? <GastoFields draft={draft as REExpense} patch={patch} firstRef={firstFieldRef} error={error} /> : null}
-          {kind === "venta" ? <VentaFields draft={draft as RESale} patch={patch} firstRef={firstFieldRef} error={error} /> : null}
-          {kind === "hito" ? <HitoFields draft={draft as REMilestone} patch={patch} firstRef={firstFieldRef} error={error} /> : null}
+          <HitoFields draft={draft} patch={patch} firstRef={firstFieldRef} error={error} />
         </form>
 
         {/* Footer */}
@@ -168,66 +134,6 @@ export function QuickEntryModal({
 
 // ── Campos por tipo ──────────────────────────────────────────────────────────
 
-function GastoFields({ draft, patch, firstRef, error }: FieldsProps<REExpense>) {
-  return (
-    <>
-      <Text label="Concepto" required value={draft.concept} onChange={(v) => patch({ concept: v })} inputRef={firstRef} error={error} placeholder="Ej. Licencia de obra" />
-      <div className="grid grid-cols-2 gap-3">
-        <Select<REExpenseCategory>
-          label="Categoría"
-          value={draft.category}
-          options={RE_EXPENSE_CATEGORIES.map((c) => ({ value: c.key, label: c.label }))}
-          onChange={(v) => patch({ category: v })}
-        />
-        <Select<REExpenseStatus>
-          label="Estado"
-          value={draft.status}
-          options={(Object.keys(RE_EXPENSE_STATUS_LABEL) as REExpenseStatus[]).map((k) => ({ value: k, label: RE_EXPENSE_STATUS_LABEL[k] }))}
-          onChange={(v) => patch({ status: v })}
-        />
-      </div>
-      <Text label="Proveedor" value={draft.provider} onChange={(v) => patch({ provider: v || undefined })} placeholder="—" />
-      <div className="grid grid-cols-2 gap-3">
-        <Num label="Estimado (€)" value={draft.estimated} onChange={(v) => patch({ estimated: v })} />
-        <Num label="Pagado (€)" value={draft.paid} onChange={(v) => patch({ paid: v })} />
-      </div>
-      <p className="text-[11px] text-ink-subtle">El importe real se registra en Finanzas reales, vinculado a esta partida.</p>
-      <div className="grid grid-cols-2 gap-3">
-        <DateField label="Fecha" value={draft.date} onChange={(v) => patch({ date: v })} />
-        <Text label="Factura (enlace/nombre)" value={draft.invoiceName ?? draft.invoiceUri} onChange={(v) => patch({ invoiceName: v || undefined, invoiceUri: /^https?:\/\//i.test(v) ? v : draft.invoiceUri })} placeholder="—" />
-      </div>
-      <Area label="Notas" value={draft.notes} onChange={(v) => patch({ notes: v || undefined })} />
-    </>
-  );
-}
-
-function VentaFields({ draft, patch, firstRef, error }: FieldsProps<RESale>) {
-  return (
-    <>
-      <Text label="Unidad / activo" required value={draft.title} onChange={(v) => patch({ title: v })} inputRef={firstRef} error={error} placeholder="Ej. Vivienda 1ºA" />
-      <div className="grid grid-cols-2 gap-3">
-        <Select<RESaleStatus>
-          label="Estado"
-          value={draft.status}
-          options={RE_SALE_STATUSES.map((s) => ({ value: s, label: RE_SALE_STATUS_LABEL[s] }))}
-          onChange={(v) => patch({ status: v })}
-        />
-        <Text label="Comprador" value={draft.buyer} onChange={(v) => patch({ buyer: v || undefined })} placeholder="—" />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Num label="Precio est. (€)" value={draft.estimatedPrice} onChange={(v) => patch({ estimatedPrice: v })} />
-        <Num label="Precio real (€)" value={draft.realPrice} onChange={(v) => patch({ realPrice: v })} />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Num label="Señal (€)" value={draft.deposit} onChange={(v) => patch({ deposit: v })} />
-        <Num label="Cobrado (€)" value={draft.collected} onChange={(v) => patch({ collected: v })} />
-      </div>
-      <DateField label="Fecha" value={draft.date} onChange={(v) => patch({ date: v })} />
-      <Area label="Notas" value={draft.notes} onChange={(v) => patch({ notes: v || undefined })} />
-    </>
-  );
-}
-
 function HitoFields({ draft, patch, firstRef, error }: FieldsProps<REMilestone>) {
   return (
     <>
@@ -252,7 +158,7 @@ function HitoFields({ draft, patch, firstRef, error }: FieldsProps<REMilestone>)
 
 type FieldsProps<T> = {
   draft: T;
-  patch: (p: Partial<REExpense> | Partial<RESale> | Partial<REMilestone>) => void;
+  patch: (p: Partial<REMilestone>) => void;
   firstRef: React.RefObject<HTMLInputElement | null>;
   error: string | null;
 };

@@ -7,6 +7,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { REOperation } from "../src/lib/realEstate.ts";
+import { activeItems } from "../src/lib/realFinances.ts";
 import { DriveError, folderBelongsTo, type DriveClient, type DriveFile } from "./drive.ts";
 import { extractFields, type Extraction } from "./extract/fields.ts";
 import { needsAssist, type Assistant } from "./extract/llm.ts";
@@ -225,7 +226,7 @@ export async function processJob(job: JobRow, deps: PipelineDeps): Promise<{ sta
     const rowByFile = new Map(rows.map((r) => [r.drive_file_id, r]));
     // Estado ANTERIOR (antes del upsert) para intentos: el upsert no toca status/attempts.
     const knownByFile = new Map(known.map((r) => [r.drive_file_id, r]));
-    const unitTitles = [...new Set(ops.flatMap((op) => [...(op.units ?? []).map((u) => u.title), ...(op.sales ?? []).map((s) => s.title)]).filter(Boolean))];
+    const unitTitles = [...new Set(ops.flatMap((op) => [...(op.units ?? []).map((u) => u.title), ...activeItems(op.sales).map((s) => s.title)]).filter(Boolean))];
     const ctx: DocContext = { job, ops, tmp, summary, deps, unitTitles };
 
     for (const { file } of plan.toProcess) {

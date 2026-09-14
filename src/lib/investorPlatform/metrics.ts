@@ -11,46 +11,26 @@
 // policy sobre la tabla), seguiría sin ver un solo input de la operación.
 
 import type { REOperation, REResults } from "../realEstate";
-import { RE_EXPENSE_CATEGORY_LABEL, RE_SALE_STATUS_LABEL } from "../realEstateTracking";
-import { expenseTotals, profitability, progressMetrics, salesStats } from "../realEstateTrackingCalc";
-import { budgetLineReal, effectiveRealExpenses } from "../realFinances";
+import { profitability, progressMetrics, salesStats } from "../realEstateTrackingCalc";
+import { projectExpenseSummary, projectSalesSummary, salesSummaryForInvestors, withoutExpenseAmounts } from "../projectEconomics";
 import { toMediaRef, type MediaRef, type OpportunityMetrics } from "./types";
 
 /**
- * Deriva los KPIs de una operación. Se llama al crear la oportunidad y cada vez que
- * el promotor guarda la operación, de modo que lo que ve el inversor no envejece.
+ * Deriva los KPIs de una operación. Gastos y ventas son los MISMOS resúmenes que ve el
+ * promotor en Gestión del proyecto (`projectEconomics`). Se recalcula al guardar la oferta
+ * y, sobre todo, cada vez que un inversor abre la oportunidad (`/api/investor/refresh-metrics`),
+ * así que un cambio de gastos, ventas, cobros o documentos nunca deja cifras antiguas.
  */
 export function buildOpportunityMetrics(
   op: REOperation,
   results: REResults,
   nowISO: string = new Date().toISOString(),
 ): OpportunityMetrics {
-  const exp = expenseTotals(op);
   const sales = salesStats(op);
   const pm = progressMetrics(op, results, nowISO);
   const prof = profitability(op, results);
-
-  const ventas = (op.sales ?? []).map((s) => ({
-    title: s.title || "Unidad",
-    status: s.status,
-    statusLabel: RE_SALE_STATUS_LABEL[s.status],
-    price: s.realPrice ?? s.estimatedPrice ?? undefined,
-  }));
-
-  const realExpenses = effectiveRealExpenses(op);
-  const gastos = (op.expenses ?? []).map((e) => {
-    const invoice: MediaRef | null = toMediaRef({
-      bucket: e.invoiceBucket,
-      storagePath: e.invoiceStoragePath,
-      uri: e.invoiceUri,
-    });
-    return {
-      concept: e.concept || RE_EXPENSE_CATEGORY_LABEL[e.category],
-      category: RE_EXPENSE_CATEGORY_LABEL[e.category],
-      amount: budgetLineReal(realExpenses, e.id) ?? e.estimated ?? undefined,
-      ...(invoice ? { invoice } : {}),
-    };
-  });
+  const expenseSummary = projectExpenseSummary(op, results);
+  const salesSummary = projectSalesSummary(op, results, nowISO);
 
   // Las variantes "sin precios"/"sin importes" se precalculan aquí para que la BD
   // pueda elegir una u otra sin tener que recortar objetos por su cuenta.
@@ -71,7 +51,7 @@ export function buildOpportunityMetrics(
   return {
     costesTotales: results.totalInvestment,
     ingresos: sales.collected,
-    pendientePago: exp.pending,
+    pendientePago: expenseSummary.remaining ?? 0,
     pendienteCobro: sales.pendingIncome,
     rentabilidadEstimada: results.saleYield,
     rentabilidadReal: prof.realYield,
@@ -85,10 +65,11 @@ export function buildOpportunityMetrics(
       daysRemaining: pm.daysRemaining,
     },
     hitos: (op.milestones ?? []).map((m) => ({ title: m.title || "Hito", status: m.status })),
-    ventas,
-    ventasSinPrecios: ventas.map(({ title, status, statusLabel }) => ({ title, status, statusLabel })),
-    gastos,
-    gastosSinImportes: gastos.map(({ concept, category }) => ({ concept, category })),
+    // Mismos resúmenes que Gestión del proyecto. Documentos y compradores nunca se publican.
+    ventas: salesSummaryForInvestors(salesSummary, true),
+    ventasSinPrecios: salesSummaryForInvestors(salesSummary, false),
+    gastos: { ...expenseSummary, categories: expenseSummary.categories.map((c) => ({ ...c, realItems: c.realItems.map(({ documentUrl: _u, documentName: _n, ...r }) => r) })) },
+    gastosSinImportes: withoutExpenseAmounts(expenseSummary),
     media,
     generatedAt: nowISO,
   };

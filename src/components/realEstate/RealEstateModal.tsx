@@ -11,9 +11,16 @@ import { AreaSwitch, TrackingModal } from "./tracking/TrackingModal";
 import { FinanzasRealesPanel } from "./tracking/FinanzasRealesPanel";
 import { DocumentacionPanel } from "./tracking/DocumentacionPanel";
 import { SyncContext } from "@/src/sync/SyncContext";
-import { adoptLegacyRealAmounts, isRealFinancesEnabled, realVsPlanned, type RealVsPlanned } from "@/src/lib/realFinances";
+import { activeItems, adoptLegacyRealAmounts, isRealFinancesEnabled, markRealFinanceDeleted, realVsPlanned, type RealVsPlanned } from "@/src/lib/realFinances";
 import { InvestmentFlowMap, hasRealSales } from "./charts/InvestmentFlowMap";
 import { salesStats, type SalesStats } from "@/src/lib/realEstateTrackingCalc";
+import { createPortal } from "react-dom";
+import { conceptPlannedAmount, missingSaleRecords, plannedConceptsTotal, projectExpenseSummary, projectSalesSummary, type SaleGroupKey } from "@/src/lib/projectEconomics";
+import { RE_EXPENSE_CATEGORY_LABEL, newTrackingId, type REExpense, type RESale } from "@/src/lib/realEstateTracking";
+import { ProjectExpenses } from "./economics/ProjectExpenses";
+import { ProjectSales } from "./economics/ProjectSales";
+import { PlannedCostDialog, SaleUnitDialog, makePlannedCost, makeSaleUnit } from "./economics/EconomicsDialogs";
+import { VentasPanel } from "./tracking/VentasPanel";
 
 type RealEstateCategory = "vivienda" | "local" | "suelo" | "adaptacion";
 
@@ -628,6 +635,8 @@ function toDraft(op: REOperation): REOperation {
 
 const SECTION_NAV = [
   { key: "resumen" as const, label: "Resumen" },
+  { key: "gastos" as const, label: "Gastos" },
+  { key: "ventas" as const, label: "Ventas" },
   { key: "documentacion" as const, label: "Documentación" },
   { key: "datos" as const, label: "Datos" },
   { key: "unidades" as const, label: "Unidades" },
@@ -717,8 +726,13 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
     escenarios: false,
     finanzas: true,
     documentacion: false,
+    gastos: true,
+    ventas: false,
     tasas: false,
   });
+  const [costDialog, setCostDialog] = useState<{ item: REExpense; isNew: boolean } | null>(null);
+  const [saleDialog, setSaleDialog] = useState<{ item: RESale; isNew: boolean } | null>(null);
+  const [salesTable, setSalesTable] = useState(false);
 
   // Sync draft if op changes externally
   useEffect(() => {
@@ -749,6 +763,67 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
   const res = useMemo(() => calcResults(draft), [draft]);
   const real = useMemo(() => realVsPlanned(draft, res), [draft, res]);
   const realSales = useMemo(() => salesStats(draft), [draft]);
+  // Mismos resúmenes que usan el área Inversores y la vista del inversor.
+  const expenseSummary = useMemo(() => projectExpenseSummary(draft, res), [draft, res]);
+  const salesSummary = useMemo(() => projectSalesSummary(draft, res, new Date().toISOString()), [draft, res]);
+  // Activos para mostrar y ordenar; los borrados siguen en los datos (marca) para sincronizar.
+  const plannedCosts = activeItems(draft.expenses);
+
+  const saveCost = (item: REExpense, addAnother: boolean) => {
+    const list = Array.isArray(draftRef.current.expenses) ? draftRef.current.expenses : [];
+    commit({ expenses: list.some((x) => x.id === item.id) ? list.map((x) => (x.id === item.id ? item : x)) : [...list, item] });
+    if (!addAnother) {
+      setCostDialog(null);
+      return;
+    }
+    const now = new Date().toISOString();
+    setCostDialog({ item: { ...item, id: newTrackingId("exp"), concept: "", createdAt: now, updatedAt: now }, isNew: true });
+  };
+  const deleteCost = (id: string) => {
+    const item = plannedCosts.find((x) => x.id === id);
+    if (!item || !window.confirm(`¿Eliminar el gasto previsto "${item.concept || "sin nombre"}"? Los gastos reales no se tocan.`)) return;
+    commit({ expenses: (draftRef.current.expenses ?? []).map((x) => (x.id === id ? markRealFinanceDeleted(x) : x)) });
+  };
+  const moveCost = (id: string, dir: -1 | 1) => {
+    const i = plannedCosts.findIndex((x) => x.id === id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= plannedCosts.length) return;
+    const next = [...plannedCosts];
+    [next[i], next[j]] = [next[j], next[i]];
+    const deleted = (draftRef.current.expenses ?? []).filter((x) => x.deletedAt);
+    commit({ expenses: [...next, ...deleted] });
+  };
+  const saveSale = (item: RESale) => {
+    const list = Array.isArray(draftRef.current.sales) ? draftRef.current.sales : [];
+    commit({ sales: list.some((x) => x.id === item.id) ? list.map((x) => (x.id === item.id ? item : x)) : [...list, item] });
+    setSaleDialog(null);
+  };
+  const deleteSale = (id: string) => {
+    const item = (draft.sales ?? []).find((x) => x.id === id);
+    if (!item || !window.confirm(`¿Eliminar la ficha de venta "${item.title || "sin nombre"}"?`)) return;
+    commit({ sales: (draftRef.current.sales ?? []).map((x) => (x.id === id ? markRealFinanceDeleted(x) : x)) });
+    setSaleDialog(null);
+  };
+  const conceptActions = {
+    onEdit: (id: string) => {
+      const item = plannedCosts.find((x) => x.id === id);
+      if (item) setCostDialog({ item, isNew: false });
+    },
+    onDelete: deleteCost,
+  };
+  const salesActions = {
+    onEditUnit: (id: string) => {
+      const item = (draft.sales ?? []).find((x) => x.id === id);
+      if (item) setSaleDialog({ item, isNew: false });
+    },
+    onAddUnit: (group: SaleGroupKey) => setSaleDialog({ item: makeSaleUnit(group), isNew: true }),
+    onCreateMissing: (group: SaleGroupKey) => {
+      if (group === "OTROS") return;
+      const now = new Date().toISOString();
+      const created = missingSaleRecords(draftRef.current, calcResults(draftRef.current), group, () => newTrackingId("sale"), now);
+      if (created.length) commit({ sales: [...(draftRef.current.sales ?? []), ...created] });
+    },
+  };
   const realFinancesOn = isRealFinancesEnabled(draft);
   const navSections = realFinancesOn
     ? [SECTION_NAV[0], { key: "finanzas" as const, label: "Finanzas reales" }, ...SECTION_NAV.slice(1)]
@@ -1049,6 +1124,38 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
             </div>
           </SectionBlock>
 
+          {/* ── GASTOS: previsto vs real por categoría ── */}
+          <SectionBlock
+            id="section-gastos"
+            title="Gastos"
+            badge={expenseSummary.planned ? fmtEUR(expenseSummary.planned) : undefined}
+            open={open.gastos}
+            onToggle={() => toggleSection("gastos")}
+          >
+            <ProjectExpenses summary={expenseSummary} actions={conceptActions} onAdd={() => setCostDialog({ item: makePlannedCost(), isNew: true })} />
+          </SectionBlock>
+
+          {/* ── VENTAS: unidades por tipo y línea temporal ── */}
+          <SectionBlock
+            id="section-ventas"
+            title="Ventas"
+            badge={salesSummary.units ? `${salesSummary.sold}/${salesSummary.units} vendidas` : undefined}
+            open={open.ventas}
+            onToggle={() => toggleSection("ventas")}
+          >
+            <ProjectSales summary={salesSummary} actions={salesActions} />
+            <div className="border-t border-line pt-2">
+              <button type="button" onClick={() => setSalesTable((v) => !v)} aria-expanded={salesTable} className="text-xs font-semibold text-ink-subtle hover:text-ink">
+                {salesTable ? "Ocultar tabla de ventas" : "Editar ventas en tabla"}
+              </button>
+              {salesTable ? (
+                <div className="mt-2">
+                  <VentasPanel op={draft} results={res} onChange={(sales) => commit({ sales })} />
+                </div>
+              ) : null}
+            </div>
+          </SectionBlock>
+
           {/* ── FINANZAS REALES (opcional) ── */}
           {realFinancesOn && (
             <SectionBlock
@@ -1292,7 +1399,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
           <SectionBlock
             id="section-otros"
             title="Otros costes"
-            badge={fmtEUR(res.arquitectoAmt + res.desviacionesAmt)}
+            badge={fmtEUR(res.arquitectoAmt + res.desviacionesAmt + res.customCostsAmt)}
             open={open.otros}
             onToggle={() => toggleSection("otros")}
           >
@@ -1313,6 +1420,48 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
                   <NumInput value={draft.costs.desviacionesTotal ?? res.desviacionesAmt} onChange={(v) => { const base = res.obraBase; setCosts({ desviacionesTotal: v, desviacionesPct: v != null && base > 0 ? Math.round((v / base) * 10000) / 100 : draft.costs.desviacionesPct }); }} suffix="€" />
                 </div>
               </div>
+            </div>
+            {/* Gastos personalizados: €/mes × meses + fijo, con el nombre y la categoría que se quiera */}
+            <div className="border-t border-line pt-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-slate-500">Gastos personalizados{res.customCostsAmt ? ` · ${fmtEUR(plannedConceptsTotal(plannedCosts))}` : ""}</span>
+                <button
+                  type="button"
+                  onClick={() => setCostDialog({ item: makePlannedCost(), isNew: true })}
+                  className="h-7 w-7 rounded-lg border border-line text-brand text-base font-bold leading-none hover:bg-[var(--brand-soft)] transition-colors"
+                  aria-label="Añadir gasto personalizado"
+                  title="Añadir gasto"
+                >
+                  +
+                </button>
+              </div>
+              {plannedCosts.some((c) => c.concept?.trim() || conceptPlannedAmount(c) > 0) ? (
+                <ul className="divide-y divide-[var(--line)] rounded-lg border border-line">
+                  {plannedCosts.map((c, i) =>
+                    !c.concept?.trim() && conceptPlannedAmount(c) === 0 ? null : (
+                      <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-ink truncate">{c.concept}</p>
+                          <p className="text-[11px] text-ink-subtle truncate">
+                            {RE_EXPENSE_CATEGORY_LABEL[c.category] ?? "Otros"}
+                            {c.monthlyAmount != null ? ` · ${c.monthlyAmount.toLocaleString("es-ES")} €/mes × ${c.months ?? 0}` : ""}
+                            {c.fixedAmount ? ` · fijo ${c.fixedAmount.toLocaleString("es-ES")} €` : ""}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <span className="text-sm font-bold tabular-nums text-ink mr-1">{fmtEUR(conceptPlannedAmount(c))}</span>
+                          <button type="button" onClick={() => moveCost(c.id, -1)} disabled={i === 0} className="h-7 w-7 rounded-md text-ink-subtle hover:bg-[var(--surface-alt)] disabled:opacity-30" aria-label={`Subir ${c.concept}`}>↑</button>
+                          <button type="button" onClick={() => moveCost(c.id, 1)} disabled={i === plannedCosts.length - 1} className="h-7 w-7 rounded-md text-ink-subtle hover:bg-[var(--surface-alt)] disabled:opacity-30" aria-label={`Bajar ${c.concept}`}>↓</button>
+                          <button type="button" onClick={() => setCostDialog({ item: c, isNew: false })} className="rounded-md px-2 py-1 text-xs font-semibold text-brand hover:bg-[var(--brand-soft)]">Editar</button>
+                          <button type="button" onClick={() => deleteCost(c.id)} className="rounded-md px-2 py-1 text-xs font-semibold text-ink-subtle hover:text-[var(--negative)]">Eliminar</button>
+                        </div>
+                      </li>
+                    ),
+                  )}
+                </ul>
+              ) : (
+                <p className="text-[11px] text-ink-subtle">Añade suministros, vigilancia, limpieza… con el nombre y la categoría que quieras.</p>
+              )}
             </div>
           </SectionBlock>
 
@@ -1544,9 +1693,36 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
         </div>
 
         {showInvestors && (
-          <TrackingModal op={draft} onPersist={commit} onClose={() => setShowInvestors(false)} />
+          <TrackingModal
+            op={draft}
+            onPersist={commit}
+            onClose={() => setShowInvestors(false)}
+            onEditInGestion={(section) => {
+              setShowInvestors(false);
+              goToSection(section);
+            }}
+          />
         )}
         <div ref={setOverlayRoot} />
+        {overlayRoot && costDialog
+          ? createPortal(
+              <PlannedCostDialog key={costDialog.item.id} initial={costDialog.item} isNew={costDialog.isNew} onSave={saveCost} onClose={() => setCostDialog(null)} />,
+              overlayRoot,
+            )
+          : null}
+        {overlayRoot && saleDialog
+          ? createPortal(
+              <SaleUnitDialog
+                key={saleDialog.item.id}
+                initial={saleDialog.item}
+                isNew={saleDialog.isNew}
+                onSave={saveSale}
+                onDelete={saleDialog.isNew ? undefined : () => deleteSale(saleDialog.item.id)}
+                onClose={() => setSaleDialog(null)}
+              />,
+              overlayRoot,
+            )
+          : null}
         </Vaul.Content>
       </Vaul.Portal>
     </Vaul.Root>

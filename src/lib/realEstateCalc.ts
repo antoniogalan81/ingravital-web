@@ -1,6 +1,7 @@
 // src/lib/realEstateCalc.ts — Fórmulas idénticas a APP/src/utils/realEstateCalc.ts
 
 import type { REOperation, REResults, REUnit } from "./realEstate";
+import { plannedConceptsTotal } from "./projectEconomics";
 
 const n0 = (v: number | undefined | null): number =>
   Number.isFinite(v as number) ? (v as number) : 0;
@@ -145,6 +146,9 @@ export function calcResults(op: REOperation): REResults {
     .reduce((s, u) => s + Math.max(1, Math.round(n0(u.numUnits ?? 1))), 0);
   const furnitureCostTotal = n0(costs.furnitureCostPerUnit) * totalViviendas;
 
+  // ── Conceptos de gasto del promotor (€/mes × meses + fijo) ─────────────────────
+  const customCostsAmt = plannedConceptsTotal(safeOp.expenses);
+
   // ── Inversión total ───────────────────────────────────────────────────────────
   const totalInvestment =
     purchasePrice +
@@ -156,7 +160,8 @@ export function calcResults(op: REOperation): REResults {
     arquitectoAmt +
     desviacionesAmt +
     tasasAmt +
-    furnitureCostTotal;
+    furnitureCostTotal +
+    customCostsAmt;
 
   // ── Unidades con cálculos derivados ──────────────────────────────────────────
   const unitResults = units.map((u) => {
@@ -236,12 +241,22 @@ export function calcResults(op: REOperation): REResults {
 
   // ── Venta ─────────────────────────────────────────────────────────────────────
   // TRASTERO: salePriceTotal × numTrasteros
-  const totalSales = unitResults.reduce((s, u) => {
-    if (u.type === "TRASTERO") return s + n0(u.salePriceTotal) * u.numTrasteros;
-    if (u.type === "GARAJE")   return s + n0(u.salePriceTotal) * u.numPlazas;
-    if (u.type === "VIVIENDA") return s + n0(u.salePriceTotal) * Math.max(1, Math.round(n0(u.numUnits ?? 1)));
-    return s + n0(u.salePriceTotal);
-  }, 0);
+  const salesByUnitType: REResults["salesByUnitType"] = {
+    VIVIENDA: { count: 0, amount: 0 },
+    GARAJE: { count: 0, amount: 0 },
+    TRASTERO: { count: 0, amount: 0 },
+  };
+  for (const u of unitResults) {
+    const count =
+      u.type === "TRASTERO" ? u.numTrasteros
+      : u.type === "GARAJE" ? u.numPlazas
+      : u.type === "VIVIENDA" ? Math.max(1, Math.round(n0(u.numUnits ?? 1)))
+      : 1;
+    const group = salesByUnitType[u.type] ?? salesByUnitType.VIVIENDA;
+    group.count += count;
+    group.amount += n0(u.salePriceTotal) * count;
+  }
+  const totalSales = salesByUnitType.VIVIENDA.amount + salesByUnitType.GARAJE.amount + salesByUnitType.TRASTERO.amount;
   const saleBenefit = totalSales - totalInvestment;
   const saleYield = investBase > 0 ? saleBenefit / investBase : 0;
 
@@ -259,6 +274,7 @@ export function calcResults(op: REOperation): REResults {
     desviacionesAmt,
     tasasAmt,
     furnitureCostTotal,
+    customCostsAmt,
     totalInvestment,
     compraAmount,
     obraFinAmount,
@@ -272,6 +288,7 @@ export function calcResults(op: REOperation): REResults {
     monthlyRentBenefit,
     rentYield,
     totalSales,
+    salesByUnitType,
     saleBenefit,
     saleYield,
   };

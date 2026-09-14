@@ -18,6 +18,9 @@ import {
   type Opportunity,
 } from "./types.ts";
 import { previewSnapshot } from "./preview.ts";
+import { buildOpportunityMetrics } from "./metrics.ts";
+import { calcResults } from "../realEstateCalc.ts";
+import type { REOperation } from "../realEstate.ts";
 import { availableChannels, invitationUrl, mailtoLink, waNumber, whatsappLink } from "./share.ts";
 import type { InvestorContact } from "./types.ts";
 
@@ -147,8 +150,15 @@ const OPPORTUNITY: Opportunity = {
     costesTotales: 350000,
     rentabilidadEstimada: 0.18,
     rentabilidadPromotor: 99999,
-    ventas: [{ title: "1ºA", status: "VENDIDO", statusLabel: "Vendido", price: 200000 }],
-    ventasSinPrecios: [{ title: "1ºA", status: "VENDIDO", statusLabel: "Vendido" }],
+    ...(() => {
+      const op = {
+        id: "op", name: "A", purchasePrice: 0, costs: { purchaseTaxPct: 0, arquitectoPct: 0, tasas: [] }, financing: { enabled: false, compra: { pct: 0, interest: 0 }, obra: { pct: 0 } }, createdAt: "", updatedAt: "",
+        units: [{ id: "u", type: "VIVIENDA", title: "Viviendas", numUnits: 1, salePriceTotal: 210000 }],
+        sales: [{ id: "s", title: "1ºA", unitId: "u", status: "VENDIDO", realPrice: 200000, buyer: "Comprador Privado", createdAt: "", updatedAt: "" }],
+      } as unknown as REOperation;
+      const m = buildOpportunityMetrics(op, calcResults(op), "2026-09-14T00:00:00.000Z");
+      return { ventas: m.ventas, ventasSinPrecios: m.ventasSinPrecios };
+    })(),
   },
   visibility: {},
   publishedAt: null,
@@ -177,8 +187,11 @@ test("la previsualización oculta lo que el toggle apaga", () => {
 test("ventas sin `ventasPrecios` no llevan importes", () => {
   const conPrecio = previewSnapshot(OPPORTUNITY, { ventas: true, ventasPrecios: true });
   const sinPrecio = previewSnapshot(OPPORTUNITY, { ventas: true, ventasPrecios: false });
-  assert.equal((conPrecio.ventas?.[0] as { price?: number }).price, 200000);
-  assert.equal((sinPrecio.ventas?.[0] as { price?: number }).price, undefined);
+  assert.equal(conPrecio.ventas?.groups[0].rows[0].realPrice, 200000);
+  assert.equal(conPrecio.ventas?.soldAmount, 200000);
+  assert.equal(sinPrecio.ventas?.groups[0].rows[0].realPrice, null);
+  assert.equal(sinPrecio.ventas?.soldAmount, null);
+  assert.ok(!JSON.stringify(conPrecio).includes("Comprador Privado"), "el comprador nunca se publica");
 });
 
 // ── Canales de envío ─────────────────────────────────────────────────────────

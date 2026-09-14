@@ -14,6 +14,8 @@ import {
 } from "@/src/lib/realEstateTracking";
 import { fmtEUR, fmtPct } from "@/src/lib/realEstateCalc";
 import { salesStats } from "@/src/lib/realEstateTrackingCalc";
+import { activeItems, markRealFinanceDeleted } from "@/src/lib/realFinances";
+import { saleCollected, withCollectedTotal } from "@/src/lib/projectEconomics";
 import {
   DataTable,
   TextCellInput,
@@ -44,15 +46,18 @@ export function VentasPanel({
   onChange: (sales: RESale[]) => void;
   onQuickAdd?: () => void;
 }) {
-  const sales = useMemo(() => (Array.isArray(op.sales) ? op.sales : []), [op.sales]);
+  // Lista completa (con borrados marcados) para escribir; activas para mostrar.
+  const allSales = useMemo(() => (Array.isArray(op.sales) ? op.sales : []), [op.sales]);
+  const sales = useMemo(() => activeItems(allSales), [allSales]);
   const stats = useMemo(() => salesStats(op), [op]);
 
   const update = (id: string, patch: Partial<RESale>) =>
-    onChange(sales.map((s) => (s.id === id ? { ...s, ...patch, updatedAt: new Date().toISOString() } : s)));
+    onChange(allSales.map((s) => (s.id === id ? withCollectedTotal({ ...s, ...patch, updatedAt: new Date().toISOString() }) : s)));
 
-  const addRow = () => onChange([...sales, makeSale()]);
+  const addRow = () => onChange([...allSales, makeSale()]);
 
-  const remove = (row: RESale) => onChange(sales.filter((s) => s.id !== row.id));
+  // Borrado con marca: se sincroniza y no resucita desde copias antiguas de otros dispositivos.
+  const remove = (row: RESale) => onChange(allSales.map((s) => (s.id === row.id ? markRealFinanceDeleted(s) : s)));
 
   const columns: DataTableColumn<RESale>[] = [
     {
@@ -95,7 +100,13 @@ export function VentasPanel({
       header: "Cobrado",
       width: "7rem",
       align: "right",
-      cell: (r) => <NumberCellInput value={r.collected} onChange={(v) => update(r.id, { collected: v })} />,
+      // Con cobros detallados, el cobrado es su suma (se editan en la ficha de la unidad).
+      cell: (r) =>
+        r.payments?.length ? (
+          <span className="tabular-nums text-ink" title="Suma de los cobros de la unidad">{fmtEUR(saleCollected(r))}</span>
+        ) : (
+          <NumberCellInput value={r.collected} onChange={(v) => update(r.id, { collected: v })} />
+        ),
     },
     {
       key: "pending",
@@ -105,7 +116,7 @@ export function VentasPanel({
       cell: (r) => {
         const price = r.realPrice ?? r.estimatedPrice;
         if (price == null) return <span className="text-ink-subtle">—</span>;
-        const pending = Math.max(0, price - (r.collected ?? 0));
+        const pending = Math.max(0, price - saleCollected(r));
         return <span className="tabular-nums font-semibold text-ink">{fmtEUR(pending)}</span>;
       },
     },

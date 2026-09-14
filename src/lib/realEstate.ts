@@ -176,6 +176,8 @@ export type REResults = {
   desviacionesAmt: number;
   tasasAmt: number;
   furnitureCostTotal: number;
+  /** Conceptos de gasto previstos por el promotor (`op.expenses`): €/mes × meses + fijo. */
+  customCostsAmt: number;
   totalInvestment: number;
   compraAmount: number;
   obraFinAmount: number;
@@ -189,6 +191,8 @@ export type REResults = {
   monthlyRentBenefit: number;
   rentYield: number;
   totalSales: number;
+  /** Venta prevista por tipo de unidad: nº de unidades vendibles e importe. */
+  salesByUnitType: Record<UnitType, { count: number; amount: number }>;
   saleBenefit: number;
   saleYield: number;
 };

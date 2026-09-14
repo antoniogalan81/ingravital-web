@@ -4,7 +4,7 @@
 // (`merge.test.ts`) y para dejar clara la política de resolución de conflictos.
 
 import type { SupabaseRow, SyncableEntity } from "./types";
-import { mergeRealFinancesOf, mergeSalesKeepingNewer } from "../lib/realFinances";
+import { TOMBSTONED_COLLECTIONS, mergeRealFinancesOf } from "../lib/realFinances";
 
 /**
  * ¿El registro remoto es más nuevo que el local? (last-write-wins por timestamp).
@@ -127,12 +127,13 @@ export function mergeById<T extends Identified>(
 // media). Se fusionan por id. NO se incluyen `units`/`costs.tasas`/config: esos se
 // editan como un todo coherente en el editor y fusionarlos podría resucitar unidades
 // borradas a propósito o mezclar configuraciones incompatibles → LWW de operación.
-const RE_COLLECTION_FIELDS = ["expenses", "sales", "milestones", "media"] as const;
+const RE_COLLECTION_FIELDS = ["milestones", "media"] as const;
 
 // Gastos y préstamos REALES usan borrado con marca (`deletedAt`) y su propia fusión
 // (`mergeRealFinancesOf`): el borrado más reciente gana a una copia antigua activa y la
 // marca se conserva para seguir propagándose. Ver src/lib/realFinances.ts.
-const RE_TOMBSTONED_FIELDS = ["realExpenses", "realLoans"] as const;
+// Gastos previstos (`expenses`) y fichas de venta (`sales`) también, desde 2026-09-15.
+const RE_TOMBSTONED_FIELDS = TOMBSTONED_COLLECTIONS;
 
 /**
  * Fusiona dos versiones de una MISMA operación (mismo id) conservando lo de ambos lados:
@@ -215,16 +216,13 @@ export function operationSignature(op: SyncableEntity): string {
  * El push sube la operación ENTERA. Sin esto, un dispositivo con una copia antigua que
  * editara cualquier cosa borraba del servidor las marcas de borrado de gastos/préstamos
  * reales (y resucitaba lo borrado). Aquí se conserva todo lo local (escalares y resto de
- * colecciones, como hasta ahora); `realExpenses`/`realLoans` se fusionan con lo remoto (un
- * borrado remoto más nuevo gana y un alta remota se conserva) y en `sales` una fila que el
- * servidor tiene más reciente (p. ej. venta confirmada desde un documento) no se pisa.
+ * colecciones); gastos reales, préstamos, gastos previstos y ventas (con sus cobros) se
+ * fusionan con lo remoto por id: un borrado remoto más nuevo gana, un alta remota se conserva
+ * y una fila más reciente en el servidor (p. ej. venta confirmada por documento) no se pisa.
  */
 export function mergeOperationForPush<T extends SyncableEntity>(local: T, remoteData: Record<string, unknown> | null | undefined): T {
   if (!remoteData) return local;
-  const merged = { ...local, ...mergeRealFinancesOf(local as never, remoteData as never) } as Record<string, unknown>;
-  const sales = mergeSalesKeepingNewer(merged.sales as { id: string; updatedAt?: string }[] | undefined, remoteData.sales);
-  if (sales) merged.sales = sales;
-  return merged as T;
+  return { ...local, ...mergeRealFinancesOf(local as never, remoteData as never) } as T;
 }
 
 /**

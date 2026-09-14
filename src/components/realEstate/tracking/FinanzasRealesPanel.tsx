@@ -25,6 +25,7 @@ import {
 } from "@/src/lib/realEstateTracking";
 import { fmtEUR } from "@/src/lib/realEstateCalc";
 import {
+  activeItems,
   activeRealLoans,
   driveFileUrl,
   driveFolderUrl,
@@ -62,7 +63,7 @@ export function FinanzasRealesPanel({
   const allExpenses = useMemo(() => (Array.isArray(op.realExpenses) ? op.realExpenses : []), [op.realExpenses]);
   const allLoans = useMemo(() => (Array.isArray(op.realLoans) ? op.realLoans : []), [op.realLoans]);
   const expenses = useMemo(() => allExpenses.filter(isActiveRealFinanceItem), [allExpenses]);
-  const budgetLines = useMemo(() => (Array.isArray(op.expenses) ? op.expenses : []), [op.expenses]);
+  const budgetLines = useMemo(() => activeItems(op.expenses), [op.expenses]);
   const loans = useMemo(() => activeRealLoans(op), [op]);
   const spent = useMemo(() => realExpenseTotals(op), [op]);
   const loanTotals = useMemo(() => realLoanTotals(op), [op]);

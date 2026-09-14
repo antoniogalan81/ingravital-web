@@ -12,6 +12,8 @@
 import { useEffect, useState } from "react";
 import { fmtEUR, fmtPct } from "@/src/lib/realEstateCalc";
 import { signedUrl } from "@/src/lib/storage";
+import { ProjectExpenses } from "@/src/components/realEstate/economics/ProjectExpenses";
+import { ProjectSales } from "@/src/components/realEstate/economics/ProjectSales";
 import {
   INVESTMENT_MODEL_LABEL,
   type InvestorSnapshot,
@@ -283,26 +285,20 @@ export function OpportunityPresentation({ snapshot }: { snapshot: InvestorSnapsh
         </Block>
       ) : null}
 
-      {/* ── Ventas ── */}
-      {s.ventas?.length ? (
+      {/* ── Ventas (mismo resumen que Gestión del proyecto) ── */}
+      {s.ventas && "groups" in s.ventas && s.ventas.groups.length ? (
         <Block title="Ventas">
-          <div className="re-card overflow-hidden">
-            {s.ventas.map((v, i) => (
-              <div
-                key={`${v.title}-${i}`}
-                className={`flex items-center justify-between gap-3 px-5 py-3 ${
-                  i < (s.ventas?.length ?? 0) - 1 ? "border-b border-line" : ""
-                }`}
-              >
-                <span className="text-sm font-semibold text-ink truncate">{v.title}</span>
-                <span className="flex items-center gap-3 shrink-0">
-                  <span className="pill pill-neutral">{v.statusLabel}</span>
-                  {"price" in v && v.price != null ? (
-                    <span className="text-sm font-bold tabular-nums text-ink">{fmtEUR(v.price)}</span>
-                  ) : null}
-                </span>
-              </div>
-            ))}
+          <div className="re-card p-4 sm:p-5">
+            <ProjectSales summary={s.ventas} />
+          </div>
+        </Block>
+      ) : null}
+
+      {/* ── Gastos (mismo resumen que Gestión del proyecto) ── */}
+      {s.gastos && "categories" in s.gastos && s.gastos.categories.length ? (
+        <Block title="Gastos">
+          <div className="re-card p-4 sm:p-5">
+            <ProjectExpenses summary={s.gastos} />
           </div>
         </Block>
       ) : null}

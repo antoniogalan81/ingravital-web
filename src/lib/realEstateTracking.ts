@@ -12,6 +12,8 @@
 // Todos los campos numéricos son opcionales: cuando faltan, la capa de cálculo los
 // trata como "no disponible" (null) — nunca como 0 inventado.
 
+import type { UnitType } from "./realEstate";
+
 // ── Gastos ────────────────────────────────────────────────────────────────────
 
 export type REExpenseCategory =
@@ -81,7 +83,15 @@ export type REExpense = {
   category: REExpenseCategory;
   concept: string;
   provider?: string;
-  estimated?: number; // importe estimado (presupuestado)
+  estimated?: number; // importe previsto. En conceptos con €/mes o fijo guarda el total derivado (compatibilidad)
+  /** Concepto recurrente: € al mes. Total previsto = monthlyAmount × months + fixedAmount. */
+  monthlyAmount?: number;
+  /** Meses del concepto recurrente (18 por defecto en conceptos NUEVOS; los antiguos no se tocan). */
+  months?: number;
+  /** Pago único adicional (alta de suministros…). No es un gasto recurrente. */
+  fixedAmount?: number;
+  /** Borrado (tombstone): se conserva para que el borrado se sincronice y no resucite. */
+  deletedAt?: string;
   /**
    * @deprecated Importe real LEGADO. La única fuente de verdad del gasto real son los
    * `RERealExpense` (Finanzas reales); el "Real" de una partida se deriva de los gastos
@@ -215,14 +225,33 @@ export const RE_SALE_COMMITTED_STATUSES: RESaleStatus[] = [
   "VENDIDO",
 ];
 
+/** Cobro real de una venta. Una venta puede tener varios (señal, entregas, escritura…). */
+export type RESalePayment = {
+  id: string;
+  date: string; // ISO yyyy-mm-dd
+  amount: number;
+  note?: string;
+};
+
 export type RESale = {
   id: string;
   title: string; // unidad o activo (ej. "Vivienda 1ºA")
   unitId?: string; // vínculo opcional a REUnit
+  /** Grupo de la unidad. Ausente: se deduce del vínculo `unitId` o del título. */
+  unitType?: UnitType;
+  completionDateEstimated?: string; // ISO — terminación prevista
+  completionDateReal?: string; // ISO — terminación real
+  saleDateEstimated?: string; // ISO — venta prevista (la real es `date`)
+  collectionDateEstimated?: string; // ISO — cobro previsto
+  collectionAmountEstimated?: number; // cobro previsto; ausente = precio previsto
+  /** Cobros reales. Si hay alguno, `collected` guarda su suma (compatibilidad). */
+  payments?: RESalePayment[];
+  /** Borrado (tombstone): se conserva para que el borrado se sincronice y no resucite. */
+  deletedAt?: string;
   estimatedPrice?: number; // precio estimado
   realPrice?: number; // precio real de venta
   status: RESaleStatus;
-  date?: string; // ISO
+  date?: string; // ISO — fecha REAL de venta (escritura / firma)
   buyer?: string; // cliente / comprador
   deposit?: number; // señal entregada
   collected?: number; // ingreso ya cobrado

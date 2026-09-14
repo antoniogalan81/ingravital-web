@@ -21,7 +21,7 @@ import {
 } from "@/src/lib/realEstateTracking";
 import { driveFileUrl, parseAmountEs } from "@/src/lib/realFinances";
 
-const FIELD_CLS =
+export const FIELD_CLS =
   "w-full rounded-lg border border-line bg-white px-2.5 py-2 text-sm text-ink placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400";
 
 const numText = (v: number | undefined) =>
@@ -29,15 +29,17 @@ const numText = (v: number | undefined) =>
 
 // ── Carcasa común ─────────────────────────────────────────────────────────────
 
-function Dialog({
+export function Dialog({
   title,
   subtitle,
+  eyebrow = "Finanzas reales",
   onClose,
   footer,
   children,
 }: {
   title: string;
   subtitle: string;
+  eyebrow?: string;
   onClose: () => void;
   footer: React.ReactNode;
   children: React.ReactNode;
@@ -59,7 +61,7 @@ function Dialog({
       <div className="relative w-full max-w-lg max-h-full bg-white shadow-2xl flex flex-col overflow-hidden sm:mt-16 sm:rounded-2xl in-reveal">
         <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4 flex-shrink-0">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.16em] font-bold text-ink-subtle">Finanzas reales</p>
+            <p className="text-[10px] uppercase tracking-[0.16em] font-bold text-ink-subtle">{eyebrow}</p>
             <h2 id="rf-dialog-title" className="text-base font-extrabold text-ink tracking-tight">{title}</h2>
             <p className="text-xs text-ink-subtle mt-0.5">{subtitle}</p>
           </div>
@@ -76,7 +78,7 @@ function Dialog({
   );
 }
 
-function Field({ label, required, hint, error, children }: { label: string; required?: boolean; hint?: React.ReactNode; error?: string; children: React.ReactNode }) {
+export function Field({ label, required, hint, error, children }: { label: string; required?: boolean; hint?: React.ReactNode; error?: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1 min-w-0">
       <span className="text-xs font-semibold text-ink-subtle">
@@ -89,7 +91,7 @@ function Field({ label, required, hint, error, children }: { label: string; requ
   );
 }
 
-function PrimaryButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+export function PrimaryButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
   return (
     <button type="button" onClick={onClick} className="rounded-lg px-3.5 py-2 text-sm font-semibold text-white transition-colors" style={{ background: "var(--brand)" }}>
       {children}
@@ -97,7 +99,7 @@ function PrimaryButton({ onClick, children }: { onClick: () => void; children: R
   );
 }
 
-function SecondaryButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+export function SecondaryButton({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
   return (
     <button type="button" onClick={onClick} className="rounded-lg border border-line px-3.5 py-2 text-sm font-semibold text-ink hover:bg-white transition-colors">
       {children}

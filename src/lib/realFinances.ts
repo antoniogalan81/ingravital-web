@@ -155,38 +155,33 @@ export function mergeRealFinanceItems<T extends RealFinanceItem>(a: T[] | undefi
   return [...order.map((id) => winners.get(id) as T), ...noId];
 }
 
-/**
- * Fusiona `realExpenses` y `realLoans` de dos copias de la MISMA operación. Solo devuelve
- * las claves que existen en alguna de las dos, para no añadir campos a operaciones que no
- * los usan.
- */
-export function mergeRealFinancesOf(
-  local: Pick<REOperation, "realExpenses" | "realLoans"> | null | undefined,
-  remote: Pick<REOperation, "realExpenses" | "realLoans"> | null | undefined,
-): Partial<Pick<REOperation, "realExpenses" | "realLoans">> {
-  const out: Partial<Pick<REOperation, "realExpenses" | "realLoans">> = {};
-  if (Array.isArray(local?.realExpenses) || Array.isArray(remote?.realExpenses)) {
-    out.realExpenses = mergeRealFinanceItems(local?.realExpenses, remote?.realExpenses);
-  }
-  if (Array.isArray(local?.realLoans) || Array.isArray(remote?.realLoans)) {
-    out.realLoans = mergeRealFinanceItems(local?.realLoans, remote?.realLoans);
-  }
-  return out;
-}
+/** Colecciones de la operación que se borran con marca y se fusionan por id. */
+export const TOMBSTONED_COLLECTIONS = ["realExpenses", "realLoans", "expenses", "sales"] as const;
+
+type TombstonedCollections = Pick<REOperation, (typeof TOMBSTONED_COLLECTIONS)[number]>;
 
 /**
- * Ventas al SUBIR una operación. No tienen tombstones, así que lo que solo está en el remoto
- * no se añade (un borrado local se respeta, como siempre). Pero si la MISMA fila existe en
- * ambos lados gana la de `updatedAt` más reciente: un cambio aplicado en el servidor (p. ej.
- * una venta confirmada por documento) no lo pisa una copia antigua. Orden: el local.
+ * Fusiona gastos reales, préstamos reales, gastos previstos (`expenses`) y fichas de venta
+ * (`sales`, con sus cobros) de dos copias de la MISMA operación. Por id gana la versión más
+ * reciente; en empate, el borrado. Solo devuelve las claves que existen en alguna de las dos,
+ * para no añadir campos a operaciones que no los usan.
  */
-export function mergeSalesKeepingNewer<T extends { id: string; updatedAt?: string }>(local: T[] | undefined, remote: unknown): T[] | undefined {
-  if (!Array.isArray(local) || !Array.isArray(remote)) return local;
-  const remoteById = new Map((remote as T[]).filter((x) => x && typeof x.id === "string").map((x) => [x.id, x]));
-  return local.map((l) => {
-    const r = l && remoteById.get(l.id);
-    return r && versionOf(r) > versionOf(l) ? r : l;
-  });
+export function mergeRealFinancesOf(
+  local: Partial<TombstonedCollections> | null | undefined,
+  remote: Partial<TombstonedCollections> | null | undefined,
+): Partial<TombstonedCollections> {
+  const out: Record<string, unknown> = {};
+  for (const key of TOMBSTONED_COLLECTIONS) {
+    const l = local?.[key] as RealFinanceItem[] | undefined;
+    const r = remote?.[key] as RealFinanceItem[] | undefined;
+    if (Array.isArray(l) || Array.isArray(r)) out[key] = mergeRealFinanceItems(l, r);
+  }
+  return out as Partial<TombstonedCollections>;
+}
+
+/** Elementos no borrados de una colección con marca de borrado. */
+export function activeItems<T extends { deletedAt?: string }>(list: T[] | null | undefined): T[] {
+  return (Array.isArray(list) ? list : []).filter(isActiveRealFinanceItem);
 }
 
 /** Préstamos reales activos (sin los borrados). */

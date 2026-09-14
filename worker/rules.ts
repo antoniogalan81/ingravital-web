@@ -3,7 +3,8 @@
 
 import type { REOperation } from "../src/lib/realEstate.ts";
 import type { RERealExpense, RERealLoan, RESale } from "../src/lib/realEstateTracking.ts";
-import { isActiveRealFinanceItem } from "../src/lib/realFinances.ts";
+import { activeItems, isActiveRealFinanceItem } from "../src/lib/realFinances.ts";
+import { saleCollected } from "../src/lib/projectEconomics.ts";
 import type { Extraction } from "./extract/fields.ts";
 import { foldForMatch, sameAmount } from "./extract/parse.ts";
 import { AUTO_APPLY, CONFIDENCE, LIMITS } from "./policy.ts";
@@ -151,7 +152,7 @@ function loanProposals(ex: Extraction, doc: DocumentRef, ops: REOperation[]): Ru
 }
 
 function matchSales(op: REOperation, relatedUnits: string[]): RESale[] {
-  const sales = op.sales ?? [];
+  const sales = activeItems(op.sales);
   const wanted = new Set(relatedUnits.map(foldForMatch));
   const unitIds = new Set((op.units ?? []).filter((u) => wanted.has(foldForMatch(u.title))).map((u) => u.id));
   return sales.filter((s) => wanted.has(foldForMatch(s.title)) || (s.unitId && unitIds.has(s.unitId)));
@@ -169,11 +170,21 @@ function saleProposals(ex: Extraction, doc: DocumentRef, ops: REOperation[]): Ru
       ...(ex.date ? { date: ex.date } : {}),
       ...(v.buyer ? { buyer: v.buyer } : {}),
       ...(v.deposit !== undefined ? { deposit: v.deposit } : {}),
-      ...(v.collected !== undefined ? { collected: v.collected } : {}),
+    };
+    // Un cobro que aparece en el documento se registra como COBRO (con fecha), sumado a los
+    // que ya tenga la unidad; `collected` refleja la suma para los clientes antiguos.
+    const withPayment = (current?: RESale): Partial<RESale> => {
+      if (v.collected === undefined) return {};
+      if (!ex.date) return { collected: v.collected };
+      const paymentId = `pay_doc_${doc.driveFileId}`;
+      const previous = (current?.payments ?? []).filter((p) => p.id !== paymentId);
+      const payments = [...previous, { id: paymentId, date: ex.date, amount: v.collected }];
+      return { payments, collected: saleCollected({ payments }) };
     };
     if (matches.length === 1) {
       const current = matches[0];
-      const unchanged = Object.entries(patch).every(([k, val]) => (current as Record<string, unknown>)[k] === val);
+      Object.assign(patch, withPayment(current));
+      const unchanged = Object.entries(patch).every(([k, val]) => JSON.stringify((current as Record<string, unknown>)[k]) === JSON.stringify(val));
       if (unchanged) continue;
       const reasons: string[] = [];
       if (v.collected !== undefined) reasons.push("Incluye un cobro: confírmalo.");
@@ -188,7 +199,7 @@ function saleProposals(ex: Extraction, doc: DocumentRef, ops: REOperation[]): Ru
         mode: "insert",
         targetId: `sale_doc_${doc.driveFileId}`,
         dedupeKey: `sale:${doc.driveFileId}`,
-        item: { title: title.slice(0, 120), ...patch },
+        item: { title: title.slice(0, 120), ...patch, ...withPayment() },
         confidence: Math.min(ex.confidence, CONFIDENCE.autoApply - 0.01),
         auto: false,
         reason: matches.length > 1 ? "Varias unidades coinciden con el documento." : "No se identificó la unidad en Ventas: se creará una fila nueva.",

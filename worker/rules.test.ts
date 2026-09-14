@@ -118,6 +118,13 @@ test("venta ambigua, sin fila o con cobro: revisión, nunca auto", () => {
   const one = op("v1", { sales: [{ id: "s1", title: "Vivienda 1", status: "DISPONIBLE", createdAt: "", updatedAt: "" }] });
   const [collected] = proposals(decideChanges(saleEx({ sale: { status: "VENDIDO", price: 185000, collected: 185000 } }), doc, [one]));
   assert.equal(collected.auto, false);
+  // El cobro del documento entra como cobro con fecha (nuevo modelo), no como total suelto.
+  assert.deepEqual(collected.item.payments, [{ id: `pay_doc_${FILE}`, date: "2026-09-01", amount: 185000 }]);
+  assert.equal(collected.item.collected, 185000);
+  const withPrevious = op("v1", { sales: [{ id: "s1", title: "Vivienda 1", status: "SENALADO", payments: [{ id: "p0", date: "2026-05-01", amount: 20000 }], createdAt: "", updatedAt: "" }] });
+  const [second] = proposals(decideChanges(saleEx({ sale: { status: "VENDIDO", price: 185000, collected: 165000 } }), doc, [withPrevious]));
+  assert.deepEqual((second.item.payments as { amount: number }[]).map((p) => p.amount), [20000, 165000]);
+  assert.equal(second.item.collected, 185000, "se suman los cobros previos de la unidad");
 });
 
 test("venta ya reflejada: sin propuesta", () => {

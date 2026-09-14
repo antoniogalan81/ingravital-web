@@ -15,20 +15,19 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { REOperation } from "@/src/lib/realEstate";
 import { calcResults } from "@/src/lib/realEstateCalc";
 import {
-  type REExpense,
   type REInvestorSplit,
   type REMediaItem,
   type REMilestone,
   type REProgress,
-  type RESale,
 } from "@/src/lib/realEstateTracking";
 import { stageOf } from "@/src/lib/pipeline";
 import { StageBadge } from "../pipeline/StageBadge";
 import { SummaryBar } from "./SummaryBar";
 import { InicioPanel } from "./InicioPanel";
 import { ResumenPanel } from "./ResumenPanel";
-import { GastosPanel } from "./GastosPanel";
-import { VentasPanel } from "./VentasPanel";
+import { ProjectExpenses } from "../economics/ProjectExpenses";
+import { ProjectSales } from "../economics/ProjectSales";
+import { projectExpenseSummary, projectSalesSummary } from "@/src/lib/projectEconomics";
 import { HitosPanel } from "./HitosPanel";
 import { InversoresPanel } from "./InversoresPanel";
 import { InformePanel } from "./InformePanel";
@@ -103,20 +102,49 @@ function QuickAction({ label, onClick, primary = false }: { label: string; onCli
   );
 }
 
+/** Gastos y ventas se editan en Gestión del proyecto; aquí se consultan con los mismos resúmenes. */
+function EditInGestion({ title, subtitle, onClick }: { title: string; subtitle: string; onClick?: () => void }) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-2">
+      <div>
+        <h3 className="text-sm font-extrabold text-ink">{title}</h3>
+        <p className="text-[11px] text-ink-subtle mt-0.5">{subtitle}</p>
+      </div>
+      {onClick ? (
+        <button type="button" onClick={onClick} className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-brand hover:bg-[var(--brand-soft)]">
+          Editar en Gestión del proyecto
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 export function TrackingModal({
   op,
   onPersist,
   onClose,
+  onEditInGestion,
 }: {
   op: REOperation;
   onPersist: (patch: Partial<REOperation>) => void;
   onClose: () => void;
+  /** Abre Gestión del proyecto en la sección indicada (única fuente de gastos y ventas). */
+  onEditInGestion?: (section: "gastos" | "ventas") => void;
 }) {
   const [tab, setTab] = useState<TabKey>("inicio");
-  const [quick, setQuick] = useState<QuickKind | null>(null);
+  const [quick, setQuickState] = useState<QuickKind | null>(null);
+  const setQuick = useCallback(
+    (kind: QuickKind | null) => {
+      if (kind === "gasto" || kind === "venta") onEditInGestion?.(kind === "gasto" ? "gastos" : "ventas");
+      else setQuickState(kind);
+    },
+    [onEditInGestion],
+  );
 
   const results = useMemo(() => calcResults(op), [op]);
   const now = useMemo(() => new Date().toISOString(), []);
+  const expenseSummary = useMemo(() => projectExpenseSummary(op, results), [op, results]);
+  const salesSummary = useMemo(() => projectSalesSummary(op, results, now), [op, results, now]);
   const generatedAt = useMemo(
     () => new Date().toLocaleDateString("es-ES", { day: "2-digit", month: "long", year: "numeric" }),
     [],
@@ -137,15 +165,7 @@ export function TrackingModal({
     };
   }, [onClose, quick]);
 
-  // Guardado desde la entrada rápida → añade al MISMO array de la operación (JSON sync).
-  const saveExpense = useCallback(
-    (e: REExpense) => onPersist({ expenses: [...(op.expenses ?? []), e] }),
-    [op.expenses, onPersist],
-  );
-  const saveSale = useCallback(
-    (s: RESale) => onPersist({ sales: [...(op.sales ?? []), s] }),
-    [op.sales, onPersist],
-  );
+  // Entrada rápida de hitos → añade al MISMO array de la operación (JSON sync).
   const saveMilestone = useCallback(
     (m: REMilestone) => onPersist({ milestones: [...(op.milestones ?? []), m] }),
     [op.milestones, onPersist],
@@ -186,8 +206,6 @@ export function TrackingModal({
             <AreaSwitch active="inversores" onGestion={onClose} />
             {/* Acciones rápidas: crear (primarias, abren entrada rápida) · ver (secundarias) */}
             <div className="flex flex-wrap items-center gap-2">
-              <QuickAction label="+ Gasto" onClick={() => setQuick("gasto")} primary />
-              <QuickAction label="+ Venta" onClick={() => setQuick("venta")} primary />
               <QuickAction label="+ Hito" onClick={() => setQuick("hito")} primary />
               <span className="mx-0.5 h-5 w-px bg-[var(--line)]" aria-hidden />
               <QuickAction label="Media" onClick={() => setTab("resumen")} />
@@ -237,8 +255,18 @@ export function TrackingModal({
               onChangeManagement={(patch) => onPersist(patch)}
             />
           )}
-          {tab === "economico" && <GastosPanel op={op} onChange={(expenses: REExpense[]) => onPersist({ expenses })} onQuickAdd={() => setQuick("gasto")} />}
-          {tab === "ventas" && <VentasPanel op={op} results={results} onChange={(sales: RESale[]) => onPersist({ sales })} onQuickAdd={() => setQuick("venta")} />}
+          {tab === "economico" && (
+            <section className="space-y-3">
+              <EditInGestion title="Gastos" subtitle="Previsto y real por categoría. Son los datos de Gestión del proyecto." onClick={onEditInGestion ? () => onEditInGestion("gastos") : undefined} />
+              <ProjectExpenses summary={expenseSummary} />
+            </section>
+          )}
+          {tab === "ventas" && (
+            <section className="space-y-3">
+              <EditInGestion title="Ventas" subtitle="Unidades, fechas previstas y reales, y cobros. Son los datos de Gestión del proyecto." onClick={onEditInGestion ? () => onEditInGestion("ventas") : undefined} />
+              <ProjectSales summary={salesSummary} />
+            </section>
+          )}
           {tab === "planificacion" && <HitosPanel op={op} onChange={(milestones: REMilestone[]) => onPersist({ milestones })} onQuickAdd={() => setQuick("hito")} />}
           {tab === "inversores" && (
             <InversoresPanel
@@ -255,9 +283,6 @@ export function TrackingModal({
       {quick ? (
         <QuickEntryModal
           key={quick}
-          kind={quick}
-          onSaveExpense={saveExpense}
-          onSaveSale={saveSale}
           onSaveMilestone={saveMilestone}
           onClose={() => setQuick(null)}
         />

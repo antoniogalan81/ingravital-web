@@ -6,6 +6,8 @@
 //   operación  ≠  oportunidad  ≠  invitación  ≠  inversión
 // Recibir una invitación NO otorga participación económica.
 
+import type { ExpenseSummaryView, SalesSummaryView } from "../projectEconomics";
+
 // ── Roles ─────────────────────────────────────────────────────────────────────
 
 export type UserRole = "promotor" | "inversor";
@@ -265,10 +267,12 @@ export type OpportunityMetrics = {
     daysRemaining: number | null;
   };
   hitos?: { title: string; status: string }[];
-  ventas?: { title: string; status: string; statusLabel: string; price?: number }[];
-  ventasSinPrecios?: { title: string; status: string; statusLabel: string }[];
-  gastos?: { concept: string; category: string; amount?: number; invoice?: MediaRef }[];
-  gastosSinImportes?: { concept: string; category: string }[];
+  /** Resumen de ventas por tipo (mismo que Gestión del proyecto), con o sin importes. */
+  ventas?: SalesSummaryView;
+  ventasSinPrecios?: SalesSummaryView;
+  /** Resumen de gastos por categoría (mismo que Gestión del proyecto), con o sin importes. */
+  gastos?: ExpenseSummaryView;
+  gastosSinImportes?: ExpenseSummaryView;
   media?: { type: string; caption?: string; file: MediaRef }[];
   generatedAt?: string;
 };

@@ -163,7 +163,7 @@ test("LÍMITE documentado: un cliente con código ANTERIOR que sube sin fusionar
   assert.equal(server.rows.get("op")!.data.name, "renombrada", "sin perder la edición de la pestaña antigua");
 });
 
-test("VENTAS: un parche del servidor (venta confirmada por documento) no lo pisa un push con copia antigua; un borrado local se respeta", () => {
+test("VENTAS: un parche del servidor no lo pisa un push con copia antigua; un borrado con marca no resucita; los cobros se conservan", () => {
   const server = new Server();
   const base: Op = {
     id: "op1",
@@ -176,15 +176,51 @@ test("VENTAS: un parche del servidor (venta confirmada por documento) no lo pisa
   server.pushMerged(base, base.updatedAt as string);
   const stale = JSON.parse(JSON.stringify(base)) as Op;
 
-  // El servidor (apply_document_proposal) marca s1 como vendida.
+  // El servidor (apply_document_proposal) marca s1 como vendida con un cobro.
   const row = server.rows.get("op1")!;
-  const serverSales = (row.data.sales as Record<string, unknown>[]).map((s) => (s.id === "s1" ? { ...s, status: "VENDIDO", realPrice: 185000, updatedAt: "2026-09-14T08:00:00.000Z" } : s));
+  const serverSales = (row.data.sales as Record<string, unknown>[]).map((s) =>
+    s.id === "s1" ? { ...s, status: "VENDIDO", realPrice: 185000, payments: [{ id: "p1", date: "2026-09-13", amount: 40000 }], collected: 40000, updatedAt: "2026-09-14T08:00:00.000Z" } : s,
+  );
   row.data = { ...row.data, sales: serverSales };
 
-  // Dispositivo antiguo: borra s2 y edita otra cosa, sin haber hecho pull.
-  const edited = { ...stale, name: "Editado", sales: (stale.sales ?? []).filter((s) => s.id !== "s2"), updatedAt: "2026-09-14T09:00:00.000Z" } as Op;
+  // Dispositivo con copia antigua (código actual): borra s2 con marca y edita otra cosa, sin pull.
+  const edited = {
+    ...stale,
+    name: "Editado",
+    sales: (stale.sales ?? []).map((s) => (s.id === "s2" ? markRealFinanceDeleted(s, "2026-09-14T09:00:00.000Z") : s)),
+    updatedAt: "2026-09-14T09:00:00.000Z",
+  } as Op;
   server.pushMerged(edited, edited.updatedAt as string);
 
-  const sales = server.rows.get("op1")!.data.sales as { id: string; status: string; realPrice?: number }[];
-  assert.deepEqual(sales.map((s) => [s.id, s.status, s.realPrice]), [["s1", "VENDIDO", 185000]]);
+  const sales = server.rows.get("op1")!.data.sales as { id: string; status: string; realPrice?: number; payments?: unknown[]; deletedAt?: string }[];
+  const s1 = sales.find((s) => s.id === "s1")!;
+  assert.equal(s1.status, "VENDIDO");
+  assert.equal(s1.payments?.length, 1, "el cobro del servidor sobrevive");
+  assert.ok(sales.find((s) => s.id === "s2")?.deletedAt, "el borrado viaja como marca");
+
+  // Un tercer dispositivo aún con s2 activa (copia vieja) no la resucita al fusionar.
+  const third = { ...stale, updatedAt: "2026-09-14T10:00:00.000Z" } as Op;
+  server.pushMerged(third, third.updatedAt as string);
+  assert.ok((server.rows.get("op1")!.data.sales as { id: string; deletedAt?: string }[]).find((s) => s.id === "s2")?.deletedAt);
+});
+
+test("GASTOS PREVISTOS: un concepto nuevo (€/mes × meses + fijo) no lo quita un push con copia antigua y los campos nuevos viajan intactos", () => {
+  const server = new Server();
+  const base: Op = { id: "op2", updatedAt: "2026-09-10T10:00:00.000Z", expenses: [] } as Op;
+  server.pushMerged(base, base.updatedAt as string);
+  const stale = JSON.parse(JSON.stringify(base)) as Op;
+
+  const concept = { id: "exp_luz", category: "SUMINISTROS", concept: "Luz", monthlyAmount: 70, months: 18, fixedAmount: 300, estimated: 1560, status: "PENDIENTE", createdAt: "x", updatedAt: "2026-09-14T08:00:00.000Z" };
+  const withConcept = { ...base, expenses: [concept], updatedAt: "2026-09-14T08:00:00.000Z" } as Op;
+  server.pushMerged(withConcept, withConcept.updatedAt as string);
+
+  const staleEdit = { ...stale, name: "Otro cambio", updatedAt: "2026-09-14T09:00:00.000Z" } as Op;
+  server.pushMerged(staleEdit, staleEdit.updatedAt as string);
+  assert.deepEqual(server.rows.get("op2")!.data.expenses, [concept], "el concepto y sus campos nuevos siguen en el servidor");
+
+  // Borrado con marca en el dispositivo nuevo y pull en el antiguo: no reaparece.
+  const deleted = { ...withConcept, expenses: [markRealFinanceDeleted(concept as never, "2026-09-14T10:00:00.000Z")], updatedAt: "2026-09-14T10:00:00.000Z" } as Op;
+  server.pushMerged(deleted, deleted.updatedAt as string);
+  const pulled = mergeRemoteRows([{ ...withConcept, updatedAt: "2026-09-14T08:00:00.000Z" }], [server.rows.get("op2")!], { combine: mergeOperationEntity });
+  assert.ok((pulled[0].expenses as { deletedAt?: string }[])[0].deletedAt, "el borrado llega al dispositivo con copia antigua");
 });

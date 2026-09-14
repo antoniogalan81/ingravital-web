@@ -7,6 +7,7 @@
 // navega a la pestaña avanzada correspondiente. No calcula nada que no sea real.
 
 import type { REOperation } from "@/src/lib/realEstate";
+import { activeItems } from "@/src/lib/realFinances";
 import { ProgressBar } from "@/src/components/ui/ProgressBar";
 import type { QuickKind } from "./QuickEntryModal";
 
@@ -30,8 +31,8 @@ export function InicioPanel({
   onQuick: (kind: QuickKind) => void;
   onNavigate: (target: InicioNavTarget) => void;
 }) {
-  const expenses = Array.isArray(op.expenses) ? op.expenses : [];
-  const sales = Array.isArray(op.sales) ? op.sales : [];
+  const expenses = activeItems(op.expenses);
+  const sales = activeItems(op.sales);
   const milestones = Array.isArray(op.milestones) ? op.milestones : [];
   const media = Array.isArray(op.media) ? op.media : [];
   const progress = op.progress ?? {};
