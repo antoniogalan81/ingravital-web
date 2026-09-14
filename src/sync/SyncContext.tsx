@@ -224,8 +224,15 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
               errors.push(`${entityKey}/${id}: ${result.error}`);
               // se mantiene dirty para reintentar en el próximo push
             } else {
-              clearDirty(entityKey, id);
-              if (isDeleted) clearDeleted(entityKey, id);
+              // Si el item cambió MIENTRAS se subía (p. ej. varias ediciones seguidas), lo subido
+              // ya no es lo último: sigue pendiente y se vuelve a subir. Limpiar aquí perdía esa edición.
+              const latest = (entityKey === "realEstateOperations" ? storeRef.current.realEstateOperations : (storeRef.current.balanceItems as unknown as SyncableEntity[])).find((x) => x.id === id);
+              if (!isDeleted && latest && latest !== item) {
+                schedulePushRef.current();
+              } else {
+                clearDirty(entityKey, id);
+                if (isDeleted) clearDeleted(entityKey, id);
+              }
             }
           } catch (err) {
             errors.push(`${entityKey}/${id}: ${err instanceof Error ? err.message : String(err)}`);
