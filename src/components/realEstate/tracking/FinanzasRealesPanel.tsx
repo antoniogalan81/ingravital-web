@@ -71,6 +71,8 @@ export function FinanzasRealesPanel({
 
   const [expenseDialog, setExpenseDialog] = useState<{ item: RERealExpense; isNew: boolean } | null>(null);
   const [loanDialog, setLoanDialog] = useState<{ item: RERealLoan; isNew: boolean } | null>(null);
+  // La lista de gastos/facturas arranca contraída: los totales se ven siempre.
+  const [showExpenses, setShowExpenses] = useState(false);
 
   const sortedExpenses = useMemo(
     () => [...expenses].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "") || b.createdAt.localeCompare(a.createdAt)),
@@ -84,6 +86,7 @@ export function FinanzasRealesPanel({
   // guardar (mismos valores, id nuevo). Varios guardados seguidos usan la lista más reciente.
   const saveExpense = (item: RERealExpense, addAnother: boolean) => {
     onChange({ realExpenses: upsert(Array.isArray(op.realExpenses) ? op.realExpenses : [], item) });
+    setShowExpenses(true);
     if (!addAnother) {
       setExpenseDialog(null);
       return;
@@ -151,12 +154,26 @@ export function FinanzasRealesPanel({
         {sortedExpenses.length === 0 ? (
           <p className="text-xs text-ink-subtle py-1">Aún no hay gastos reales registrados.</p>
         ) : (
-          <ul className="divide-y divide-[var(--line)] overflow-hidden rounded-lg border border-line bg-white">
+          <button
+            type="button"
+            onClick={() => setShowExpenses((v) => !v)}
+            aria-expanded={showExpenses}
+            aria-controls="real-expenses-list"
+            className="flex items-center gap-1.5 text-xs font-semibold text-brand hover:underline"
+          >
+            <svg className={`w-3.5 h-3.5 transition-transform ${showExpenses ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+            </svg>
+            {showExpenses ? "Ocultar gastos" : `Ver ${sortedExpenses.length === 1 ? "el gasto" : `los ${sortedExpenses.length} gastos`}`}
+          </button>
+        )}
+        {sortedExpenses.length > 0 && showExpenses ? (
+          <ul id="real-expenses-list" className="divide-y divide-[var(--line)] overflow-hidden rounded-lg border border-line bg-white">
             {sortedExpenses.map((e) => (
               <ExpenseRow key={e.id} e={e} budgetLines={budgetLines} onEdit={() => setExpenseDialog({ item: e, isNew: false })} onRemove={() => removeExpense(e)} />
             ))}
           </ul>
-        )}
+        ) : null}
       </div>
 
       {/* Financiación real (opcional) */}
