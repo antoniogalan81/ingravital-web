@@ -144,7 +144,7 @@ export function FinanzasRealesPanel({
             onClick={() => setExpenseDialog({ item: makeRealExpense(todayISO()), isNew: true })}
             className="px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-200 bg-white rounded-lg hover:bg-blue-50 transition-colors whitespace-nowrap shrink-0"
           >
-            + Registrar gasto
+            + Añadir gasto
           </button>
         </div>
 

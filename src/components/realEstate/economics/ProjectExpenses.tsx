@@ -14,11 +14,6 @@ const money = (v: number | null | undefined) => (v == null ? null : fmtEUR(v));
 const fmtDate = (iso?: string) => (iso ? new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString("es-ES", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "");
 const num = (v: number) => v.toLocaleString("es-ES", { maximumFractionDigits: 2 });
 
-export type ConceptActions = {
-  onEdit: (conceptId: string) => void;
-  onDelete: (conceptId: string) => void;
-};
-
 function Figure({ label, value, tone }: { label: string; value: string | null; tone?: "positive" | "negative" }) {
   if (value == null) return null;
   const color = tone === "negative" ? "var(--negative)" : tone === "positive" ? "var(--positive)" : "var(--ink)";
@@ -49,7 +44,7 @@ function formula(c: PlannedConceptView): string | null {
   return parts.length ? parts.join(" ") : null;
 }
 
-function CategoryDetail({ category, actions }: { category: ExpenseCategoryView; actions?: ConceptActions }) {
+function CategoryDetail({ category }: { category: ExpenseCategoryView }) {
   return (
     <div className="space-y-3 pt-2">
       {category.concepts.length ? (
@@ -67,16 +62,6 @@ function CategoryDetail({ category, actions }: { category: ExpenseCategoryView; 
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   {c.planned != null ? <span className="text-sm font-bold tabular-nums text-ink">{fmtEUR(c.planned)}</span> : null}
-                  {actions && c.source === "concepto" ? (
-                    <>
-                      <button type="button" onClick={() => actions.onEdit(c.id)} className="rounded-md px-2 py-1 text-xs font-semibold text-brand hover:bg-[var(--brand-soft)]" aria-label={`Editar ${c.concept}`}>
-                        Editar
-                      </button>
-                      <button type="button" onClick={() => actions.onDelete(c.id)} className="rounded-md px-2 py-1 text-xs font-semibold text-ink-subtle hover:text-[var(--negative)]" aria-label={`Eliminar ${c.concept}`}>
-                        Eliminar
-                      </button>
-                    </>
-                  ) : null}
                 </div>
               </li>
             );
@@ -114,14 +99,9 @@ function CategoryDetail({ category, actions }: { category: ExpenseCategoryView; 
 
 export function ProjectExpenses({
   summary,
-  actions,
-  onAdd,
   emptyText = "Todavía no hay gastos previstos ni reales.",
 }: {
   summary: ExpenseSummaryView;
-  /** Solo en Gestión del proyecto: editar y eliminar conceptos del promotor. */
-  actions?: ConceptActions;
-  onAdd?: () => void;
   emptyText?: string;
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -160,11 +140,6 @@ export function ProjectExpenses({
         ) : (
           <p className="text-xs text-ink-subtle">{emptyText}</p>
         )}
-        {onAdd ? (
-          <button type="button" onClick={onAdd} className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-brand hover:bg-[var(--brand-soft)] transition-colors">
-            + Añadir gasto
-          </button>
-        ) : null}
       </div>
 
       {summary.categories.length ? (
@@ -202,7 +177,7 @@ export function ProjectExpenses({
                 </button>
                 {isOpen ? (
                   <div id={panelId} className="px-3.5 pb-3" style={{ paddingLeft: "2.25rem" }}>
-                    <CategoryDetail category={c} actions={actions} />
+                    <CategoryDetail category={c} />
                   </div>
                 ) : null}
               </li>

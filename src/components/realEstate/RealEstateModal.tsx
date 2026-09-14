@@ -663,8 +663,9 @@ function toDraft(op: REOperation): REOperation {
 // ==================== SECTION NAV CONFIG ====================
 
 // Proyecto = estructura, previsión y rentabilidad. Seguimiento operativo = el día a día.
-// Proyecto define la base (unidades, precios y rentas base, costes previstos); el trabajo
-// unidad a unidad (precios y rentas propios, estados, cobros) vive en Seguimiento operativo.
+// Proyecto define la base (unidades, precios y rentas base, COSTES previstos); el trabajo
+// real (precios y rentas por unidad, estados, cobros, GASTOS reales y préstamos) vive en
+// Seguimiento operativo. Proyecto solo muestra los gastos reales como resumen derivado.
 const PROJECT_NAV = [
   { key: "resumen" as const, label: "Resumen" },
   { key: "datos" as const, label: "Datos" },
@@ -673,7 +674,6 @@ const PROJECT_NAV = [
   { key: "obra" as const, label: "Obra" },
   { key: "otros" as const, label: "Costes" },
   { key: "impuestos" as const, label: "Impuestos" },
-  { key: "gastos" as const, label: "Gastos" },
   { key: "financiacion" as const, label: "Financiación" },
   { key: "resultados" as const, label: "Resultados" },
   { key: "escenarios" as const, label: "Escenarios" },
@@ -684,7 +684,6 @@ const TRACKING_NAV = [
   { key: "ventas" as const, label: "Ventas" },
   { key: "gastos" as const, label: "Gastos" },
   { key: "hitos" as const, label: "Hitos" },
-  { key: "finanzas" as const, label: "Finanzas reales" },
   { key: "documentacion" as const, label: "Documentación" },
   { key: "avance" as const, label: "Avance y evolución" },
 ];
@@ -851,13 +850,6 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
     commit({ sales: (draftRef.current.sales ?? []).map((x) => (x.id === id ? markRealFinanceDeleted(x) : x)) });
     setSaleDialog(null);
   };
-  const conceptActions = {
-    onEdit: (id: string) => {
-      const item = plannedCosts.find((x) => x.id === id);
-      if (item) setCostDialog({ item, isNew: false });
-    },
-    onDelete: deleteCost,
-  };
   const salesActions = {
     onEditUnit: (id: string) => {
       const item = (draft.sales ?? []).find((x) => x.id === id);
@@ -872,7 +864,12 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
     },
   };
   const realFinancesOn = isRealFinancesEnabled(draft);
-  const navSections = area === "proyecto" ? PROJECT_NAV : TRACKING_NAV.filter((s) => s.key !== "finanzas" || realFinancesOn);
+  const navSections = area === "proyecto" ? PROJECT_NAV : TRACKING_NAV;
+  /** Salta a una sección de Seguimiento operativo (p. ej. desde el resumen del Proyecto). */
+  const openTracking = (key: keyof typeof open) => {
+    setArea("seguimiento");
+    goToSection(key);
+  };
   const selectArea = (next: OperationArea) => {
     if (next === "inversores") setShowInvestors(true);
     else setArea(next);
@@ -972,24 +969,34 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
     return parts.length > 0 ? parts.join(" + ") : undefined;
   })();
 
-  // GASTOS (previsto vs real por categoría): los conceptos previstos se editan en Proyecto;
-  // Seguimiento operativo muestra el mismo resumen en lectura (el gasto real va en Finanzas reales).
-  const gastosBlock = (editable: boolean) => (
+  // GASTOS: una sola sección en Seguimiento operativo. Arriba los gastos reales y los préstamos
+  // (Finanzas reales: `realExpenses` / `realLoans`, única vía de "+ Añadir gasto"); debajo, el
+  // previsto vs real por categoría en lectura (los costes previstos se definen en Proyecto › Costes).
+  const gastosBlock = (
     <SectionBlock
       id="section-gastos"
       title="Gastos"
-      badge={expenseSummary.planned ? fmtEUR(expenseSummary.planned) : undefined}
+      badge={real.spent.count ? fmtEUR(real.spent.total) : undefined}
       open={open.gastos}
       onToggle={() => toggleSection("gastos")}
     >
-      {editable ? (
-        <ProjectExpenses summary={expenseSummary} actions={conceptActions} onAdd={() => setCostDialog({ item: makePlannedCost(), isNew: true })} />
+      {realFinancesOn ? (
+        <FinanzasRealesPanel op={draft} overlayRoot={overlayRoot} onChange={(patch) => commit(patch)} />
       ) : (
-        <>
-          <p className="text-[11px] text-ink-subtle">Los conceptos previstos se editan en Proyecto; los gastos reales, en Finanzas reales.</p>
-          <ProjectExpenses summary={expenseSummary} />
-        </>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line px-3 py-2.5">
+          <p className="text-xs text-ink-subtle">El registro de gastos reales y préstamos está desactivado para esta operación.</p>
+          <button type="button" onClick={() => commit({ realFinancesEnabled: true })} className="rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-brand hover:bg-[var(--brand-soft)]">
+            Registrar gastos reales
+          </button>
+        </div>
       )}
+      <div className="border-t border-line pt-3 space-y-2">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-ink-muted">Previsto vs real</p>
+          <p className="text-[11px] text-ink-subtle">Los costes previstos se definen en Proyecto › Costes.</p>
+        </div>
+        <ProjectExpenses summary={expenseSummary} />
+      </div>
     </SectionBlock>
   );
   const ventasBlock = (
@@ -1185,6 +1192,24 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
               {nTrasteros > 0 && <KPI label="Nº trasteros" value={String(nTrasteros)} />}
             </div>
 
+            {/* Costes previstos frente a gastos reales: resumen DERIVADO de Seguimiento operativo */}
+            {realFinancesOn || expenseSummary.realCount > 0 ? (
+              <div className="rounded-xl border border-line mt-3 px-3 py-2.5 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-ink-subtle">Costes previstos y gastos reales</p>
+                  <button type="button" onClick={() => openTracking("gastos")} className="text-xs font-semibold text-brand hover:underline">
+                    Ver gastos en Seguimiento ›
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <KPI label="Costes previstos" value={fmtEUR(expenseSummary.planned ?? 0)} />
+                  <KPI label="Gastos reales" value={expenseSummary.realCount ? fmtEUR(expenseSummary.real ?? 0) : "—"} />
+                  <KPI label="Desviación" value={expenseSummary.realCount ? fmtEUR(expenseSummary.deviation ?? 0) : "—"} />
+                  <KPI label="Pendiente estimado" value={fmtEUR(expenseSummary.remaining ?? 0)} />
+                </div>
+              </div>
+            ) : null}
+
             {/* Mapa visual de la inversión — complementa el resumen, no lo sustituye */}
             <div className="mt-3">
               <InvestmentFlowMap op={draft} res={res} real={realFinancesOn ? real : undefined} />
@@ -1200,14 +1225,14 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
           {/* ── SITUACIÓN REAL + interruptor de Finanzas reales ── */}
           <SectionBlock id="section-situacion" title="Situación" open={open.situacion} onToggle={() => toggleSection("situacion")}>
             {/* Situación REAL (Finanzas reales). Separada de la previsión: no la corrige ni la sustituye. */}
-            {realFinancesOn ? <RealSituation real={real} plannedInvestment={res.totalInvestment} sales={realSales} onOpen={() => goToSection("finanzas")} /> : null}
+            {realFinancesOn ? <RealSituation real={real} plannedInvestment={res.totalInvestment} sales={realSales} onOpen={() => goToSection("gastos")} /> : null}
 
             {/* Interruptor de Finanzas reales (opcional por operación) */}
             <div className="flex items-center justify-between gap-3 pt-1">
               <div className="min-w-0">
                 <span className="block text-sm font-medium text-slate-700">Registrar finanzas reales</span>
                 <span className="block text-xs text-ink-subtle">
-                  Gastos reales, financiación contratada y facturas en Drive. Desactivarlo oculta la sección; no borra datos.
+                  Gastos reales, préstamos y facturas en Drive (sección Gastos). Desactivarlo oculta el registro; no borra datos.
                 </span>
               </div>
               <button
@@ -1218,7 +1243,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
                 onClick={() => {
                   const next = !realFinancesOn;
                   commit({ realFinancesEnabled: next });
-                  if (next) goToSection("finanzas");
+                  if (next) goToSection("gastos");
                 }}
                 className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${realFinancesOn ? "bg-brand" : "bg-slate-200"}`}
               >
@@ -1228,7 +1253,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
           </SectionBlock>
 
           {ventasBlock}
-          {gastosBlock(false)}
+          {gastosBlock}
 
           {/* ── HITOS: plazos previstos y reales ── */}
           <SectionBlock
@@ -1240,19 +1265,6 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
           >
             <HitosPanel op={draft} onChange={(milestones) => commit({ milestones })} />
           </SectionBlock>
-
-          {/* ── FINANZAS REALES (opcional) ── */}
-          {realFinancesOn && (
-            <SectionBlock
-              id="section-finanzas"
-              title="Finanzas reales"
-              badge={real.spent.count ? fmtEUR(real.spent.total) : undefined}
-              open={open.finanzas}
-              onToggle={() => toggleSection("finanzas")}
-            >
-              <FinanzasRealesPanel op={draft} overlayRoot={overlayRoot} onChange={(patch) => commit(patch)} />
-            </SectionBlock>
-          )}
 
           {/* ── DOCUMENTACIÓN (Drive + Actualizar con IA) ── */}
           <SectionBlock
@@ -1528,16 +1540,16 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
                 </div>
               </div>
             </div>
-            {/* Gastos personalizados: €/mes × meses + fijo, con el nombre y la categoría que se quiera */}
+            {/* Costes personalizados (previsión): €/mes × meses + fijo, con el nombre y la categoría que se quiera */}
             <div className="border-t border-line pt-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-medium text-slate-500">Gastos personalizados{res.customCostsAmt ? ` · ${fmtEUR(plannedConceptsTotal(plannedCosts))}` : ""}</span>
+                <span className="text-xs font-medium text-slate-500">Costes personalizados{res.customCostsAmt ? ` · ${fmtEUR(plannedConceptsTotal(plannedCosts))}` : ""}</span>
                 <button
                   type="button"
                   onClick={() => setCostDialog({ item: makePlannedCost(), isNew: true })}
                   className="h-7 w-7 rounded-lg border border-line text-brand text-base font-bold leading-none hover:bg-[var(--brand-soft)] transition-colors"
-                  aria-label="Añadir gasto personalizado"
-                  title="Añadir gasto"
+                  aria-label="Añadir coste previsto"
+                  title="Añadir coste previsto"
                 >
                   +
                 </button>
@@ -1671,8 +1683,6 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
               </div>
             </div>
           </SectionBlock>
-
-          {gastosBlock(true)}
 
           {/* ── SECCIÓN 8: FINANCIACIÓN ── */}
           <SectionBlock id="section-financiacion" title="Financiación" badge={draft.financing.enabled ? fmtEUR(res.totalFinanced) : undefined} open={open.financiacion} onToggle={() => toggleSection("financiacion")}>

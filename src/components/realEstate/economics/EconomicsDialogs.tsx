@@ -95,8 +95,8 @@ export function PlannedCostDialog({
 
   return (
     <Dialog
-      eyebrow="Gastos previstos"
-      title={isNew ? "Añadir gasto" : "Editar gasto"}
+      eyebrow="Costes previstos"
+      title={isNew ? "Añadir coste previsto" : "Editar coste previsto"}
       subtitle="Total previsto = precio al mes × meses + pago fijo."
       onClose={onClose}
       footer={
