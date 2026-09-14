@@ -35,13 +35,21 @@ function Values({ label, v, overridden, unit }: { label: string; v: UnitTypeValu
   );
 }
 
-export function UnitTypesSummary({ types }: { types: UnitTypeView[] }) {
+export function UnitTypesSummary({ types, split = false }: { types: UnitTypeView[]; split?: boolean }) {
   if (!types.length) return null;
+  const saleUnits = types.reduce((n, t) => n + t.saleUnits, 0);
+  const rentUnits = types.reduce((n, t) => n + t.rentUnits, 0);
+  const uds = (n: number) => `${n} ud${n === 1 ? "" : "s"}`;
   return (
     <div className="rounded-xl border border-line bg-[var(--surface-alt)] px-3.5 py-3 space-y-2.5">
       <div>
         <p className="text-xs font-bold text-ink">Base prevista y valor actual</p>
         <p className="text-[11px] text-ink-subtle">La base se define aquí. El precio o la renta propios de cada unidad se ajustan en Seguimiento operativo y la rentabilidad usa el valor actual.</p>
+        <p className="mt-1 text-[11px] font-semibold text-ink-muted" data-testid="rent-split">
+          {split
+            ? `Reparto por unidad: ${uds(saleUnits)} a venta · ${uds(rentUnits)} a alquiler. Cada unidad cuenta solo en su destino.`
+            : "Comparativa: venta si se venden todas, renta si se alquilan todas. Marca «Destinada al alquiler» en una unidad para repartir."}
+        </p>
       </div>
       <ul className="divide-y divide-[var(--line)]">
         {types.map((t) => (
@@ -49,8 +57,8 @@ export function UnitTypesSummary({ types }: { types: UnitTypeView[] }) {
             <p className="text-sm font-bold text-ink">
               {t.label} <span className="font-normal text-ink-subtle tabular-nums">· {t.units} ud{t.units === 1 ? "" : "s"}</span>
             </p>
-            <Values label="Venta" v={t.sale} overridden={t.overridden.sale} unit="/ud" />
-            {t.rent.total > 0 || t.overridden.rent ? <Values label="Renta" v={t.rent} overridden={t.overridden.rent} unit="/mes" /> : <div />}
+            <Values label={split ? `Venta · ${uds(t.saleUnits)}` : "Venta"} v={t.sale} overridden={t.overridden.sale} unit="/ud" />
+            {t.rent.total > 0 || t.overridden.rent || (split && t.rentUnits > 0) ? <Values label={split ? `Alquiler · ${uds(t.rentUnits)}` : "Renta"} v={t.rent} overridden={t.overridden.rent} unit="/mes" /> : <div />}
           </li>
         ))}
       </ul>

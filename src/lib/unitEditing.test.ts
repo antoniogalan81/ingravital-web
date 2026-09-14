@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { REOperation } from "./realEstate.ts";
 import { calcResults } from "./realEstateCalc.ts";
-import { projectUnitTypes, projectSalesSummary, saleCollected } from "./projectEconomics.ts";
+import { projectUnitTypes, projectSalesSummary, saleCollected, scaleOperation } from "./projectEconomics.ts";
 import { calendarMonth, editUnit, editUnitFields, formatEsDate, monthOf, parseEsAmount, parseEsDate, projectUnitRows, type UnitRow } from "./unitEditing.ts";
 
 const NOW = "2026-09-14T10:00:00.000Z";
@@ -134,6 +134,79 @@ test("editor completo: varios campos a la vez crean UNA ficha y el estado elegid
   const again = editUnitFields(op2, calcResults(op2), row(op2, "Vivienda 5"), { price: null, buyer: "" }, makeId, NOW);
   assert.equal(again.length, 1);
   assert.equal("estimatedPrice" in again[0] || "buyer" in again[0], false);
+});
+
+test("destino venta/alquiler: todo OFF es la comparativa; con alguna ON cada unidad cuenta en un solo flujo", () => {
+  let op = op0();
+  let res = calcResults(op);
+  assert.deepEqual([res.rentSplit, res.totalSales, res.monthlyRentIncome], [false, 1080000, 5400], "todo OFF: vender todo / alquilar todo, como hasta ahora");
+
+  op = edit(op, "Vivienda 1", "forRent", true);
+  op = edit(op, "Vivienda 2", "forRent", true);
+  res = calcResults(op);
+  assert.equal(res.rentSplit, true);
+  assert.equal(res.totalSales, 720000, "4 × 180.000");
+  assert.equal(res.monthlyRentIncome, 1800, "2 × 900");
+  assert.equal(res.monthlyRentIncome * 12, 21600);
+  assert.equal(res.saleBenefit, 720000 - res.totalInvestment);
+  let t = projectUnitTypes(op, res)[0];
+  assert.deepEqual([t.units, t.saleUnits, t.rentUnits, t.sale.average, t.rent.average], [6, 4, 2, 180000, 900]);
+
+  // Valores propios: una vivienda de venta a 184.000 y una de alquiler a 950.
+  op = edit(op, "Vivienda 3", "price", 184000);
+  op = edit(op, "Vivienda 1", "rent", 950);
+  res = calcResults(op);
+  assert.equal(res.totalSales, 724000, "184.000 + 3 × 180.000");
+  assert.equal(res.monthlyRentIncome, 1850, "950 + 900");
+  assert.equal(res.monthlyRentIncome * 12, 22200);
+  t = projectUnitTypes(op, res)[0];
+  assert.equal(t.sale.average, 181000, "media solo sobre las 4 de venta");
+  assert.equal(t.rent.average, 925, "media solo sobre las 2 de alquiler");
+  const summary = projectSalesSummary(op, res, NOW);
+  assert.deepEqual([summary.units, summary.planned], [6, 724000], "Seguimiento e Inversores: 6 unidades, venta actual sin las de alquiler");
+
+  // Los precios de las de alquiler no se borran: al volver a OFF vuelven a la venta.
+  const v1 = op.sales!.find((s) => s.title === "Vivienda 1")!;
+  op = { ...op, sales: op.sales!.map((s) => (s.id === v1.id ? { ...s, estimatedPrice: 190000 } : s)) };
+  assert.equal(calcResults(op).totalSales, 724000, "precio guardado de una unidad de alquiler no cuenta");
+  op = edit(op, "Vivienda 1", "forRent", false);
+  op = edit(op, "Vivienda 2", "forRent", false);
+  res = calcResults(op);
+  assert.equal(res.rentSplit, false);
+  assert.equal(res.totalSales, 190000 + 184000 + 4 * 180000, "todo OFF: vuelve la comparativa con todos los precios");
+  assert.equal(res.monthlyRentIncome, 950 + 5 * 900);
+  assert.equal(op.sales!.find((s) => s.id === v1.id)!.rentMonthly, 950, "la renta propia sigue guardada");
+});
+
+test("destino: una unidad VENDIDA cuenta como venta aunque tenga la marca de alquiler; la señal no cambia el destino", () => {
+  let op = op0({ sales: [{ id: "s", title: "Vivienda 1", unitType: "VIVIENDA", status: "VENDIDO", forRent: true, createdAt: "", updatedAt: "" }] as REOperation["sales"] });
+  let res = calcResults(op);
+  assert.deepEqual([res.rentSplit, res.totalSales, res.monthlyRentIncome], [false, 1080000, 5400], "vendida + marca antigua: no activa el reparto");
+  op = edit(op, "Vivienda 2", "forRent", true);
+  op = edit(op, "Vivienda 2", "deposit", 3000);
+  assert.equal(row(op, "Vivienda 2").forRent, true, "registrar la señal no quita el destino");
+  res = calcResults(op);
+  assert.deepEqual([res.totalSales, res.monthlyRentIncome], [5 * 180000, 900]);
+});
+
+test("destino en garajes, locales y parcelas; los escenarios escalan cada flujo solo en sus unidades", () => {
+  const op = op0({
+    units: [
+      { id: "g", type: "GARAJE", title: "Garajes", m2Unit: 50, m2PerPlaza: 12.5, salePriceTotal: 15000, rentMonthly: 80 },
+      { id: "l", type: "LOCAL", title: "Locales", numUnits: 2, salePriceTotal: 100000, rentMonthly: 600 },
+      { id: "p", type: "PARCELA", title: "Parcelas", numUnits: 1, salePriceTotal: 50000, rentMonthly: 0 },
+    ] as REOperation["units"],
+  });
+  let cur = op;
+  cur = edit(cur, "Garaje 1", "forRent", true);
+  cur = edit(cur, "Local 2", "forRent", true);
+  const res = calcResults(cur);
+  assert.equal(res.totalSales, 3 * 15000 + 100000 + 50000);
+  assert.equal(res.monthlyRentIncome, 80 + 600);
+  assert.deepEqual(projectUnitTypes(cur, res).map((t) => [t.key, t.saleUnits, t.rentUnits]), [["GARAJE", 3, 1], ["LOCAL", 1, 1], ["PARCELA", 1, 0]]);
+  const scaled = calcResults(scaleOperation(cur, { sale: 1.1, rent: 0.5 }));
+  assert.equal(Math.round(scaled.totalSales), Math.round(1.1 * res.totalSales));
+  assert.equal(scaled.monthlyRentIncome, 0.5 * res.monthlyRentIncome);
 });
 
 test("cobrado: señal + cobros; un cobrado antiguo sin detalle se respeta", () => {

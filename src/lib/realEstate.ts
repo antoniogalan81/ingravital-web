@@ -204,6 +204,8 @@ export type REResults = {
   effectiveSales: Record<string, { price: number | null; rent: number | null; basePrice: number | null; baseRent: number | null }>;
   /** Base de las unidades del Proyecto que aún no tienen ficha de venta, en orden, por tipología. */
   unrecordedUnits: Record<UnitType, { price: number; rent: number }[]>;
+  /** Reparto venta/alquiler por unidad: true si alguna unidad está destinada al alquiler. Sin él, venta y alquiler son la comparativa de vender todo / alquilar todo. */
+  rentSplit: boolean;
   saleBenefit: number;
   saleYield: number;
 };

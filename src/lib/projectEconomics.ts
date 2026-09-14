@@ -313,8 +313,23 @@ export function effectiveRent(s: Pick<RESale, "rentMonthly">, baseRent: number |
 
 export type UnitTotals = { count: number; amount: number };
 
+/**
+ * Destino económico de una ficha: alquiler si está marcada «Destinada al alquiler» y no está
+ * vendida (una venta hecha manda sobre una marca antigua). Ausente = venta.
+ */
+export const isRentDestined = (s: Pick<RESale, "forRent" | "status">): boolean => s.forRent === true && s.status !== "VENDIDO";
+
+/** ¿Reparto real por unidad? Solo si al menos una unidad está destinada al alquiler. */
+export const hasRentSplit = (op: Pick<REOperation, "sales">): boolean => activeItems(op?.sales).some(isRentDestined);
+
 export type EffectiveUnits = {
-  /** Venta y renta mensual ACTUALES por tipología: suma de los valores efectivos de cada unidad. */
+  /**
+   * Venta y renta mensual ACTUALES por tipología: suma de los valores efectivos de cada unidad.
+   * Sin ninguna unidad destinada al alquiler son la COMPARATIVA (vender todo / alquilar todo) y
+   * `count` son todas las unidades. Con reparto (`split`), cada unidad cuenta en UN solo flujo y
+   * `count` son las unidades de ese destino.
+   */
+  split: boolean;
   sales: Record<UnitType, UnitTotals>;
   rent: Record<UnitType, UnitTotals>;
   /** Fichas sin tipología del Proyecto (Otros): solo cuentan sus valores propios. */
@@ -337,6 +352,10 @@ export type EffectiveSale = { price: number | null; rent: number | null; basePri
  */
 export function effectiveUnits(op: Pick<REOperation, "sales" | "units">, lines: ProjectUnitLine[]): EffectiveUnits {
   const rows = activeSalesByGroup(op);
+  const split = hasRentSplit(op);
+  // En reparto, cada unidad aporta solo a su destino; sin reparto, a los dos escenarios.
+  const toSale = (s: RESale | null) => !split || !s || !isRentDestined(s);
+  const toRent = (s: RESale | null) => !split || (!!s && isRentDestined(s));
   const bySale: EffectiveUnits["bySale"] = {};
   const sales = byUnitType<UnitTotals>(() => ({ count: 0, amount: 0 }));
   const rent = byUnitType<UnitTotals>(() => ({ count: 0, amount: 0 }));
@@ -353,46 +372,49 @@ export function effectiveUnits(op: Pick<REOperation, "sales" | "units">, lines: 
       const l = s.unitId ? typeLines.find((x) => x.id === s.unitId && (free.get(x) ?? 0) > 0) : undefined;
       if (l) take(s, l);
     }
-    let overflow = 0;
     for (const s of rows[type]) {
       if (lineOf.has(s)) continue;
       const l = typeLines.find((x) => (free.get(x) ?? 0) > 0);
       if (l) take(s, l);
-      else {
-        overflow += 1;
-        lineOf.set(s, typeLines[typeLines.length - 1] ?? null);
-      }
+      else lineOf.set(s, typeLines[typeLines.length - 1] ?? null);
     }
-    let saleAmount = 0;
-    let rentAmount = 0;
+    const sale = { count: 0, amount: 0 };
+    const rentTotals = { count: 0, amount: 0 };
+    const add = (s: RESale | null, price: number | null, rentValue: number | null, n = 1) => {
+      if (toSale(s)) {
+        sale.count += n;
+        sale.amount += n * n0(price);
+      }
+      if (toRent(s)) {
+        rentTotals.count += n;
+        rentTotals.amount += n * n0(rentValue);
+      }
+    };
     for (const s of rows[type]) {
       const l = lineOf.get(s) ?? null;
       const basePrice = l ? l.salePrice : null;
       const baseRent = l ? l.rent : null;
       const v = { price: effectivePrice(s, basePrice), rent: effectiveRent(s, baseRent), basePrice, baseRent };
       bySale[s.id] = v;
-      saleAmount += n0(v.price);
-      rentAmount += n0(v.rent);
+      add(s, v.price, v.rent);
     }
     for (const l of typeLines) {
       const unrecorded = Math.max(0, free.get(l) ?? 0);
-      saleAmount += unrecorded * l.salePrice;
-      rentAmount += unrecorded * l.rent;
+      add(null, l.salePrice, l.rent, unrecorded);
       for (let i = 0; i < unrecorded; i += 1) unrecordedUnits[type].push({ price: l.salePrice, rent: l.rent });
     }
-    const count = typeLines.reduce((n, l) => n + l.count, 0) + overflow;
-    sales[type] = { count, amount: round2(saleAmount) };
-    rent[type] = { count, amount: round2(rentAmount) };
+    sales[type] = { count: sale.count, amount: round2(sale.amount) };
+    rent[type] = { count: rentTotals.count, amount: round2(rentTotals.amount) };
   }
   let otherSales = 0;
   let otherRent = 0;
   for (const s of rows.OTROS) {
     const v = { price: effectivePrice(s, null), rent: effectiveRent(s, null), basePrice: null, baseRent: null };
     bySale[s.id] = v;
-    otherSales += n0(v.price);
-    otherRent += n0(v.rent);
+    if (toSale(s)) otherSales += n0(v.price);
+    if (toRent(s)) otherRent += n0(v.rent);
   }
-  return { sales, rent, otherSales: round2(otherSales), otherRent: round2(otherRent), bySale, unrecorded: unrecordedUnits };
+  return { split, sales, rent, otherSales: round2(otherSales), otherRent: round2(otherRent), bySale, unrecorded: unrecordedUnits };
 }
 
 export type UnitTypeValues = {
@@ -411,11 +433,20 @@ export type UnitTypeView = {
   key: UnitType;
   label: string;
   units: number;
+  /** Con reparto: unidades destinadas a venta y a alquiler (suman `units`); sin reparto, todas en ambos. */
+  saleUnits: number;
+  rentUnits: number;
   /** Unidades con precio / renta propios definidos en Seguimiento operativo. */
   overridden: { sale: number; rent: number };
   sale: UnitTypeValues;
   rent: UnitTypeValues;
 };
+
+/** Unidades de una tipología (con reparto, cada una está en un solo destino). */
+export function unitsOfType(res: REResults, t: UnitType): number {
+  const sale = n0(res.salesByUnitType?.[t]?.count);
+  return res.rentSplit ? sale + n0(res.rentByUnitType?.[t]?.count) : sale;
+}
 
 /** Por tipología del Proyecto: base prevista frente a situación actual (total, media y desviación). */
 export function projectUnitTypes(op: Pick<REOperation, "sales" | "units">, res: REResults): UnitTypeView[] {
@@ -434,7 +465,9 @@ export function projectUnitTypes(op: Pick<REOperation, "sales" | "units">, res: 
   return UNIT_TYPES.map((key) => ({
     key,
     label: SALE_GROUP_LABEL[key],
-    units: res.salesByUnitType[key].count,
+    units: unitsOfType(res, key),
+    saleUnits: res.salesByUnitType[key].count,
+    rentUnits: res.rentByUnitType[key].count,
     overridden: { sale: rows[key].filter((x) => isNum(x.estimatedPrice) || isNum(x.realPrice)).length, rent: rows[key].filter((x) => isNum(x.rentMonthly)).length },
     sale: values(res.salesByUnitType[key], res.saleUnitPriceByType[key]),
     rent: values(res.rentByUnitType[key], res.rentUnitBaseByType[key]),
@@ -549,8 +582,8 @@ export function projectSalesSummary(op: REOperation, res: REResults, todayISO: s
       return view;
     });
 
-    const units = key === "OTROS" ? rows.length : n0(res.salesByUnitType?.[key]?.count);
-    const planned = key === "OTROS" ? round2(rows.reduce((sum, r) => sum + n0(r.plannedPrice), 0)) : n0(res.salesByUnitType?.[key]?.amount);
+    const units = key === "OTROS" ? rows.length : unitsOfType(res, key);
+    const planned = key === "OTROS" ? round2(rows.reduce((sum, r, i) => sum + (res.rentSplit && isRentDestined(rowsRaw[i]) ? 0 : n0(r.plannedPrice)), 0)) : n0(res.salesByUnitType?.[key]?.amount);
     const sold = rows.filter((r) => statusIsSold(r.status)).length;
     const reserved = rows.filter((r) => RESERVED.includes(r.status)).length;
     const soldAmount = round2(rows.reduce((s, r) => s + n0(r.soldAmount), 0));

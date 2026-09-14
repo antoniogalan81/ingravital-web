@@ -1379,7 +1379,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
                 + Parcela
               </button>
             </div>
-            <UnitTypesSummary types={unitTypes} />
+            <UnitTypesSummary types={unitTypes} split={res.rentSplit} />
             <div className="space-y-1.5 pt-2">
               <div>
                 <p className="text-xs font-bold text-ink">Unidades · previsión y realidad</p>
