@@ -258,10 +258,14 @@ export function salePayments(s: Pick<RESale, "payments"> | null | undefined): RE
   return (Array.isArray(s?.payments) ? s.payments : []).filter((p) => p && isNum(p.amount));
 }
 
-/** Cobrado de una venta: suma de sus cobros; si no tiene ninguno, el importe `collected` legado. */
-export function saleCollected(s: Pick<RESale, "payments" | "collected"> | null | undefined): number {
+/**
+ * Cobrado de una venta: la señal (`deposit`) más sus cobros. Sin cobros detallados, un
+ * `collected` antiguo se respeta tal cual (ya era el total); si no, cuenta la señal.
+ */
+export function saleCollected(s: Pick<RESale, "payments" | "collected" | "deposit"> | null | undefined): number {
   const payments = salePayments(s);
-  return payments.length ? round2(payments.reduce((sum, p) => sum + p.amount, 0)) : n0(s?.collected);
+  if (payments.length) return round2(n0(s?.deposit) + payments.reduce((sum, p) => sum + p.amount, 0));
+  return isNum(s?.collected) ? s.collected : n0(s?.deposit);
 }
 
 /** Venta lista para guardar: `collected` refleja sus cobros (lo leen clientes antiguos). */
@@ -293,9 +297,13 @@ export function activeSalesByGroup(op: Pick<REOperation, "sales" | "units">): Re
 /** Una línea de Unidades del Proyecto: nº de unidades y precio y renta BASE por unidad. */
 export type ProjectUnitLine = { id: string; type: UnitType; count: number; salePrice: number; rent: number };
 
-/** Precio efectivo de una unidad: su precio propio si existe; si no, el precio base de su línea. */
-export function effectivePrice(s: Pick<RESale, "estimatedPrice">, basePrice: number | null): number | null {
-  return isNum(s.estimatedPrice) ? s.estimatedPrice : basePrice;
+/**
+ * Precio efectivo de una unidad: su precio propio si existe; si no, el precio base de su línea.
+ * Hay UN solo precio por unidad (`estimatedPrice`); un `realPrice` antiguo manda si existe y
+ * desaparece en cuanto se edita el precio de la unidad.
+ */
+export function effectivePrice(s: Pick<RESale, "estimatedPrice" | "realPrice">, basePrice: number | null): number | null {
+  return isNum(s.realPrice) ? s.realPrice : isNum(s.estimatedPrice) ? s.estimatedPrice : basePrice;
 }
 
 /** Renta efectiva de una unidad: su renta propia si existe; si no, la renta base de su línea. */
@@ -312,9 +320,13 @@ export type EffectiveUnits = {
   /** Fichas sin tipología del Proyecto (Otros): solo cuentan sus valores propios. */
   otherSales: number;
   otherRent: number;
-  /** Precio y renta efectivos de cada ficha activa, por id. */
-  bySale: Record<string, { price: number | null; rent: number | null }>;
+  /** Precio y renta efectivos de cada ficha activa, con la base de su unidad del Proyecto, por id. */
+  bySale: Record<string, EffectiveSale>;
+  /** Base de cada unidad del Proyecto que aún no tiene ficha, en orden, por tipología. */
+  unrecorded: Record<UnitType, { price: number; rent: number }[]>;
 };
+
+export type EffectiveSale = { price: number | null; rent: number | null; basePrice: number | null; baseRent: number | null };
 
 /**
  * BASE del Proyecto + valores propios por unidad = valor ACTUAL.
@@ -328,6 +340,7 @@ export function effectiveUnits(op: Pick<REOperation, "sales" | "units">, lines: 
   const bySale: EffectiveUnits["bySale"] = {};
   const sales = byUnitType<UnitTotals>(() => ({ count: 0, amount: 0 }));
   const rent = byUnitType<UnitTotals>(() => ({ count: 0, amount: 0 }));
+  const unrecordedUnits = byUnitType<{ price: number; rent: number }[]>(() => []);
   for (const type of UNIT_TYPES) {
     const typeLines = lines.filter((l) => l.type === type && l.count > 0);
     const free = new Map(typeLines.map((l) => [l, l.count]));
@@ -354,7 +367,9 @@ export function effectiveUnits(op: Pick<REOperation, "sales" | "units">, lines: 
     let rentAmount = 0;
     for (const s of rows[type]) {
       const l = lineOf.get(s) ?? null;
-      const v = { price: effectivePrice(s, l ? l.salePrice : null), rent: effectiveRent(s, l ? l.rent : null) };
+      const basePrice = l ? l.salePrice : null;
+      const baseRent = l ? l.rent : null;
+      const v = { price: effectivePrice(s, basePrice), rent: effectiveRent(s, baseRent), basePrice, baseRent };
       bySale[s.id] = v;
       saleAmount += n0(v.price);
       rentAmount += n0(v.rent);
@@ -363,6 +378,7 @@ export function effectiveUnits(op: Pick<REOperation, "sales" | "units">, lines: 
       const unrecorded = Math.max(0, free.get(l) ?? 0);
       saleAmount += unrecorded * l.salePrice;
       rentAmount += unrecorded * l.rent;
+      for (let i = 0; i < unrecorded; i += 1) unrecordedUnits[type].push({ price: l.salePrice, rent: l.rent });
     }
     const count = typeLines.reduce((n, l) => n + l.count, 0) + overflow;
     sales[type] = { count, amount: round2(saleAmount) };
@@ -371,12 +387,12 @@ export function effectiveUnits(op: Pick<REOperation, "sales" | "units">, lines: 
   let otherSales = 0;
   let otherRent = 0;
   for (const s of rows.OTROS) {
-    const v = { price: effectivePrice(s, null), rent: effectiveRent(s, null) };
+    const v = { price: effectivePrice(s, null), rent: effectiveRent(s, null), basePrice: null, baseRent: null };
     bySale[s.id] = v;
     otherSales += n0(v.price);
     otherRent += n0(v.rent);
   }
-  return { sales, rent, otherSales: round2(otherSales), otherRent: round2(otherRent), bySale };
+  return { sales, rent, otherSales: round2(otherSales), otherRent: round2(otherRent), bySale, unrecorded: unrecordedUnits };
 }
 
 export type UnitTypeValues = {
@@ -419,7 +435,7 @@ export function projectUnitTypes(op: Pick<REOperation, "sales" | "units">, res: 
     key,
     label: SALE_GROUP_LABEL[key],
     units: res.salesByUnitType[key].count,
-    overridden: { sale: rows[key].filter((x) => isNum(x.estimatedPrice)).length, rent: rows[key].filter((x) => isNum(x.rentMonthly)).length },
+    overridden: { sale: rows[key].filter((x) => isNum(x.estimatedPrice) || isNum(x.realPrice)).length, rent: rows[key].filter((x) => isNum(x.rentMonthly)).length },
     sale: values(res.salesByUnitType[key], res.saleUnitPriceByType[key]),
     rent: values(res.rentByUnitType[key], res.rentUnitBaseByType[key]),
   })).filter((t) => t.units > 0);
@@ -502,7 +518,7 @@ export function projectSalesSummary(op: REOperation, res: REResults, todayISO: s
       const effective = res.effectiveSales?.[s.id];
       const plannedPrice = effective?.price ?? null;
       const sold = statusIsSold(s.status);
-      const soldAmount = sold ? (isNum(s.realPrice) ? s.realPrice : plannedPrice ?? 0) : null;
+      const soldAmount = sold ? plannedPrice ?? 0 : null;
       const collected = saleCollected(s);
       const payments = salePayments(s).map((p) => ({ date: p.date, amount: p.amount })).sort((a, b) => a.date.localeCompare(b.date));
       // Cobro previsto: el indicado; si no, lo vendido (precio real) o, antes de vender, el previsto.
@@ -647,6 +663,7 @@ export function scaleOperation(op: REOperation, f: ScenarioFactors): REOperation
   clone.sales = clone.sales?.map((x) => ({
     ...x,
     ...(isNum(x.estimatedPrice) ? { estimatedPrice: x.estimatedPrice * sale } : {}),
+    ...(isNum(x.realPrice) ? { realPrice: x.realPrice * sale } : {}),
     ...(isNum(x.rentMonthly) ? { rentMonthly: x.rentMonthly * rent } : {}),
   }));
   const c = clone.costs;

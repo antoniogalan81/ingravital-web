@@ -163,9 +163,13 @@ export function SaleUnitDialog({
     title: initial.title ?? "",
     unitType: (initial.unitType ?? "") as SaleGroupKey | "",
     status: initial.status,
-    estimatedPrice: numText(initial.estimatedPrice),
+    // Un solo precio por unidad (un "precio real" antiguo manda si existe).
+    estimatedPrice: numText(initial.realPrice ?? initial.estimatedPrice),
     rentMonthly: numText(initial.rentMonthly),
-    realPrice: numText(initial.realPrice),
+    depositDateEstimated: initial.depositDateEstimated ?? "",
+    depositDate: initial.depositDate ?? "",
+    deposit: numText(initial.deposit),
+    forRent: initial.forRent === true,
     buyer: initial.buyer ?? "",
     completionDateEstimated: initial.completionDateEstimated ?? "",
     completionDateReal: initial.completionDateReal ?? "",
@@ -186,10 +190,10 @@ export function SaleUnitDialog({
     const est = parseOptional(f.estimatedPrice);
     const rent = parseOptional(f.rentMonthly);
     if (rent === "invalid") e.rentMonthly = "Importe no válido.";
-    const real = parseOptional(f.realPrice);
+    const deposit = parseOptional(f.deposit);
     const collAmount = parseOptional(f.collectionAmountEstimated);
     if (est === "invalid") e.estimatedPrice = "Importe no válido.";
-    if (real === "invalid") e.realPrice = "Importe no válido.";
+    if (deposit === "invalid") e.deposit = "Importe no válido.";
     if (collAmount === "invalid") e.collectionAmountEstimated = "Importe no válido.";
     const parsedPayments: RESalePayment[] = [];
     payments.forEach((p, i) => {
@@ -209,7 +213,11 @@ export function SaleUnitDialog({
       unitType: f.unitType && f.unitType !== "OTROS" ? f.unitType : undefined,
       estimatedPrice: typeof est === "number" ? est : undefined,
       rentMonthly: typeof rent === "number" ? rent : undefined,
-      realPrice: typeof real === "number" ? real : undefined,
+      realPrice: undefined,
+      depositDateEstimated: f.depositDateEstimated || undefined,
+      depositDate: f.depositDate || undefined,
+      deposit: typeof deposit === "number" ? deposit : undefined,
+      forRent: f.forRent || undefined,
       buyer: f.buyer.trim() || undefined,
       completionDateEstimated: f.completionDateEstimated || undefined,
       completionDateReal: f.completionDateReal || undefined,
@@ -274,9 +282,10 @@ export function SaleUnitDialog({
         <legend className="px-1 text-[10px] font-bold uppercase tracking-wide text-ink-subtle">Previsto</legend>
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-3">
           {date("completionDateEstimated", "Terminación")}
+          {date("depositDateEstimated", "Señal")}
           {date("saleDateEstimated", "Venta")}
           {date("collectionDateEstimated", "Cobro")}
-          <Field label="Precio previsto" error={errors.estimatedPrice} hint="Vacío: el precio base del Proyecto">
+          <Field label="Precio de la unidad" error={errors.estimatedPrice} hint="Vacío: el precio base del Proyecto">
             <input className={`${FIELD_CLS} tabular-nums`} inputMode="decimal" value={f.estimatedPrice} onChange={(e) => set({ estimatedPrice: e.target.value })} />
           </Field>
           <Field label="Renta mensual" error={errors.rentMonthly} hint="Vacío: la renta base del Proyecto">
@@ -292,16 +301,22 @@ export function SaleUnitDialog({
         <legend className="px-1 text-[10px] font-bold uppercase tracking-wide text-ink-subtle">Real</legend>
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-3">
           {date("completionDateReal", "Terminación")}
-          {date("date", "Venta")}
-          <Field label="Precio de venta" error={errors.realPrice}>
-            <input className={`${FIELD_CLS} tabular-nums`} inputMode="decimal" value={f.realPrice} onChange={(e) => set({ realPrice: e.target.value })} />
+          {date("depositDate", "Señal")}
+          <Field label="Importe de la señal" error={errors.deposit} hint="Cuenta como cobrado">
+            <input className={`${FIELD_CLS} tabular-nums`} inputMode="decimal" value={f.deposit} onChange={(e) => set({ deposit: e.target.value })} />
           </Field>
+          {date("date", "Venta")}
         </div>
+        <p className="text-[11px] text-ink-subtle">El precio de venta es el precio de la unidad (arriba): una sola cifra para Proyecto, Seguimiento e Inversores.</p>
         <Field label="Comprador">
           <input className={FIELD_CLS} value={f.buyer} onChange={(e) => set({ buyer: e.target.value })} />
         </Field>
+        <label className="flex items-center gap-2 text-sm text-ink">
+          <input type="checkbox" checked={f.forRent} onChange={(e) => set({ forRent: e.target.checked })} className="h-4 w-4 accent-[var(--brand)]" />
+          Destinada al alquiler
+        </label>
         <div className="space-y-2">
-          <p className="text-xs font-semibold text-ink-subtle">Cobros</p>
+          <p className="text-xs font-semibold text-ink-subtle">Otros cobros (además de la señal)</p>
           {legacyCollected != null && !payments.length ? (
             <p className="text-[11px] text-ink-muted">Cobrado registrado sin detalle: {fmtEUR(legacyCollected)}. Al añadir cobros, el total pasa a ser su suma.</p>
           ) : null}

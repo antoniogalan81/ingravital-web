@@ -23,7 +23,9 @@ import { RE_EXPENSE_CATEGORY_LABEL, newTrackingId, type REExpense, type RESale }
 import { ProjectExpenses } from "./economics/ProjectExpenses";
 import { ProjectSales } from "./economics/ProjectSales";
 import { PlannedCostDialog, SaleUnitDialog, makePlannedCost, makeSaleUnit } from "./economics/EconomicsDialogs";
-import { VentasPanel } from "./tracking/VentasPanel";
+import { UnitsTable, type UnitEdit } from "./economics/UnitsTable";
+import { isInlineEditing } from "@/src/components/ui/InlineEdit";
+import { editUnit } from "@/src/lib/unitEditing";
 
 type RealEstateCategory = "vivienda" | "local" | "suelo" | "adaptacion";
 
@@ -776,6 +778,11 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
   const [costDialog, setCostDialog] = useState<{ item: REExpense; isNew: boolean } | null>(null);
   const [saleDialog, setSaleDialog] = useState<{ item: RESale; isNew: boolean } | null>(null);
   const [salesTable, setSalesTable] = useState(false);
+  // Edición directa de una unidad desde la tabla: siempre sobre el borrador más reciente.
+  const editUnitField: UnitEdit = (row, field, value) => {
+    const cur = draftRef.current;
+    commit({ sales: editUnit(cur, calcResults(cur), row, field, value, () => newTrackingId("sale"), new Date().toISOString()) });
+  };
 
   // Sync draft if op changes externally
   useEffect(() => {
@@ -1010,11 +1017,11 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
       <ProjectSales summary={salesSummary} actions={salesActions} />
       <div className="border-t border-line pt-2">
         <button type="button" onClick={() => setSalesTable((v) => !v)} aria-expanded={salesTable} className="text-xs font-semibold text-ink-subtle hover:text-ink">
-          {salesTable ? "Ocultar tabla de ventas" : "Editar ventas en tabla"}
+          {salesTable ? "Ocultar tabla de unidades" : "Editar unidades en tabla"}
         </button>
         {salesTable ? (
           <div className="mt-2">
-            <VentasPanel op={draft} results={res} onChange={(sales) => commit({ sales })} />
+            <UnitsTable op={draft} results={res} onEdit={editUnitField} overlayRoot={overlayRoot} />
           </div>
         ) : null}
       </div>
@@ -1030,6 +1037,9 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
         {/* Panel lateral deslizante */}
         <Vaul.Content
           aria-describedby={undefined}
+          onEscapeKeyDown={(e) => {
+            if (isInlineEditing()) e.preventDefault();
+          }}
           className="fixed inset-y-0 right-0 z-50 w-full max-w-4xl bg-white shadow-2xl flex flex-col overflow-hidden outline-none"
         >
           <Vaul.Title className="sr-only">{draft.name || "Detalle de operación"}</Vaul.Title>
@@ -1370,6 +1380,13 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
               </button>
             </div>
             <UnitTypesSummary types={unitTypes} />
+            <div className="space-y-1.5 pt-2">
+              <div>
+                <p className="text-xs font-bold text-ink">Unidades · previsión y realidad</p>
+                <p className="text-[11px] text-ink-subtle">Haz clic en cualquier dato para cambiarlo. Precio y renta en gris: base del Proyecto; al escribir uno propio, lo sustituye en todos los cálculos.</p>
+              </div>
+              <UnitsTable op={draft} results={res} onEdit={editUnitField} overlayRoot={overlayRoot} />
+            </div>
           </SectionBlock>
 
           {/* ── SECCIÓN 4: M² SUPERFICIES ── */}

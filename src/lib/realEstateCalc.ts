@@ -299,6 +299,7 @@ export function calcResults(op: REOperation): REResults {
     rentByUnitType: effective.rent,
     rentUnitBaseByType,
     effectiveSales: effective.bySale,
+    unrecordedUnits: effective.unrecorded,
     saleBenefit,
     saleYield,
   };

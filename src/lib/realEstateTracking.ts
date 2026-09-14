@@ -242,6 +242,8 @@ export type RESale = {
   completionDateEstimated?: string; // ISO — terminación prevista
   completionDateReal?: string; // ISO — terminación real
   saleDateEstimated?: string; // ISO — venta prevista (la real es `date`)
+  depositDateEstimated?: string; // ISO — señal prevista
+  depositDate?: string; // ISO — fecha real de la señal (el importe es `deposit`)
   collectionDateEstimated?: string; // ISO — cobro previsto
   collectionAmountEstimated?: number; // cobro previsto; ausente = precio previsto
   /** Cobros reales. Si hay alguno, `collected` guarda su suma (compatibilidad). */
@@ -254,7 +256,8 @@ export type RESale = {
   status: RESaleStatus;
   date?: string; // ISO — fecha REAL de venta (escritura / firma)
   buyer?: string; // cliente / comprador
-  deposit?: number; // señal entregada
+  deposit?: number; // importe de la señal; cuenta como cobrado (una sola vez)
+  forRent?: boolean; // destinada al alquiler; ausente = no
   collected?: number; // ingreso ya cobrado
   notes?: string;
   createdAt: string;

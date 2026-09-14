@@ -137,7 +137,7 @@ test("venta real, cobro parcial, pendiente, fechas previstas y próximos hitos",
   assert.equal(viv.reserved, 1);
   assert.equal(viv.available, 2);
   assert.equal(viv.soldAmount, 242000);
-  assert.equal(viv.planned, 4 * 245000);
+  assert.equal(viv.planned, 242000 + 3 * 245000, "la unidad vendida vale su precio (un solo precio por unidad)");
   const gar = s.groups.find((g) => g.key === "GARAJE")!;
   assert.equal(gar.sold, 1);
   assert.equal(gar.pending, 0);

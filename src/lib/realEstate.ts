@@ -201,7 +201,9 @@ export type REResults = {
   /** Renta mensual BASE por unidad de cada tipo en el Proyecto. */
   rentUnitBaseByType: Record<UnitType, number | null>;
   /** Precio y renta EFECTIVOS de cada ficha de venta activa (propios o base de su unidad), por id. */
-  effectiveSales: Record<string, { price: number | null; rent: number | null }>;
+  effectiveSales: Record<string, { price: number | null; rent: number | null; basePrice: number | null; baseRent: number | null }>;
+  /** Base de las unidades del Proyecto que aún no tienen ficha de venta, en orden, por tipología. */
+  unrecordedUnits: Record<UnitType, { price: number; rent: number }[]>;
   saleBenefit: number;
   saleYield: number;
 };

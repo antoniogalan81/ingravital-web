@@ -11,7 +11,6 @@ import {
   RE_SALE_CLOSED_STATUSES,
   RE_SALE_COMMITTED_STATUSES,
   type REExpenseCategory,
-  type RESale,
   type RESaleStatus,
 } from "./realEstateTracking";
 import { calcResults } from "./realEstateCalc";
@@ -102,11 +101,8 @@ export type SalesStats = {
   soldPct: number | null; // soldCount / count
 };
 
-/** Ingreso de referencia de una venta cerrada: precio real si existe; si no, su precio efectivo. */
-function saleClosedValue(s: RESale, effectivePrice: number | null | undefined): number {
-  if (isNum(s.realPrice)) return n0(s.realPrice);
-  return n0(effectivePrice);
-}
+/** Ingreso de referencia de una venta cerrada: el precio efectivo de la unidad (uno solo). */
+const saleClosedValue = (effectivePrice: number | null | undefined): number => n0(effectivePrice);
 
 export function salesStats(op: REOperation): SalesStats {
   const sales = activeItems(op?.sales);
@@ -128,7 +124,7 @@ export function salesStats(op: REOperation): SalesStats {
   ).length;
   const totalEstimated = sales.reduce((s, r) => s + n0(effective[r.id]?.price), 0);
   const closed = sales.filter((s) => RE_SALE_CLOSED_STATUSES.includes(s.status));
-  const totalReal = closed.reduce((s, r) => s + saleClosedValue(r, effective[r.id]?.price), 0);
+  const totalReal = closed.reduce((s, r) => s + saleClosedValue(effective[r.id]?.price), 0);
   const collected = sales.reduce((s, r) => s + saleCollected(r), 0);
   const pendingIncome = Math.max(0, totalReal - collected);
   return {
