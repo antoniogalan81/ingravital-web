@@ -59,6 +59,12 @@ export function VentasPanel({
   // Borrado con marca: se sincroniza y no resucita desde copias antiguas de otros dispositivos.
   const remove = (row: RESale) => onChange(allSales.map((s) => (s.id === row.id ? markRealFinanceDeleted(s) : s)));
 
+  // Sugerencia de las celdas vacías: el valor efectivo de la unidad (la base de su línea del Proyecto).
+  const base = (r: RESale, key: "price" | "rent") => {
+    const v = results.effectiveSales[r.id]?.[key];
+    return v ? fmtEUR(v) : "—";
+  };
+
   const columns: DataTableColumn<RESale>[] = [
     {
       key: "title",
@@ -79,7 +85,15 @@ export function VentasPanel({
       header: "Precio est.",
       width: "8rem",
       align: "right",
-      cell: (r) => <NumberCellInput value={r.estimatedPrice} onChange={(v) => update(r.id, { estimatedPrice: v })} />,
+      // Vacío = precio base de su tipología en el Proyecto (se muestra como sugerencia).
+      cell: (r) => <NumberCellInput value={r.estimatedPrice} placeholder={base(r, "price")} onChange={(v) => update(r.id, { estimatedPrice: v })} />,
+    },
+    {
+      key: "rentMonthly",
+      header: "Renta/mes",
+      width: "7rem",
+      align: "right",
+      cell: (r) => <NumberCellInput value={r.rentMonthly} placeholder={base(r, "rent")} onChange={(v) => update(r.id, { rentMonthly: v })} />,
     },
     {
       key: "realPrice",

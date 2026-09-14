@@ -102,14 +102,16 @@ export type SalesStats = {
   soldPct: number | null; // soldCount / count
 };
 
-/** Ingreso de referencia de una venta cerrada: realPrice si existe, si no estimatedPrice. */
-function saleClosedValue(s: RESale): number {
+/** Ingreso de referencia de una venta cerrada: precio real si existe; si no, su precio efectivo. */
+function saleClosedValue(s: RESale, effectivePrice: number | null | undefined): number {
   if (isNum(s.realPrice)) return n0(s.realPrice);
-  return n0(s.estimatedPrice);
+  return n0(effectivePrice);
 }
 
 export function salesStats(op: REOperation): SalesStats {
   const sales = activeItems(op?.sales);
+  // Precio efectivo (propio o base de su unidad del Proyecto): la misma regla que calcResults.
+  const effective = sales.length ? calcResults(op).effectiveSales : {};
   const byStatus: Record<RESaleStatus, number> = {
     DISPONIBLE: 0,
     RESERVADO: 0,
@@ -124,9 +126,9 @@ export function salesStats(op: REOperation): SalesStats {
   const committedCount = sales.filter((s) =>
     RE_SALE_COMMITTED_STATUSES.includes(s.status),
   ).length;
-  const totalEstimated = sales.reduce((s, r) => s + n0(r.estimatedPrice), 0);
+  const totalEstimated = sales.reduce((s, r) => s + n0(effective[r.id]?.price), 0);
   const closed = sales.filter((s) => RE_SALE_CLOSED_STATUSES.includes(s.status));
-  const totalReal = closed.reduce((s, r) => s + saleClosedValue(r), 0);
+  const totalReal = closed.reduce((s, r) => s + saleClosedValue(r, effective[r.id]?.price), 0);
   const collected = sales.reduce((s, r) => s + saleCollected(r), 0);
   const pendingIncome = Math.max(0, totalReal - collected);
   return {

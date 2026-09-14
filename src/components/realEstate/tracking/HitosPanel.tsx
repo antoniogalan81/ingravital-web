@@ -2,6 +2,7 @@
 
 // Panel HITOS y tiempos. Cada hito: estado, fecha prevista, fecha real y
 // desviación (días) calculada. Plantillas base de una promoción. Persiste `milestones`.
+// Sin `onChange` es de solo lectura (área Inversores): progreso y cronología.
 
 import { useMemo } from "react";
 import type { REOperation } from "@/src/lib/realEstate";
@@ -43,11 +44,9 @@ function daysDeviation(due?: string, real?: string): number | null {
 export function HitosPanel({
   op,
   onChange,
-  onQuickAdd,
 }: {
   op: REOperation;
-  onChange: (milestones: REMilestone[]) => void;
-  onQuickAdd?: () => void;
+  onChange?: (milestones: REMilestone[]) => void;
 }) {
   const milestones = useMemo(() => (Array.isArray(op.milestones) ? op.milestones : []), [op.milestones]);
 
@@ -56,11 +55,11 @@ export function HitosPanel({
     : null;
 
   const update = (id: string, patch: Partial<REMilestone>) =>
-    onChange(milestones.map((m) => (m.id === id ? { ...m, ...patch, updatedAt: new Date().toISOString() } : m)));
+    onChange?.(milestones.map((m) => (m.id === id ? { ...m, ...patch, updatedAt: new Date().toISOString() } : m)));
 
-  const add = (title: string) => onChange([...milestones, makeMilestone(title)]);
+  const add = (title: string) => onChange?.([...milestones, makeMilestone(title)]);
 
-  const remove = (row: REMilestone) => onChange(milestones.filter((m) => m.id !== row.id));
+  const remove = (row: REMilestone) => onChange?.(milestones.filter((m) => m.id !== row.id));
 
   const usedTitles = new Set(milestones.map((m) => m.title.trim().toLowerCase()));
   const availableTemplates = RE_MILESTONE_TEMPLATES.filter((t) => !usedTitles.has(t.toLowerCase()));
@@ -127,7 +126,7 @@ export function HitosPanel({
           sublabel={
             milestones.length
               ? `${milestones.filter((m) => m.status === "COMPLETADO").length}/${milestones.length} completados`
-              : "Añade hitos para seguir el avance"
+              : onChange ? "Añade hitos para seguir el avance" : "Sin hitos registrados"
           }
         />
       </div>
@@ -164,44 +163,34 @@ export function HitosPanel({
         </div>
       ) : null}
 
-      {onQuickAdd ? (
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-xs text-ink-subtle">Planifica hitos con formulario guiado, con plantillas o en la tabla.</p>
-          <button
-            type="button"
-            onClick={onQuickAdd}
-            className="rounded-lg px-3.5 py-2 text-sm font-semibold text-white whitespace-nowrap transition-colors shrink-0"
-            style={{ background: "var(--brand)" }}
-          >
-            ⚡ Hito rápido
-          </button>
-        </div>
-      ) : null}
+      {onChange ? (
+        <>
+          <DataTable
+            columns={columns}
+            rows={milestones}
+            getRowId={(r) => r.id}
+            onAddRow={() => add("")}
+            addLabel="Añadir hito"
+            onDeleteRow={remove}
+            emptyText="Añade el primer hito (licencias, obra, entrega…) para detectar desviaciones de plazo."
+          />
 
-      <DataTable
-        columns={columns}
-        rows={milestones}
-        getRowId={(r) => r.id}
-        onAddRow={() => add("")}
-        addLabel="Añadir hito"
-        onDeleteRow={remove}
-        emptyText="Añade el primer hito (licencias, obra, entrega…) para detectar desviaciones de plazo."
-      />
-
-      {availableTemplates.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-ink-subtle">Plantillas:</span>
-          {availableTemplates.map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => add(t)}
-              className="rounded-full border border-line px-3 py-1 text-xs font-semibold text-ink-muted hover:text-brand hover:border-brand hover:bg-[var(--brand-soft)] transition-colors"
-            >
-              + {t}
-            </button>
-          ))}
-        </div>
+          {availableTemplates.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-ink-subtle">Plantillas:</span>
+              {availableTemplates.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => add(t)}
+                  className="rounded-full border border-line px-3 py-1 text-xs font-semibold text-ink-muted hover:text-brand hover:border-brand hover:bg-[var(--brand-soft)] transition-colors"
+                >
+                  + {t}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </>
       ) : null}
     </div>
   );

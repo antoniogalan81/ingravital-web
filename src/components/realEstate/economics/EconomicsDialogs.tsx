@@ -7,7 +7,7 @@
 // Validan antes de guardar y nunca convierten un campo vacío en 0.
 
 import { useState } from "react";
-import { DEFAULT_COST_MONTHS, SALE_GROUP_LABEL, conceptPlannedAmount, withCollectedTotal, withPlannedTotal, type SaleGroupKey } from "@/src/lib/projectEconomics";
+import { DEFAULT_COST_MONTHS, SALE_GROUP_LABEL, UNIT_TYPES, conceptPlannedAmount, withCollectedTotal, withPlannedTotal, type SaleGroupKey } from "@/src/lib/projectEconomics";
 import {
   RE_EXPENSE_CATEGORIES,
   RE_SALE_STATUSES,
@@ -164,6 +164,7 @@ export function SaleUnitDialog({
     unitType: (initial.unitType ?? "") as SaleGroupKey | "",
     status: initial.status,
     estimatedPrice: numText(initial.estimatedPrice),
+    rentMonthly: numText(initial.rentMonthly),
     realPrice: numText(initial.realPrice),
     buyer: initial.buyer ?? "",
     completionDateEstimated: initial.completionDateEstimated ?? "",
@@ -183,6 +184,8 @@ export function SaleUnitDialog({
     const e: Record<string, string> = {};
     if (!f.title.trim()) e.title = "Indica la unidad.";
     const est = parseOptional(f.estimatedPrice);
+    const rent = parseOptional(f.rentMonthly);
+    if (rent === "invalid") e.rentMonthly = "Importe no válido.";
     const real = parseOptional(f.realPrice);
     const collAmount = parseOptional(f.collectionAmountEstimated);
     if (est === "invalid") e.estimatedPrice = "Importe no válido.";
@@ -205,6 +208,7 @@ export function SaleUnitDialog({
       status: f.status,
       unitType: f.unitType && f.unitType !== "OTROS" ? f.unitType : undefined,
       estimatedPrice: typeof est === "number" ? est : undefined,
+      rentMonthly: typeof rent === "number" ? rent : undefined,
       realPrice: typeof real === "number" ? real : undefined,
       buyer: f.buyer.trim() || undefined,
       completionDateEstimated: f.completionDateEstimated || undefined,
@@ -252,7 +256,7 @@ export function SaleUnitDialog({
         <Field label="Tipo">
           <select className={FIELD_CLS} value={f.unitType} onChange={(e) => set({ unitType: e.target.value as SaleGroupKey | "" })}>
             <option value="">Según la unidad</option>
-            {(["VIVIENDA", "GARAJE", "TRASTERO"] as const).map((k) => (
+            {UNIT_TYPES.map((k) => (
               <option key={k} value={k}>{SALE_GROUP_LABEL[k]}</option>
             ))}
           </select>
@@ -272,8 +276,11 @@ export function SaleUnitDialog({
           {date("completionDateEstimated", "Terminación")}
           {date("saleDateEstimated", "Venta")}
           {date("collectionDateEstimated", "Cobro")}
-          <Field label="Precio previsto" error={errors.estimatedPrice} hint="Vacío: el del simulador">
+          <Field label="Precio previsto" error={errors.estimatedPrice} hint="Vacío: el precio base del Proyecto">
             <input className={`${FIELD_CLS} tabular-nums`} inputMode="decimal" value={f.estimatedPrice} onChange={(e) => set({ estimatedPrice: e.target.value })} />
+          </Field>
+          <Field label="Renta mensual" error={errors.rentMonthly} hint="Vacío: la renta base del Proyecto">
+            <input className={`${FIELD_CLS} tabular-nums`} inputMode="decimal" value={f.rentMonthly} onChange={(e) => set({ rentMonthly: e.target.value })} />
           </Field>
           <Field label="Cobro previsto" error={errors.collectionAmountEstimated} hint="Vacío: el precio">
             <input className={`${FIELD_CLS} tabular-nums`} inputMode="decimal" value={f.collectionAmountEstimated} onChange={(e) => set({ collectionAmountEstimated: e.target.value })} />

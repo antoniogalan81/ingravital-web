@@ -37,9 +37,10 @@ export function ResumenPanel({
   op: REOperation;
   results: REResults;
   now: string;
-  onChangeProgress: (progress: REProgress) => void;
-  onChangeMedia: (media: REMediaItem[]) => void;
-  onChangeManagement: (patch: Partial<REOperation>) => void;
+  /** Sin manejadores el panel es de solo lectura (área Inversores). */
+  onChangeProgress?: (progress: REProgress) => void;
+  onChangeMedia?: (media: REMediaItem[]) => void;
+  onChangeManagement?: (patch: Partial<REOperation>) => void;
 }) {
   const exp = useMemo(() => expenseTotals(op), [op]);
   const sales = useMemo(() => salesStats(op), [op]);
@@ -47,7 +48,8 @@ export function ResumenPanel({
   const prof = useMemo(() => profitability(op, results), [op, results]);
 
   const progress = op.progress ?? {};
-  const setProgress = (patch: Partial<REProgress>) => onChangeProgress({ ...progress, ...patch });
+  const setProgress = (patch: Partial<REProgress>) => onChangeProgress?.({ ...progress, ...patch });
+  const setManagement = (patch: Partial<REOperation>) => onChangeManagement?.(patch);
 
   const milestones = Array.isArray(op.milestones) ? op.milestones : [];
   const today = now.slice(0, 10);
@@ -105,13 +107,14 @@ export function ResumenPanel({
       </div>
 
       {/* Gestión operativa (prioridad, temperatura, probabilidad, próxima acción) */}
+      {onChangeManagement ? (
       <div className="re-card p-4 space-y-3">
         <p className="text-xs font-bold uppercase tracking-wide text-ink-subtle">Gestión operativa</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Field label="Prioridad">
             <select
               value={op.priority ?? ""}
-              onChange={(e) => onChangeManagement({ priority: e.target.value === "" ? undefined : (e.target.value as Priority) })}
+              onChange={(e) => setManagement({ priority: e.target.value === "" ? undefined : (e.target.value as Priority) })}
               className="w-full bg-transparent px-1.5 py-1 text-sm text-ink rounded-md outline-none cursor-pointer"
             >
               <option value="">—</option>
@@ -121,7 +124,7 @@ export function ResumenPanel({
           <Field label="Temperatura">
             <select
               value={op.temperature ?? ""}
-              onChange={(e) => onChangeManagement({ temperature: e.target.value === "" ? undefined : (e.target.value as Temperature) })}
+              onChange={(e) => setManagement({ temperature: e.target.value === "" ? undefined : (e.target.value as Temperature) })}
               className="w-full bg-transparent px-1.5 py-1 text-sm text-ink rounded-md outline-none cursor-pointer"
             >
               <option value="">—</option>
@@ -129,16 +132,17 @@ export function ResumenPanel({
             </select>
           </Field>
           <Field label="Probabilidad (%)">
-            <NumberCellInput value={op.probability} onChange={(v) => onChangeManagement({ probability: v })} align="left" />
+            <NumberCellInput value={op.probability} onChange={(v) => setManagement({ probability: v })} align="left" />
           </Field>
           <Field label="Fecha límite">
-            <DateCellInput value={op.nextActionDueDate} onChange={(v) => onChangeManagement({ nextActionDueDate: v })} />
+            <DateCellInput value={op.nextActionDueDate} onChange={(v) => setManagement({ nextActionDueDate: v })} />
           </Field>
         </div>
         <Field label="Próxima acción">
-          <TextCellInput value={op.nextActionText} placeholder="Ej. Llamar al propietario, pedir tasación…" onChange={(v) => onChangeManagement({ nextActionText: v || undefined })} />
+          <TextCellInput value={op.nextActionText} placeholder="Ej. Llamar al propietario, pedir tasación…" onChange={(v) => setManagement({ nextActionText: v || undefined })} />
         </Field>
       </div>
+      ) : null}
 
       <div className="grid lg:grid-cols-2 gap-4">
         {/* Avance */}
@@ -161,7 +165,7 @@ export function ResumenPanel({
           <div className="re-card p-4 space-y-2">
             <p className="text-xs font-bold uppercase tracking-wide text-ink-subtle">Próximos pasos</p>
             {nextSteps.length === 0 ? (
-              <p className="text-sm text-ink-subtle">Sin hitos pendientes. Añádelos en Planificación.</p>
+              <p className="text-sm text-ink-subtle">Sin hitos pendientes. Se añaden en Seguimiento operativo › Hitos.</p>
             ) : (
               <ul className="space-y-1.5">
                 {nextSteps.map((m) => (
@@ -174,6 +178,7 @@ export function ResumenPanel({
             )}
           </div>
 
+          {onChangeProgress ? (
           <div className="re-card p-4 space-y-3">
             <p className="text-xs font-bold uppercase tracking-wide text-ink-subtle">Progreso y tiempos</p>
             <div className="grid grid-cols-2 gap-3">
@@ -191,6 +196,7 @@ export function ResumenPanel({
               </Field>
             </div>
           </div>
+          ) : null}
         </div>
       </div>
 

@@ -47,7 +47,8 @@ export function MediaPanel({
   onChange,
 }: {
   op: REOperation;
-  onChange: (media: REMediaItem[]) => void;
+  /** Sin él la galería es de solo lectura (área Inversores). */
+  onChange?: (media: REMediaItem[]) => void;
 }) {
   const media = useMemo(() => (Array.isArray(op.media) ? op.media : []), [op.media]);
 
@@ -72,7 +73,7 @@ export function MediaPanel({
       date: new Date().toISOString().slice(0, 10),
       createdAt: new Date().toISOString(),
     };
-    onChange([...media, item]);
+    onChange?.([...media, item]);
     setUri("");
     setCaption("");
     setError(null);
@@ -99,7 +100,7 @@ export function MediaPanel({
         date: new Date().toISOString().slice(0, 10),
         createdAt: new Date().toISOString(),
       };
-      onChange([...media, item]);
+      onChange?.([...media, item]);
       setCaption("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al subir el archivo.");
@@ -117,11 +118,13 @@ export function MediaPanel({
         return;
       }
     }
-    onChange(media.filter((x) => x.id !== m.id));
+    onChange?.(media.filter((x) => x.id !== m.id));
   };
 
   return (
     <div className="space-y-5">
+      {onChange ? (
+      <>
       {/* Subir archivo (real) */}
       <div className="re-card p-4 space-y-3">
         <p className="text-xs font-bold uppercase tracking-wide text-ink-subtle">Subir archivo</p>
@@ -178,6 +181,8 @@ export function MediaPanel({
           </button>
         </div>
       </div>
+      </>
+      ) : null}
 
       {error ? <p className="text-sm text-[var(--negative)]">{error}</p> : null}
 
@@ -190,6 +195,7 @@ export function MediaPanel({
             <figure key={m.id} className="re-card overflow-hidden">
               <div className="relative aspect-video bg-[var(--surface-alt)] flex items-center justify-center">
                 <MediaThumb item={m} />
+                {onChange ? (
                 <button
                   type="button"
                   onClick={() => remove(m)}
@@ -200,6 +206,7 @@ export function MediaPanel({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
+                ) : null}
               </div>
               <figcaption className="px-2.5 py-2">
                 <p className="text-xs text-ink truncate">{m.caption ?? (m.type === "FOTO" ? "Foto" : "Vídeo")}</p>

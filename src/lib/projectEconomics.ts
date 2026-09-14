@@ -9,8 +9,11 @@
 //   (`expenses`: €/mes × meses + fijo). Su suma es `calcResults().totalInvestment`.
 // REAL de gastos = `realExpenses` activos (a mano o desde documentos de Drive), por su
 //   categoría; si están vinculados a un concepto (`budgetLineId`), también en ese concepto.
-// PREVISIÓN de ventas = unidades del simulador (`units`: cantidad y precio por tipo),
-//   afinada por las fichas de venta (`sales`) con precio y fechas previstas propias.
+// VENTAS y ALQUILER = BASE del Proyecto + valores propios por unidad (Seguimiento operativo).
+//   El Proyecto define por tipología (`units`) cuántas unidades hay y su precio y renta base.
+//   Cada ficha (`sales`) ES una de esas unidades, no una copia: sin precio o renta propios
+//   usa la base; con ellos la sustituye. `calcResults` calcula así el total y la media
+//   actuales, y de ahí la rentabilidad, el cashflow y todo lo que depende de los ingresos.
 // REAL de ventas = fichas vendidas (precio real, fecha real) y sus cobros (`payments`).
 
 import type { REOperation, REResults, UnitType } from "./realEstate";
@@ -21,6 +24,14 @@ import { activeItems, effectiveRealExpenses } from "./realFinances";
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const n0 = (v: unknown): number => (isNum(v) ? v : 0);
 const round2 = (v: number): number => Math.round(v * 100) / 100;
+
+/** Número en formato español con punto de miles SIEMPRE (5.475; 1.666,67) y hasta `decimals` decimales. */
+export function formatEs(v: number, decimals = 0): string {
+  const fixed = Math.abs(Number.isFinite(v) ? v : 0).toFixed(decimals);
+  const [int, dec] = fixed.split(".");
+  const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return `${v < 0 && Number(fixed) !== 0 ? "-" : ""}${grouped}${dec && /[^0]/.test(dec) ? `,${dec}` : ""}`;
+}
 
 // ── Conceptos de gasto previstos ───────────────────────────────────────────────
 
@@ -224,10 +235,22 @@ export const SALE_GROUP_LABEL: Record<SaleGroupKey, string> = {
   VIVIENDA: "Viviendas",
   GARAJE: "Garajes",
   TRASTERO: "Trasteros",
+  LOCAL: "Locales",
+  PARCELA: "Parcelas",
   OTROS: "Otros",
 };
 
-const SALE_GROUP_ORDER: SaleGroupKey[] = ["VIVIENDA", "GARAJE", "TRASTERO", "OTROS"];
+/** Nombre en singular de cada tipología ("Vivienda 1", "Local 2"…). */
+export const UNIT_SINGULAR: Record<UnitType, string> = { VIVIENDA: "Vivienda", GARAJE: "Garaje", TRASTERO: "Trastero", LOCAL: "Local", PARCELA: "Parcela" };
+
+/** Tipologías de unidad del Proyecto, en orden de presentación. */
+export const UNIT_TYPES: UnitType[] = ["VIVIENDA", "GARAJE", "TRASTERO", "LOCAL", "PARCELA"];
+const SALE_GROUP_ORDER: SaleGroupKey[] = [...UNIT_TYPES, "OTROS"];
+
+/** Objeto con una entrada por tipología. */
+export function byUnitType<T>(fn: (t: UnitType) => T): Record<UnitType, T> {
+  return Object.fromEntries(UNIT_TYPES.map((t) => [t, fn(t)])) as Record<UnitType, T>;
+}
 const RESERVED: RESaleStatus[] = ["RESERVADO", "SENALADO", "APALABRADO"];
 
 /** Cobros activos de una venta (los que tienen fecha e importe). */
@@ -255,7 +278,151 @@ export function saleGroupOf(s: Pick<RESale, "unitType" | "unitId" | "title">, un
   if (/vivienda|piso|ático|atico|apartamento|dúplex|duplex|casa|chalet/.test(t)) return "VIVIENDA";
   if (/garaje|plaza|parking|aparcamiento/.test(t)) return "GARAJE";
   if (/trastero/.test(t)) return "TRASTERO";
+  if (/local|oficina/.test(t)) return "LOCAL";
+  if (/parcela|solar|terreno/.test(t)) return "PARCELA";
   return "OTROS";
+}
+
+/** Fichas activas de cada grupo (una tipología del Proyecto u Otros). */
+export function activeSalesByGroup(op: Pick<REOperation, "sales" | "units">): Record<SaleGroupKey, RESale[]> {
+  const out = { ...byUnitType<RESale[]>(() => []), OTROS: [] as RESale[] };
+  for (const s of activeItems(op?.sales)) out[saleGroupOf(s, op?.units)].push(s);
+  return out;
+}
+
+/** Una línea de Unidades del Proyecto: nº de unidades y precio y renta BASE por unidad. */
+export type ProjectUnitLine = { id: string; type: UnitType; count: number; salePrice: number; rent: number };
+
+/** Precio efectivo de una unidad: su precio propio si existe; si no, el precio base de su línea. */
+export function effectivePrice(s: Pick<RESale, "estimatedPrice">, basePrice: number | null): number | null {
+  return isNum(s.estimatedPrice) ? s.estimatedPrice : basePrice;
+}
+
+/** Renta efectiva de una unidad: su renta propia si existe; si no, la renta base de su línea. */
+export function effectiveRent(s: Pick<RESale, "rentMonthly">, baseRent: number | null): number | null {
+  return isNum(s.rentMonthly) ? s.rentMonthly : baseRent;
+}
+
+export type UnitTotals = { count: number; amount: number };
+
+export type EffectiveUnits = {
+  /** Venta y renta mensual ACTUALES por tipología: suma de los valores efectivos de cada unidad. */
+  sales: Record<UnitType, UnitTotals>;
+  rent: Record<UnitType, UnitTotals>;
+  /** Fichas sin tipología del Proyecto (Otros): solo cuentan sus valores propios. */
+  otherSales: number;
+  otherRent: number;
+  /** Precio y renta efectivos de cada ficha activa, por id. */
+  bySale: Record<string, { price: number | null; rent: number | null }>;
+};
+
+/**
+ * BASE del Proyecto + valores propios por unidad = valor ACTUAL.
+ * Cada ficha ocupa una unidad concreta de una línea del Proyecto: primero las vinculadas
+ * (`unitId`), después el resto en orden. Una unidad sin ficha vale la base de su línea; una
+ * ficha que ya no cabe en el Proyecto toma la base de la última línea de su tipología.
+ * El total es SIEMPRE la suma de los valores de cada unidad (nunca media × unidades).
+ */
+export function effectiveUnits(op: Pick<REOperation, "sales" | "units">, lines: ProjectUnitLine[]): EffectiveUnits {
+  const rows = activeSalesByGroup(op);
+  const bySale: EffectiveUnits["bySale"] = {};
+  const sales = byUnitType<UnitTotals>(() => ({ count: 0, amount: 0 }));
+  const rent = byUnitType<UnitTotals>(() => ({ count: 0, amount: 0 }));
+  for (const type of UNIT_TYPES) {
+    const typeLines = lines.filter((l) => l.type === type && l.count > 0);
+    const free = new Map(typeLines.map((l) => [l, l.count]));
+    const lineOf = new Map<RESale, ProjectUnitLine | null>();
+    const take = (s: RESale, l: ProjectUnitLine) => {
+      free.set(l, (free.get(l) ?? 0) - 1);
+      lineOf.set(s, l);
+    };
+    for (const s of rows[type]) {
+      const l = s.unitId ? typeLines.find((x) => x.id === s.unitId && (free.get(x) ?? 0) > 0) : undefined;
+      if (l) take(s, l);
+    }
+    let overflow = 0;
+    for (const s of rows[type]) {
+      if (lineOf.has(s)) continue;
+      const l = typeLines.find((x) => (free.get(x) ?? 0) > 0);
+      if (l) take(s, l);
+      else {
+        overflow += 1;
+        lineOf.set(s, typeLines[typeLines.length - 1] ?? null);
+      }
+    }
+    let saleAmount = 0;
+    let rentAmount = 0;
+    for (const s of rows[type]) {
+      const l = lineOf.get(s) ?? null;
+      const v = { price: effectivePrice(s, l ? l.salePrice : null), rent: effectiveRent(s, l ? l.rent : null) };
+      bySale[s.id] = v;
+      saleAmount += n0(v.price);
+      rentAmount += n0(v.rent);
+    }
+    for (const l of typeLines) {
+      const unrecorded = Math.max(0, free.get(l) ?? 0);
+      saleAmount += unrecorded * l.salePrice;
+      rentAmount += unrecorded * l.rent;
+    }
+    const count = typeLines.reduce((n, l) => n + l.count, 0) + overflow;
+    sales[type] = { count, amount: round2(saleAmount) };
+    rent[type] = { count, amount: round2(rentAmount) };
+  }
+  let otherSales = 0;
+  let otherRent = 0;
+  for (const s of rows.OTROS) {
+    const v = { price: effectivePrice(s, null), rent: effectiveRent(s, null) };
+    bySale[s.id] = v;
+    otherSales += n0(v.price);
+    otherRent += n0(v.rent);
+  }
+  return { sales, rent, otherSales: round2(otherSales), otherRent: round2(otherRent), bySale };
+}
+
+export type UnitTypeValues = {
+  /** Base media por unidad según el Proyecto. */
+  base: number | null;
+  /** Suma de los valores efectivos de las unidades. */
+  total: number;
+  /** total / unidades (solo para mostrar). */
+  average: number | null;
+  /** Media actual − base, por unidad, y en % sobre la base. */
+  deviation: number | null;
+  deviationPct: number | null;
+};
+
+export type UnitTypeView = {
+  key: UnitType;
+  label: string;
+  units: number;
+  /** Unidades con precio / renta propios definidos en Seguimiento operativo. */
+  overridden: { sale: number; rent: number };
+  sale: UnitTypeValues;
+  rent: UnitTypeValues;
+};
+
+/** Por tipología del Proyecto: base prevista frente a situación actual (total, media y desviación). */
+export function projectUnitTypes(op: Pick<REOperation, "sales" | "units">, res: REResults): UnitTypeView[] {
+  const rows = activeSalesByGroup(op);
+  const values = (t: UnitTotals, base: number | null): UnitTypeValues => {
+    const average = t.count > 0 ? t.amount / t.count : null;
+    const deviation = average != null && base != null ? average - base : null;
+    return {
+      base,
+      total: t.amount,
+      average,
+      deviation,
+      deviationPct: deviation != null && base ? deviation / base : null,
+    };
+  };
+  return UNIT_TYPES.map((key) => ({
+    key,
+    label: SALE_GROUP_LABEL[key],
+    units: res.salesByUnitType[key].count,
+    overridden: { sale: rows[key].filter((x) => isNum(x.estimatedPrice)).length, rent: rows[key].filter((x) => isNum(x.rentMonthly)).length },
+    sale: values(res.salesByUnitType[key], res.saleUnitPriceByType[key]),
+    rent: values(res.rentByUnitType[key], res.rentUnitBaseByType[key]),
+  })).filter((t) => t.units > 0);
 }
 
 export type SaleStep = { estimated?: string; real?: string };
@@ -269,6 +436,8 @@ export type SaleUnitView = {
   /** Situación de obra: terminada (fecha real), en obra (fecha prevista) o sin dato. */
   build: "terminada" | "en_obra" | null;
   plannedPrice: number | null;
+  /** Renta mensual actual (propia o base); null si la tipología no tiene renta. */
+  rentMonthly: number | null;
   realPrice: number | null;
   soldAmount: number | null;
   collected: number | null;
@@ -322,18 +491,16 @@ const statusIsSold = (s: RESaleStatus) => s === "VENDIDO";
  *  · pendiente = vendido − cobrado (mínimo 0)
  */
 export function projectSalesSummary(op: REOperation, res: REResults, todayISO: string): SalesSummaryView {
-  const sales: RESale[] = activeItems(op?.sales);
-  const forecast = res.salesByUnitType ?? { VIVIENDA: { count: 0, amount: 0 }, GARAJE: { count: 0, amount: 0 }, TRASTERO: { count: 0, amount: 0 } };
+  const byGroup = activeSalesByGroup(op);
   const upcoming: UpcomingEvent[] = [];
   const today = todayISO.slice(0, 10);
 
   const groups = SALE_GROUP_ORDER.map<SaleGroupView>((key) => {
-    const rowsRaw = sales.filter((s) => saleGroupOf(s, op?.units) === key);
-    const f = key === "OTROS" ? { count: 0, amount: 0 } : forecast[key];
-    const unitPrice = f.count > 0 ? f.amount / f.count : null;
+    const rowsRaw = byGroup[key];
 
     const rows = rowsRaw.map<SaleUnitView>((s) => {
-      const plannedPrice = isNum(s.estimatedPrice) ? s.estimatedPrice : unitPrice != null ? round2(unitPrice) : null;
+      const effective = res.effectiveSales?.[s.id];
+      const plannedPrice = effective?.price ?? null;
       const sold = statusIsSold(s.status);
       const soldAmount = sold ? (isNum(s.realPrice) ? s.realPrice : plannedPrice ?? 0) : null;
       const collected = saleCollected(s);
@@ -348,6 +515,7 @@ export function projectSalesSummary(op: REOperation, res: REResults, todayISO: s
         statusLabel: RE_SALE_STATUS_LABEL[s.status] ?? s.status,
         build: s.completionDateReal ? "terminada" : s.completionDateEstimated ? "en_obra" : null,
         plannedPrice,
+        rentMonthly: effective?.rent || null,
         realPrice: isNum(s.realPrice) ? s.realPrice : null,
         soldAmount,
         collected,
@@ -365,10 +533,10 @@ export function projectSalesSummary(op: REOperation, res: REResults, todayISO: s
       return view;
     });
 
-    const units = Math.max(f.count, rows.length);
+    const units = key === "OTROS" ? rows.length : n0(res.salesByUnitType?.[key]?.count);
+    const planned = key === "OTROS" ? round2(rows.reduce((sum, r) => sum + n0(r.plannedPrice), 0)) : n0(res.salesByUnitType?.[key]?.amount);
     const sold = rows.filter((r) => statusIsSold(r.status)).length;
     const reserved = rows.filter((r) => RESERVED.includes(r.status)).length;
-    const planned = round2(rows.reduce((s, r) => s + n0(r.plannedPrice), 0) + Math.max(0, units - rows.length) * n0(unitPrice));
     const soldAmount = round2(rows.reduce((s, r) => s + n0(r.soldAmount), 0));
     const collected = round2(rows.reduce((s, r) => s + n0(r.collected), 0));
     return {
@@ -426,6 +594,7 @@ export function salesSummaryForInvestors(v: SalesSummaryView, withPrices: boolea
       rows: g.rows.map(({ buyer: _buyer, ...r }) => ({
         ...r,
         plannedPrice: money(r.plannedPrice),
+        rentMonthly: money(r.rentMonthly),
         realPrice: money(r.realPrice),
         soldAmount: money(r.soldAmount),
         collected: money(r.collected),
@@ -438,22 +607,56 @@ export function salesSummaryForInvestors(v: SalesSummaryView, withPrices: boolea
 
 /**
  * Fichas que faltan para las unidades previstas de un grupo (sin inventar estados ni fechas):
- * mismas unidades que el simulador, título numerado y precio unitario previsto.
+ * mismas unidades que el Proyecto y título numerado. SIN precio: lo heredan del Proyecto.
  */
 export function missingSaleRecords(op: REOperation, res: REResults, group: UnitType, makeId: () => string, nowISO: string): RESale[] {
   const summary = projectSalesSummary(op, res, nowISO).groups.find((g) => g.key === group);
   if (!summary || summary.unitsWithoutRecord <= 0) return [];
-  const f = res.salesByUnitType[group];
-  const unitPrice = f.count > 0 ? round2(f.amount / f.count) : undefined;
-  const base = SALE_GROUP_LABEL[group].replace(/s$/, "");
+  const base = UNIT_SINGULAR[group];
   const start = summary.rows.length;
   return Array.from({ length: summary.unitsWithoutRecord }, (_, i) => ({
     id: makeId(),
     title: `${base} ${start + i + 1}`,
     unitType: group,
     status: "DISPONIBLE" as const,
-    ...(unitPrice != null ? { estimatedPrice: unitPrice } : {}),
     createdAt: nowISO,
     updatedAt: nowISO,
   }));
+}
+
+export type ScenarioFactors = { sale?: number; obra?: number; rent?: number };
+
+/**
+ * Copia en memoria de la operación con multiplicadores de escenario. Escala las BASES del
+ * Proyecto y también los valores propios de cada unidad: una vivienda a 184.000 € con +5 %
+ * pasa a 193.200 €, no a base × 1,05. Nada se guarda.
+ */
+export function scaleOperation(op: REOperation, f: ScenarioFactors): REOperation {
+  const sale = f.sale ?? 1;
+  const obra = f.obra ?? 1;
+  const rent = f.rent ?? 1;
+  const clone: REOperation = JSON.parse(JSON.stringify(op));
+  const by = (v: number | undefined, k: number) => (v != null ? v * k : v);
+  clone.units = (clone.units ?? []).map((u) => ({
+    ...u,
+    salePriceTotal: by(u.salePriceTotal, sale),
+    salePriceM2: by(u.salePriceM2, sale),
+    rentMonthly: by(u.rentMonthly, rent),
+    pricePerRoom: by(u.pricePerRoom, rent),
+  }));
+  clone.sales = clone.sales?.map((x) => ({
+    ...x,
+    ...(isNum(x.estimatedPrice) ? { estimatedPrice: x.estimatedPrice * sale } : {}),
+    ...(isNum(x.rentMonthly) ? { rentMonthly: x.rentMonthly * rent } : {}),
+  }));
+  const c = clone.costs;
+  if (c) {
+    c.obraViviendaPriceM2 = by(c.obraViviendaPriceM2, obra);
+    c.obraViviendaTotal = by(c.obraViviendaTotal, obra);
+    c.obraGarajePriceM2 = by(c.obraGarajePriceM2, obra);
+    c.obraGarajeTotal = by(c.obraGarajeTotal, obra);
+    c.obraTrasterosPriceM2 = by(c.obraTrasterosPriceM2, obra);
+    c.obraTrasterosTotal = by(c.obraTrasterosTotal, obra);
+  }
+  return clone;
 }

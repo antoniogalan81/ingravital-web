@@ -1,7 +1,7 @@
 // src/lib/realEstateCalc.ts — Fórmulas idénticas a APP/src/utils/realEstateCalc.ts
 
-import type { REOperation, REResults, REUnit } from "./realEstate";
-import { plannedConceptsTotal } from "./projectEconomics";
+import type { REOperation, REResults, REUnit, UnitType } from "./realEstate";
+import { byUnitType, effectiveUnits, formatEs, plannedConceptsTotal, UNIT_TYPES, type ProjectUnitLine } from "./projectEconomics";
 
 const n0 = (v: number | undefined | null): number =>
   Number.isFinite(v as number) ? (v as number) : 0;
@@ -223,15 +223,37 @@ export function calcResults(op: REOperation): REResults {
       : 0;
   const totalMonthlyPayment = compraMonthly + obraMonthly;
 
+  // ── Unidades del Proyecto: una línea por tarjeta, con precio y renta BASE por unidad ──
+  // Garaje: por plaza · Trastero: por trastero · Vivienda, local, parcela: × nº de unidades.
+  // Vivienda por habitaciones: su renta base por vivienda es habitaciones × precio por habitación.
+  const lines: ProjectUnitLine[] = unitResults.map((u) => {
+    const count =
+      u.type === "TRASTERO" ? u.numTrasteros
+      : u.type === "GARAJE" ? u.numPlazas
+      : Math.max(1, Math.round(n0(u.numUnits ?? 1)));
+    const byRooms = u.type === "VIVIENDA" && (u.rentType ?? "TRADICIONAL") === "HABITACIONES";
+    return {
+      id: u.id,
+      type: UNIT_TYPES.includes(u.type) ? u.type : "VIVIENDA",
+      count,
+      salePrice: n0(u.salePriceTotal),
+      rent: byRooms ? (count > 0 ? u.monthlyIncomeRooms / count : 0) : n0(u.rentMonthly),
+    };
+  });
+  const baseOf = (t: UnitType, pick: (l: ProjectUnitLine) => number) => {
+    const typeLines = lines.filter((l) => l.type === t);
+    const count = typeLines.reduce((n, l) => n + l.count, 0);
+    return count > 0 ? typeLines.reduce((sum, l) => sum + pick(l) * l.count, 0) / count : null;
+  };
+  const saleUnitPriceByType = byUnitType((t) => baseOf(t, (l) => l.salePrice));
+  const rentUnitBaseByType = byUnitType((t) => baseOf(t, (l) => l.rent));
+
+  // BASE del Proyecto + valores propios de cada unidad (Seguimiento operativo) = valor ACTUAL.
+  const effective = effectiveUnits(safeOp, lines);
+  const sumAmounts = (r: Record<UnitType, { amount: number }>) => UNIT_TYPES.reduce((sum, t) => sum + r[t].amount, 0);
+
   // ── Alquiler ──────────────────────────────────────────────────────────────────
-  const monthlyRentIncome = unitResults.reduce((s, u) => {
-    if (u.type === "VIVIENDA") {
-      const rentType = u.rentType ?? "TRADICIONAL";
-      const numUnits = Math.max(1, Math.round(n0(u.numUnits ?? 1)));
-      return s + (rentType === "HABITACIONES" ? u.monthlyIncomeRooms : n0(u.rentMonthly) * numUnits);
-    }
-    return s + n0(u.rentMonthly);
-  }, 0);
+  const monthlyRentIncome = sumAmounts(effective.rent) + effective.otherRent;
 
   const monthlyRentBenefit = finEnabled
     ? monthlyRentIncome - totalMonthlyPayment
@@ -240,23 +262,7 @@ export function calcResults(op: REOperation): REResults {
   const rentYield = investBase > 0 ? (monthlyRentBenefit * 12) / investBase : 0;
 
   // ── Venta ─────────────────────────────────────────────────────────────────────
-  // TRASTERO: salePriceTotal × numTrasteros
-  const salesByUnitType: REResults["salesByUnitType"] = {
-    VIVIENDA: { count: 0, amount: 0 },
-    GARAJE: { count: 0, amount: 0 },
-    TRASTERO: { count: 0, amount: 0 },
-  };
-  for (const u of unitResults) {
-    const count =
-      u.type === "TRASTERO" ? u.numTrasteros
-      : u.type === "GARAJE" ? u.numPlazas
-      : u.type === "VIVIENDA" ? Math.max(1, Math.round(n0(u.numUnits ?? 1)))
-      : 1;
-    const group = salesByUnitType[u.type] ?? salesByUnitType.VIVIENDA;
-    group.count += count;
-    group.amount += n0(u.salePriceTotal) * count;
-  }
-  const totalSales = salesByUnitType.VIVIENDA.amount + salesByUnitType.GARAJE.amount + salesByUnitType.TRASTERO.amount;
+  const totalSales = sumAmounts(effective.sales) + effective.otherSales;
   const saleBenefit = totalSales - totalInvestment;
   const saleYield = investBase > 0 ? saleBenefit / investBase : 0;
 
@@ -288,7 +294,11 @@ export function calcResults(op: REOperation): REResults {
     monthlyRentBenefit,
     rentYield,
     totalSales,
-    salesByUnitType,
+    salesByUnitType: effective.sales,
+    saleUnitPriceByType,
+    rentByUnitType: effective.rent,
+    rentUnitBaseByType,
+    effectiveSales: effective.bySale,
     saleBenefit,
     saleYield,
   };
@@ -297,7 +307,7 @@ export function calcResults(op: REOperation): REResults {
 /** Formatea euros con separador de miles — ej: 3.000 € */
 export function fmtEUR(v: number): string {
   const safe = Number.isFinite(v) ? v : 0;
-  return `${Math.round(safe).toLocaleString("es-ES")} €`;
+  return `${formatEs(Math.round(safe))} €`;
 }
 
 /** Formatea número con separador de miles — ej: 3.000 */

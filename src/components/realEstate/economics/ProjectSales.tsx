@@ -78,6 +78,7 @@ function UnitRow({ u, onEdit }: { u: SaleUnitView; onEdit?: () => void }) {
           <span className="text-sm font-bold text-ink truncate">{u.title}</span>
           <span className={`pill ${STATUS_TONE[u.status] ?? "pill-neutral"}`}>{u.statusLabel}</span>
           {u.build ? <span className="pill pill-neutral">{u.build === "terminada" ? "Terminada" : "En obra"}</span> : null}
+          {u.rentMonthly != null ? <span className="text-xs tabular-nums text-ink-muted">Renta {fmtEUR(u.rentMonthly)}/mes</span> : null}
         </div>
         {onEdit ? (
           <button type="button" onClick={onEdit} className="rounded-md px-2 py-1 text-xs font-semibold text-brand hover:bg-[var(--brand-soft)]">

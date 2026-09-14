@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useRef, useEffect, Fragment } from "rea
 import { toast } from "sonner";
 import { useSync } from "@/src/sync/SyncContext";
 import { calcResults, fmtEUR, fmtPct, CATEGORY_INFO, convertRealEstateOperationType, type RealEstateCategory } from "@/src/lib/realEstateCalc";
-import type { REOperation, REResults } from "@/src/lib/realEstate";
+import type { REOperation, REResults, UnitType } from "@/src/lib/realEstate";
 import { DEFAULT_TASAS } from "@/src/lib/realEstate";
 import { formatShortDate } from "@/src/lib/date";
 import { RealEstateModal } from "./RealEstateModal";
@@ -222,58 +222,28 @@ export function CompareModal({ ops, onClose, onOpenOp }: { ops: REOperation[]; o
   const fmtOr = (v: number, fmt: (n: number) => string) =>
     !Number.isFinite(v) || v === 0 ? "—" : fmt(v);
 
+  // Alquiler ACTUAL por tipología (base del Proyecto + rentas propias de cada unidad).
+  const rentOf = (r: CompareRow, types: UnitType[]) => types.reduce((sum, t) => sum + r.res.rentByUnitType[t].amount, 0);
+  const avgRentOf = (r: CompareRow, t: UnitType) => {
+    const g = r.res.rentByUnitType[t];
+    return g.count > 0 ? g.amount / g.count : 0;
+  };
+  const rentTotalField = (label: string, types: UnitType[]): CompareSubField => ({
+    label,
+    getRaw: (r) => rentOf(r, types),
+    getValue: (r) => fmtOr(rentOf(r, types), fmtEUR),
+  });
+  const rentAverageField = (label: string, t: UnitType): CompareSubField => ({
+    label,
+    getRaw: (r) => avgRentOf(r, t),
+    getValue: (r) => fmtOr(avgRentOf(r, t), (n) => `${fmtEUR(n)}/mes`),
+  });
   const cashflowSubFields: CompareSubField[] = [
-    {
-      label: "Alq. viviendas",
-      getRaw: (r) => r.res.unitResults
-        .filter((u) => u.type === "VIVIENDA" && (u.rentType ?? "TRADICIONAL") === "TRADICIONAL")
-        .reduce((s, u) => s + _n0(u.rentMonthly) * Math.max(1, Math.round(_n0(u.numUnits ?? 1))), 0),
-      getValue: (r) => {
-        const v = r.res.unitResults
-          .filter((u) => u.type === "VIVIENDA" && (u.rentType ?? "TRADICIONAL") === "TRADICIONAL")
-          .reduce((s, u) => s + _n0(u.rentMonthly) * Math.max(1, Math.round(_n0(u.numUnits ?? 1))), 0);
-        return fmtOr(v, fmtEUR);
-      },
-    },
-    {
-      label: "Alq. habitaciones",
-      getRaw: (r) => r.res.unitResults
-        .filter((u) => u.type === "VIVIENDA" && u.rentType === "HABITACIONES")
-        .reduce((s, u) => s + u.monthlyIncomeRooms, 0),
-      getValue: (r) => {
-        const v = r.res.unitResults
-          .filter((u) => u.type === "VIVIENDA" && u.rentType === "HABITACIONES")
-          .reduce((s, u) => s + u.monthlyIncomeRooms, 0);
-        return fmtOr(v, fmtEUR);
-      },
-    },
-    {
-      label: "Alq. garajes",
-      getRaw: (r) => r.res.unitResults.filter((u) => u.type === "GARAJE").reduce((s, u) => s + _n0(u.rentMonthly) * u.numPlazas, 0),
-      getValue: (r) => {
-        const v = r.res.unitResults.filter((u) => u.type === "GARAJE").reduce((s, u) => s + _n0(u.rentMonthly) * u.numPlazas, 0);
-        return fmtOr(v, fmtEUR);
-      },
-    },
-    {
-      label: "Alq. trasteros",
-      getRaw: (r) => r.res.unitResults.filter((u) => u.type === "TRASTERO").reduce((s, u) => s + _n0(u.rentMonthly) * u.numTrasteros, 0),
-      getValue: (r) => {
-        const v = r.res.unitResults.filter((u) => u.type === "TRASTERO").reduce((s, u) => s + _n0(u.rentMonthly) * u.numTrasteros, 0);
-        return fmtOr(v, fmtEUR);
-      },
-    },
-    {
-      label: "€/vivienda",
-      getRaw: (r) => {
-        const u = r.op.units.find((u) => u.type === "VIVIENDA" && (u.rentType ?? "TRADICIONAL") === "TRADICIONAL");
-        return _n0(u?.rentMonthly);
-      },
-      getValue: (r) => {
-        const u = r.op.units.find((u) => u.type === "VIVIENDA" && (u.rentType ?? "TRADICIONAL") === "TRADICIONAL");
-        return fmtOr(_n0(u?.rentMonthly), (n) => `${fmtEUR(n)}/mes`);
-      },
-    },
+    rentTotalField("Alq. viviendas", ["VIVIENDA"]),
+    rentTotalField("Alq. garajes", ["GARAJE"]),
+    rentTotalField("Alq. trasteros", ["TRASTERO"]),
+    rentTotalField("Alq. locales y parcelas", ["LOCAL", "PARCELA"]),
+    rentAverageField("€/vivienda", "VIVIENDA"),
     {
       label: "€/habitación",
       getRaw: (r) => {
@@ -285,28 +255,8 @@ export function CompareModal({ ops, onClose, onOpenOp }: { ops: REOperation[]; o
         return fmtOr(_n0(u?.pricePerRoom), (n) => `${fmtEUR(n)}/mes`);
       },
     },
-    {
-      label: "€/aparcamiento",
-      getRaw: (r) => {
-        const u = r.op.units.find((u) => u.type === "GARAJE");
-        return _n0(u?.rentMonthly);
-      },
-      getValue: (r) => {
-        const u = r.op.units.find((u) => u.type === "GARAJE");
-        return fmtOr(_n0(u?.rentMonthly), (n) => `${fmtEUR(n)}/mes`);
-      },
-    },
-    {
-      label: "€/trastero",
-      getRaw: (r) => {
-        const u = r.op.units.find((u) => u.type === "TRASTERO");
-        return _n0(u?.rentMonthly);
-      },
-      getValue: (r) => {
-        const u = r.op.units.find((u) => u.type === "TRASTERO");
-        return fmtOr(_n0(u?.rentMonthly), (n) => `${fmtEUR(n)}/mes`);
-      },
-    },
+    rentAverageField("€/aparcamiento", "GARAJE"),
+    rentAverageField("€/trastero", "TRASTERO"),
   ];
 
   const obraSubFields: CompareSubField[] = [

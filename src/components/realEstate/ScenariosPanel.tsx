@@ -11,37 +11,12 @@
 import { useMemo } from "react";
 import type { REOperation, REResults } from "@/src/lib/realEstate";
 import { calcResults, fmtEUR, fmtPct } from "@/src/lib/realEstateCalc";
+import { scaleOperation, type ScenarioFactors } from "@/src/lib/projectEconomics";
 
-export type Factors = { sale?: number; obra?: number; rent?: number };
+export type Factors = ScenarioFactors;
 
-// Copia profunda de la operación con multiplicadores aplicados SOLO a los
-// inputs que el motor usa para venta / obra / alquiler. No persistida.
-export function scaleOp(op: REOperation, f: Factors): REOperation {
-  const sale = f.sale ?? 1;
-  const obra = f.obra ?? 1;
-  const rent = f.rent ?? 1;
-  const clone: REOperation = JSON.parse(JSON.stringify(op));
-
-  clone.units = (clone.units ?? []).map((u) => ({
-    ...u,
-    salePriceTotal: u.salePriceTotal != null ? Math.round(u.salePriceTotal * sale) : u.salePriceTotal,
-    salePriceM2: u.salePriceM2 != null ? Math.round(u.salePriceM2 * sale) : u.salePriceM2,
-    rentMonthly: u.rentMonthly != null ? Math.round(u.rentMonthly * rent) : u.rentMonthly,
-    pricePerRoom: u.pricePerRoom != null ? Math.round(u.pricePerRoom * rent) : u.pricePerRoom,
-  }));
-
-  const c = clone.costs;
-  if (c) {
-    const sc = (v: number | undefined) => (v != null ? Math.round(v * obra) : v);
-    c.obraViviendaPriceM2 = sc(c.obraViviendaPriceM2);
-    c.obraViviendaTotal = sc(c.obraViviendaTotal);
-    c.obraGarajePriceM2 = sc(c.obraGarajePriceM2);
-    c.obraGarajeTotal = sc(c.obraGarajeTotal);
-    c.obraTrasterosPriceM2 = sc(c.obraTrasterosPriceM2);
-    c.obraTrasterosTotal = sc(c.obraTrasterosTotal);
-  }
-  return clone;
-}
+/** Copia temporal escalada: bases del Proyecto y valores propios de cada unidad. */
+export const scaleOp = scaleOperation;
 
 // ── helpers de presentación ────────────────────────────────────────────────
 function toneColor(curr: number, base: number, higherBetter = true): string {

@@ -15,7 +15,8 @@ import type {
 import type { PipelineStage } from "./pipeline";
 import type { Priority, Temperature } from "./management";
 
-export type UnitType = "VIVIENDA" | "GARAJE" | "TRASTERO";
+/** Tipologías de unidad. LOCAL y PARCELA: nº de unidades × precio / renta base, sin obra por m². */
+export type UnitType = "VIVIENDA" | "GARAJE" | "TRASTERO" | "LOCAL" | "PARCELA";
 
 export type REUnit = {
   id: string;
@@ -32,12 +33,12 @@ export type REUnit = {
   salePriceTotal?: number;
   salePriceM2?: number;
   // Alquiler
-  rentMonthly?: number;       // VIVIENDA TRADICIONAL y GARAJE
+  rentMonthly?: number;       // renta BASE por unidad (vivienda, plaza, trastero, local, parcela)
   // VIVIENDA HABITACIONES
   m2PerRoom?: number;
   pricePerRoom?: number;
   // VIVIENDA: multiplicador (Nº de viviendas iguales)
-  numUnits?: number;           // default 1
+  numUnits?: number;           // default 1 (también LOCAL y PARCELA)
   // GARAJE
   m2PerPlaza?: number;        // M2 por plaza (default 12.5)
   // TRASTERO
@@ -191,8 +192,16 @@ export type REResults = {
   monthlyRentBenefit: number;
   rentYield: number;
   totalSales: number;
-  /** Venta prevista por tipo de unidad: nº de unidades vendibles e importe. */
+  /** Venta ACTUAL por tipo: base del Proyecto + precio propio de cada unidad en Seguimiento. */
   salesByUnitType: Record<UnitType, { count: number; amount: number }>;
+  /** Precio BASE por unidad de cada tipo en el Proyecto (el que usan las unidades sin precio propio). */
+  saleUnitPriceByType: Record<UnitType, number | null>;
+  /** Renta mensual ACTUAL por tipo: base del Proyecto + renta propia de cada unidad. */
+  rentByUnitType: Record<UnitType, { count: number; amount: number }>;
+  /** Renta mensual BASE por unidad de cada tipo en el Proyecto. */
+  rentUnitBaseByType: Record<UnitType, number | null>;
+  /** Precio y renta EFECTIVOS de cada ficha de venta activa (propios o base de su unidad), por id. */
+  effectiveSales: Record<string, { price: number | null; rent: number | null }>;
   saleBenefit: number;
   saleYield: number;
 };

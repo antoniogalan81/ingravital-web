@@ -248,7 +248,8 @@ export type RESale = {
   payments?: RESalePayment[];
   /** Borrado (tombstone): se conserva para que el borrado se sincronice y no resucite. */
   deletedAt?: string;
-  estimatedPrice?: number; // precio estimado
+  estimatedPrice?: number; // precio previsto propio de la unidad; ausente = precio base del Proyecto
+  rentMonthly?: number; // renta mensual actual de la unidad; ausente = renta base del Proyecto
   realPrice?: number; // precio real de venta
   status: RESaleStatus;
   date?: string; // ISO — fecha REAL de venta (escritura / firma)
