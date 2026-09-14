@@ -630,6 +630,21 @@ export async function claimInvitation(token: string): Promise<string> {
 }
 
 export async function getInvestorSnapshot(invitationId: string): Promise<InvestorSnapshot> {
+  // Recalcula las métricas con los datos actuales de la operación antes de leerlas. Si falla
+  // (sin red, servidor), se muestra la última versión guardada: nunca bloquea la lectura.
+  try {
+    const { data: session } = await supabase.auth.getSession();
+    const token = session.session?.access_token;
+    if (token) {
+      await fetch("/api/investor/refresh-metrics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ invitationId }),
+      });
+    }
+  } catch {
+    // lectura de la versión guardada
+  }
   const { data, error } = await supabase.rpc("get_investor_snapshot", {
     p_invitation: invitationId,
   });
