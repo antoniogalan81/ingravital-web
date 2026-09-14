@@ -7,8 +7,13 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --import ./scripts/test-ts-resolve.mjs --test \"src/**/*.test.ts\" && node --test supabase/tests/*.test.mjs",
-    "test:db": "node --test supabase/tests/*.test.mjs"
+    "test": "node --import ./scripts/test-ts-resolve.mjs --test \"src/**/*.test.ts\" \"worker/**/*.test.ts\" && node --test supabase/tests/*.test.mjs",
+    "test:db": "node --test supabase/tests/*.test.mjs",
+    "worker": "node --import ./scripts/test-ts-resolve.mjs worker/index.ts",
+    "worker:auth": "node --import ./scripts/test-ts-resolve.mjs worker/googleAuth.ts",
+    "typecheck:worker": "tsc -p worker/tsconfig.json",
+    "worker:e2e": "node --import ./scripts/test-ts-resolve.mjs worker/test/e2e.ts",
+    "worker:setup": "node --import ./scripts/test-ts-resolve.mjs worker/googleAuth.ts --install-task"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.90.1",

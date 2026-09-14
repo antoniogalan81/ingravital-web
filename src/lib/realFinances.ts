@@ -1,9 +1,9 @@
 // src/lib/realFinances.ts — FINANZAS REALES de una operación: enlaces de Google Drive
 // y agregados puros. Sin React, sin red. IDÉNTICO a APP/src/utils/realFinances.ts (salvo imports).
 //
-// Drive: Invergravital no tiene acceso a la cuenta de Drive del usuario (no hay OAuth).
-// Solo valida que un enlace pegado TIENE FORMA de enlace de Drive y extrae su id; no
-// comprueba que exista, ni su nombre, ni sus permisos. Nunca los modifica.
+// Drive: el navegador no accede a Drive. Aquí solo se valida que un enlace pegado TIENE
+// FORMA de enlace de Drive y se extrae su id. La lectura de documentos la hace el worker del
+// PC con invergravital@gmail.com (ver WEB/docs/DOCUMENTOS_DRIVE.md). Nunca cambia permisos.
 //
 // PRINCIPIO (como realEstateTrackingCalc): lo que no se puede calcular es `null`,
 // nunca un 0 inventado.
@@ -172,6 +172,21 @@ export function mergeRealFinancesOf(
     out.realLoans = mergeRealFinanceItems(local?.realLoans, remote?.realLoans);
   }
   return out;
+}
+
+/**
+ * Ventas al SUBIR una operación. No tienen tombstones, así que lo que solo está en el remoto
+ * no se añade (un borrado local se respeta, como siempre). Pero si la MISMA fila existe en
+ * ambos lados gana la de `updatedAt` más reciente: un cambio aplicado en el servidor (p. ej.
+ * una venta confirmada por documento) no lo pisa una copia antigua. Orden: el local.
+ */
+export function mergeSalesKeepingNewer<T extends { id: string; updatedAt?: string }>(local: T[] | undefined, remote: unknown): T[] | undefined {
+  if (!Array.isArray(local) || !Array.isArray(remote)) return local;
+  const remoteById = new Map((remote as T[]).filter((x) => x && typeof x.id === "string").map((x) => [x.id, x]));
+  return local.map((l) => {
+    const r = l && remoteById.get(l.id);
+    return r && versionOf(r) > versionOf(l) ? r : l;
+  });
 }
 
 /** Préstamos reales activos (sin los borrados). */

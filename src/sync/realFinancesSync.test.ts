@@ -162,3 +162,29 @@ test("LÍMITE documentado: un cliente con código ANTERIOR que sube sin fusionar
   assert.deepEqual(remoteActive(server), ["Y"], "el servidor vuelve a tener X borrado");
   assert.equal(server.rows.get("op")!.data.name, "renombrada", "sin perder la edición de la pestaña antigua");
 });
+
+test("VENTAS: un parche del servidor (venta confirmada por documento) no lo pisa un push con copia antigua; un borrado local se respeta", () => {
+  const server = new Server();
+  const base: Op = {
+    id: "op1",
+    updatedAt: "2026-09-10T10:00:00.000Z",
+    sales: [
+      { id: "s1", title: "Vivienda 1", status: "DISPONIBLE", createdAt: "x", updatedAt: "2026-09-01T00:00:00.000Z" },
+      { id: "s2", title: "Vivienda 2", status: "DISPONIBLE", createdAt: "x", updatedAt: "2026-09-01T00:00:00.000Z" },
+    ],
+  } as Op;
+  server.pushMerged(base, base.updatedAt as string);
+  const stale = JSON.parse(JSON.stringify(base)) as Op;
+
+  // El servidor (apply_document_proposal) marca s1 como vendida.
+  const row = server.rows.get("op1")!;
+  const serverSales = (row.data.sales as Record<string, unknown>[]).map((s) => (s.id === "s1" ? { ...s, status: "VENDIDO", realPrice: 185000, updatedAt: "2026-09-14T08:00:00.000Z" } : s));
+  row.data = { ...row.data, sales: serverSales };
+
+  // Dispositivo antiguo: borra s2 y edita otra cosa, sin haber hecho pull.
+  const edited = { ...stale, name: "Editado", sales: (stale.sales ?? []).filter((s) => s.id !== "s2"), updatedAt: "2026-09-14T09:00:00.000Z" } as Op;
+  server.pushMerged(edited, edited.updatedAt as string);
+
+  const sales = server.rows.get("op1")!.data.sales as { id: string; status: string; realPrice?: number }[];
+  assert.deepEqual(sales.map((s) => [s.id, s.status, s.realPrice]), [["s1", "VENDIDO", 185000]]);
+});

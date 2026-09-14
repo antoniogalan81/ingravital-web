@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, useContext } from "react";
 import { Drawer as Vaul } from "vaul";
 import { toast } from "sonner";
 import type { REOperation, REUnit, UnitType } from "@/src/lib/realEstate";
@@ -9,8 +9,11 @@ import { calcResults, calcNumTrasteros, calcNumPlazas, calcTINFromCuota, fmtEUR,
 import { ScenariosPanel } from "./ScenariosPanel";
 import { AreaSwitch, TrackingModal } from "./tracking/TrackingModal";
 import { FinanzasRealesPanel } from "./tracking/FinanzasRealesPanel";
+import { DocumentacionPanel } from "./tracking/DocumentacionPanel";
+import { SyncContext } from "@/src/sync/SyncContext";
 import { adoptLegacyRealAmounts, isRealFinancesEnabled, realVsPlanned, type RealVsPlanned } from "@/src/lib/realFinances";
-import { InvestmentFlowMap } from "./charts/InvestmentFlowMap";
+import { InvestmentFlowMap, hasRealSales } from "./charts/InvestmentFlowMap";
+import { salesStats, type SalesStats } from "@/src/lib/realEstateTrackingCalc";
 
 type RealEstateCategory = "vivienda" | "local" | "suelo" | "adaptacion";
 
@@ -181,8 +184,8 @@ function KPI({ label, value, sub, tone }: { label: string; value: string; sub?: 
 }
 
 /** Bloque "Situación real" del Resumen: solo cifras registradas en Finanzas reales. */
-function RealSituation({ real, plannedInvestment, onOpen }: { real: RealVsPlanned; plannedInvestment: number; onOpen: () => void }) {
-  if (!real.hasData) return null;
+function RealSituation({ real, plannedInvestment, sales, onOpen }: { real: RealVsPlanned; plannedInvestment: number; sales: SalesStats; onOpen: () => void }) {
+  if (!real.hasData && !hasRealSales(sales)) return null;
   const { spent, loans, spentOfPlannedPct } = real;
   return (
     <div className="rounded-xl border border-line mt-3 overflow-hidden" style={{ borderLeft: "4px solid var(--positive)" }}>
@@ -208,6 +211,13 @@ function RealSituation({ real, plannedInvestment, onOpen }: { real: RealVsPlanne
             <div className="text-[10px] font-semibold text-ink-subtle uppercase tracking-wide">Capital pendiente</div>
             <div className="text-lg font-extrabold tabular-nums text-ink">{loans.outstanding == null ? "Sin dato" : fmtEUR(loans.outstanding)}</div>
             {loans.outstanding == null ? <div className="text-xs text-ink-muted">falta en algún préstamo activo</div> : null}
+          </div>
+        ) : null}
+        {hasRealSales(sales) ? (
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold text-ink-subtle uppercase tracking-wide">Ventas reales</div>
+            <div className="text-lg font-extrabold tabular-nums text-ink">{fmtEUR(sales.totalReal)}</div>
+            <div className="text-xs text-ink-muted tabular-nums">{sales.soldCount} de {sales.count} vendidas · cobrado {fmtEUR(sales.collected)}</div>
           </div>
         ) : null}
       </div>
@@ -618,6 +628,7 @@ function toDraft(op: REOperation): REOperation {
 
 const SECTION_NAV = [
   { key: "resumen" as const, label: "Resumen" },
+  { key: "documentacion" as const, label: "Documentación" },
   { key: "datos" as const, label: "Datos" },
   { key: "unidades" as const, label: "Unidades" },
   { key: "m2" as const, label: "M²" },
@@ -705,6 +716,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
     resultados: false,
     escenarios: false,
     finanzas: true,
+    documentacion: false,
     tasas: false,
   });
 
@@ -715,8 +727,28 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
     if (adoptLegacyRealAmounts(op)) onSave({ ...toDraft(op), updatedAt: new Date().toISOString() });
   }, [op.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Datos reales que llegan del servidor con la ficha abierta ("Actualizar con IA", otro
+  // dispositivo): se incorporan al borrador. Las ediciones locales ya están en el store
+  // (cada commit lo escribe), así que el store es siempre igual o más reciente.
+  const [seenStoreData, setSeenStoreData] = useState(() => [op.realExpenses, op.realLoans, op.sales]);
+  if (seenStoreData[0] !== op.realExpenses || seenStoreData[1] !== op.realLoans || seenStoreData[2] !== op.sales) {
+    setSeenStoreData([op.realExpenses, op.realLoans, op.sales]);
+    setDraft((prev) => {
+      if (prev.id !== op.id) return prev;
+      const same = JSON.stringify([prev.realExpenses, prev.realLoans, prev.sales]) === JSON.stringify([op.realExpenses, op.realLoans, op.sales]);
+      return same ? prev : { ...prev, realExpenses: op.realExpenses, realLoans: op.realLoans, sales: op.sales };
+    });
+  }
+
+  const syncCtx = useContext(SyncContext);
+  const triggerSync = syncCtx?.triggerSync;
+  const pullRemoteData = useCallback(() => {
+    void triggerSync?.();
+  }, [triggerSync]);
+
   const res = useMemo(() => calcResults(draft), [draft]);
   const real = useMemo(() => realVsPlanned(draft, res), [draft, res]);
+  const realSales = useMemo(() => salesStats(draft), [draft]);
   const realFinancesOn = isRealFinancesEnabled(draft);
   const navSections = realFinancesOn
     ? [SECTION_NAV[0], { key: "finanzas" as const, label: "Finanzas reales" }, ...SECTION_NAV.slice(1)]
@@ -985,7 +1017,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
             </div>
 
             {/* Situación REAL (Finanzas reales). Separada de la previsión: no la corrige ni la sustituye. */}
-            {realFinancesOn && <RealSituation real={real} plannedInvestment={res.totalInvestment} onOpen={() => goToSection("finanzas")} />}
+            {realFinancesOn && <RealSituation real={real} plannedInvestment={res.totalInvestment} sales={realSales} onOpen={() => goToSection("finanzas")} />}
 
             {/* Mapa visual de la inversión — complementa el resumen, no lo sustituye */}
             <div className="mt-3">
@@ -1029,6 +1061,17 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
               <FinanzasRealesPanel op={draft} overlayRoot={overlayRoot} onChange={(patch) => commit(patch)} />
             </SectionBlock>
           )}
+
+          {/* ── DOCUMENTACIÓN (Drive + Actualizar con IA) ── */}
+          <SectionBlock
+            id="section-documentacion"
+            title="Documentación"
+            badge={draft.invoicesDriveFolder ? "Drive" : undefined}
+            open={open.documentacion}
+            onToggle={() => toggleSection("documentacion")}
+          >
+            <DocumentacionPanel op={draft} onChange={(patch) => commit(patch)} onRemoteDataApplied={pullRemoteData} />
+          </SectionBlock>
 
           {/* ── SECCIÓN 2: DATOS INMUEBLE ── */}
           <SectionBlock id="section-datos" title="Datos inmueble" open={open.datos} onToggle={() => toggleSection("datos")}>

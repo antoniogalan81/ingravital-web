@@ -1,8 +1,8 @@
 "use client";
 
-// "Carpeta de facturas en Google Drive" de una operación. El usuario pega el enlace;
-// no hay OAuth ni lectura de Drive: Invergravital solo guarda y abre ese enlace, y
-// NUNCA cambia los permisos de la carpeta ni de sus archivos.
+// "Carpeta de documentación" (Google Drive) de una operación. El usuario pega el enlace y
+// comparte la carpeta con invergravital@gmail.com; el navegador no lee Drive (lo hace el
+// worker del PC, ver docs/DOCUMENTOS_DRIVE.md) y NUNCA cambia permisos.
 
 import { useState } from "react";
 import type { REDriveFolder } from "@/src/lib/realEstateTracking";
@@ -11,6 +11,8 @@ import { driveFolderUrl, parseDriveLink } from "@/src/lib/realFinances";
 const FIELD_CLS =
   "w-full rounded-lg border border-line bg-white px-2.5 py-2 text-sm text-ink placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400";
 
+export const DOCUMENTS_ACCOUNT = "invergravital@gmail.com";
+
 function PermissionsNotice() {
   return (
     <div className="flex gap-2 rounded-lg border px-3 py-2.5 text-xs leading-relaxed" style={{ background: "var(--warning-soft)", borderColor: "#ecd9ad", color: "#6b4a12" }} role="note">
@@ -18,8 +20,8 @@ function PermissionsNotice() {
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
       <p>
-        <b>Permisos de Drive:</b> si quieres que tus inversores puedan consultar las facturas, comparte esta carpeta o los
-        archivos correspondientes con ellos desde Google Drive. Invergravital no modifica los permisos de tus archivos.
+        Comparte esta carpeta con <b>{DOCUMENTS_ACCOUNT}</b> (permiso de lector) para permitir la actualización automática
+        de datos. Usa la misma cuenta de Google que tu email de Invergravital. Invergravital no modifica los permisos de tus archivos.
       </p>
     </div>
   );
@@ -66,7 +68,7 @@ export function DriveFolderCard({
   };
 
   const unlink = () => {
-    if (!window.confirm("¿Desvincular la carpeta de facturas? Los gastos y sus enlaces a documentos se conservan. No se borra nada en Google Drive.")) return;
+    if (!window.confirm("¿Desvincular la carpeta de documentación? Los gastos y sus enlaces a documentos se conservan. No se borra nada en Google Drive.")) return;
     onUnlink();
     setUrl("");
     setLabel("");
@@ -83,7 +85,7 @@ export function DriveFolderCard({
           </svg>
         </span>
         <div className="min-w-0 flex-1">
-          <h4 id="drive-folder-title" className="text-xs font-bold text-ink-muted uppercase tracking-wide">Carpeta de facturas en Google Drive</h4>
+          <h4 id="drive-folder-title" className="text-xs font-bold text-ink-muted uppercase tracking-wide">Carpeta de documentación</h4>
           {!editing && linkedUrl ? (
             <>
               <p className="text-sm font-semibold text-ink truncate mt-0.5">{folder?.label || "Carpeta de Google Drive"}</p>
@@ -91,7 +93,7 @@ export function DriveFolderCard({
             </>
           ) : (
             <p className="text-[11px] text-ink-subtle mt-0.5">
-              Pega el enlace de la carpeta donde guardas las facturas de esta operación.
+              Pega el enlace de la carpeta de Google Drive con las facturas, contratos y demás documentos de esta operación.
             </p>
           )}
         </div>
@@ -126,7 +128,7 @@ export function DriveFolderCard({
         >
           <div className="grid gap-2.5 sm:grid-cols-[1fr_14rem]">
             <label className="flex flex-col gap-1 min-w-0">
-              <span className="text-xs font-semibold text-ink-subtle">Enlace de la carpeta</span>
+              <span className="text-xs font-semibold text-ink-subtle">Carpeta de Google Drive</span>
               <input
                 className={FIELD_CLS}
                 inputMode="url"
@@ -153,7 +155,7 @@ export function DriveFolderCard({
               </button>
             ) : null}
             <button type="submit" className="rounded-lg px-3.5 py-2 text-sm font-semibold text-white transition-colors" style={{ background: "var(--brand)" }}>
-              Guardar carpeta
+              Guardar
             </button>
           </div>
         </form>
@@ -165,7 +167,7 @@ export function DriveFolderCard({
           </div>
         ) : (
           <p className="text-[11px] text-ink-subtle">
-            Invergravital no modifica los permisos de Drive: para que tus inversores vean las facturas, compártelas desde Google Drive.
+            Comparte esta carpeta con {DOCUMENTS_ACCOUNT} para permitir la actualización automática de datos.
           </p>
         )
       ) : null}

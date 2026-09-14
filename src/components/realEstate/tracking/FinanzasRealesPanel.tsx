@@ -3,8 +3,8 @@
 // Bloque FINANZAS REALES de la ficha (Gestión del proyecto · uso interno del promotor).
 // Se muestra dentro de un SectionBlock de RealEstateModal cuando el interruptor
 // "Registrar finanzas reales" está activo, con el lenguaje visual de esos bloques.
-// Una sola categoría con tres bloques: carpeta de facturas en Drive, gastos reales y
-// financiación real. Escribe `realExpenses`, `realLoans` e `invoicesDriveFolder` en la
+// Dos bloques: gastos reales y financiación real (la carpeta de Drive vive en la sección
+// Documentación). Escribe `realExpenses` y `realLoans` en la
 // operación (JSON sync). No toca la previsión (`costs`, `financing`). Cada gasto real
 // puede imputarse a una partida de Económico (`budgetLineId`): esa es la ÚNICA fuente de
 // la columna Real de Económico.
@@ -19,7 +19,6 @@ import {
   RE_LOAN_STATUS_LABEL,
   makeRealExpense,
   makeRealLoan,
-  type REDriveFolder,
   type REExpense,
   type RERealExpense,
   type RERealLoan,
@@ -35,9 +34,8 @@ import {
   realLoanTotals,
 } from "@/src/lib/realFinances";
 import { RealExpenseDialog, RealLoanDialog } from "./RealFinanceDialogs";
-import { DriveFolderCard } from "./DriveFolderCard";
 
-type RealFinancePatch = Pick<REOperation, "realExpenses" | "realLoans" | "invoicesDriveFolder">;
+type RealFinancePatch = Pick<REOperation, "realExpenses" | "realLoans">;
 
 const todayISO = () => {
   const d = new Date();
@@ -132,12 +130,6 @@ export function FinanzasRealesPanel({
         />
         <Figure label="Cuotas al mes" value={loanTotals.monthlyInstallments == null ? "—" : fmtEUR(loanTotals.monthlyInstallments)} />
       </div>
-
-      <DriveFolderCard
-        folder={op.invoicesDriveFolder}
-        onSave={(invoicesDriveFolder: REDriveFolder) => onChange({ invoicesDriveFolder })}
-        onUnlink={() => onChange({ invoicesDriveFolder: undefined })}
-      />
 
       {/* Gastos reales */}
       <div className="rounded-xl border border-line p-3 space-y-2" style={{ background: "var(--surface-alt)" }}>

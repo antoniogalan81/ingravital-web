@@ -15,6 +15,7 @@ import React from "react";
 import type { REOperation, REResults } from "@/src/lib/realEstate";
 import { fmtEUR, fmtPct } from "@/src/lib/realEstateCalc";
 import type { RealVsPlanned } from "@/src/lib/realFinances";
+import { salesStats, type SalesStats } from "@/src/lib/realEstateTrackingCalc";
 import { StackedBar, SegmentLegend, COMPOSITION_COLORS, type Segment } from "./BarViz";
 
 function buildComposition(op: REOperation, res: REResults): Segment[] {
@@ -51,8 +52,11 @@ function GroupLabel({ children, tone }: { children: React.ReactNode; tone: "plan
   );
 }
 
-/** Realidad económica: gasto real frente a lo previsto y estado de la financiación real. */
-function RealityBlock({ real, plannedInvestment }: { real: RealVsPlanned; plannedInvestment: number }) {
+/** Hay ventas reales que enseñar: alguna cerrada o algo cobrado. */
+export const hasRealSales = (sales: SalesStats) => sales.soldCount > 0 || sales.collected > 0;
+
+/** Realidad económica: gasto real frente a lo previsto, financiación real y ventas reales. */
+function RealityBlock({ real, plannedInvestment, sales }: { real: RealVsPlanned; plannedInvestment: number; sales: SalesStats }) {
   const { spent, loans, spentOfPlannedPct } = real;
   const scale = Math.max(spent.total, plannedInvestment, 1);
   const spentW = (spent.total / scale) * 100;
@@ -122,6 +126,18 @@ function RealityBlock({ real, plannedInvestment }: { real: RealVsPlanned; planne
           </div>
         </div>
       )}
+
+      {hasRealSales(sales) && (
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-wide text-ink-subtle mb-1.5">Ventas reales</p>
+          <div className="flex items-stretch gap-1 flex-wrap sm:flex-nowrap">
+            <FlowNode label="Vendidas" value={`${sales.soldCount} de ${sales.count}`} tone="cost" />
+            <FlowNode label="Ingreso cerrado" value={fmtEUR(sales.totalReal)} tone="in" />
+            <FlowNode label="Cobrado" value={fmtEUR(sales.collected)} tone="in" />
+            <FlowNode label="Pendiente de cobro" value={fmtEUR(sales.pendingIncome)} tone="out" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -142,7 +158,8 @@ export function InvestmentFlowMap({ op, res, real }: { op: REOperation; res: RER
   const hasRent = res.monthlyRentIncome > 0;
 
   // Sin ningún dato real → estado vacío claro (no romper la pantalla).
-  const hasReal = real?.hasData === true;
+  const sales = salesStats(op);
+  const hasReal = !!real && (real.hasData || hasRealSales(sales));
   const hasPlan = hasInvestment || hasSale || hasRent;
 
   if (!hasPlan && !hasReal) {
@@ -252,7 +269,7 @@ export function InvestmentFlowMap({ op, res, real }: { op: REOperation; res: RER
       {hasReal && real && (
         <>
           <GroupLabel tone="real">Realidad · Finanzas reales</GroupLabel>
-          <RealityBlock real={real} plannedInvestment={res.totalInvestment} />
+          <RealityBlock real={real} plannedInvestment={res.totalInvestment} sales={sales} />
         </>
       )}
     </div>

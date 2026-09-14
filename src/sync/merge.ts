@@ -4,7 +4,7 @@
 // (`merge.test.ts`) y para dejar clara la política de resolución de conflictos.
 
 import type { SupabaseRow, SyncableEntity } from "./types";
-import { mergeRealFinancesOf } from "../lib/realFinances";
+import { mergeRealFinancesOf, mergeSalesKeepingNewer } from "../lib/realFinances";
 
 /**
  * ¿El registro remoto es más nuevo que el local? (last-write-wins por timestamp).
@@ -215,12 +215,16 @@ export function operationSignature(op: SyncableEntity): string {
  * El push sube la operación ENTERA. Sin esto, un dispositivo con una copia antigua que
  * editara cualquier cosa borraba del servidor las marcas de borrado de gastos/préstamos
  * reales (y resucitaba lo borrado). Aquí se conserva todo lo local (escalares y resto de
- * colecciones, como hasta ahora) y solo `realExpenses`/`realLoans` se fusionan con lo
- * remoto: un borrado remoto más nuevo gana y un alta remota se conserva.
+ * colecciones, como hasta ahora); `realExpenses`/`realLoans` se fusionan con lo remoto (un
+ * borrado remoto más nuevo gana y un alta remota se conserva) y en `sales` una fila que el
+ * servidor tiene más reciente (p. ej. venta confirmada desde un documento) no se pisa.
  */
 export function mergeOperationForPush<T extends SyncableEntity>(local: T, remoteData: Record<string, unknown> | null | undefined): T {
   if (!remoteData) return local;
-  return { ...local, ...mergeRealFinancesOf(local as never, remoteData as never) } as T;
+  const merged = { ...local, ...mergeRealFinancesOf(local as never, remoteData as never) } as Record<string, unknown>;
+  const sales = mergeSalesKeepingNewer(merged.sales as { id: string; updatedAt?: string }[] | undefined, remoteData.sales);
+  if (sales) merged.sales = sales;
+  return merged as T;
 }
 
 /**
