@@ -17,12 +17,11 @@ import { activeItems, adoptLegacyRealAmounts, isRealFinancesEnabled, markRealFin
 import { InvestmentFlowMap, hasRealSales } from "./charts/InvestmentFlowMap";
 import { salesStats, type SalesStats } from "@/src/lib/realEstateTrackingCalc";
 import { createPortal } from "react-dom";
-import { conceptPlannedAmount, missingSaleRecords, plannedConceptsTotal, projectExpenseSummary, projectSalesSummary, projectUnitTypes, UNIT_SINGULAR, UNIT_TYPES, type SaleGroupKey } from "@/src/lib/projectEconomics";
+import { conceptPlannedAmount, plannedConceptsTotal, projectExpenseSummary, projectUnitTypes, UNIT_SINGULAR, UNIT_TYPES } from "@/src/lib/projectEconomics";
 import { UnitTypesSummary } from "./economics/UnitTypesSummary";
-import { RE_EXPENSE_CATEGORY_LABEL, newTrackingId, type REExpense, type RESale } from "@/src/lib/realEstateTracking";
+import { RE_EXPENSE_CATEGORY_LABEL, newTrackingId, type REExpense } from "@/src/lib/realEstateTracking";
 import { ProjectExpenses } from "./economics/ProjectExpenses";
-import { ProjectSales } from "./economics/ProjectSales";
-import { PlannedCostDialog, SaleUnitDialog, makePlannedCost, makeSaleUnit } from "./economics/EconomicsDialogs";
+import { PlannedCostDialog, makePlannedCost } from "./economics/EconomicsDialogs";
 import { UnitsTable, type UnitBulkEdit, type UnitEdit } from "./economics/UnitsTable";
 import { isInlineEditing } from "@/src/components/ui/InlineEdit";
 import { editUnit, editUnitsBulk } from "@/src/lib/unitEditing";
@@ -683,7 +682,7 @@ const PROJECT_NAV = [
 
 const TRACKING_NAV = [
   { key: "situacion" as const, label: "Situación" },
-  { key: "ventas" as const, label: "Ventas" },
+  { key: "ventas" as const, label: "Unidades y ventas" },
   { key: "gastos" as const, label: "Gastos" },
   { key: "hitos" as const, label: "Hitos" },
   { key: "documentacion" as const, label: "Documentación" },
@@ -776,8 +775,6 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
     avance: false,
   });
   const [costDialog, setCostDialog] = useState<{ item: REExpense; isNew: boolean } | null>(null);
-  const [saleDialog, setSaleDialog] = useState<{ item: RESale; isNew: boolean } | null>(null);
-  const [salesTable, setSalesTable] = useState(false);
   // Edición directa de una unidad desde la tabla: siempre sobre el borrador más reciente.
   const editUnitField: UnitEdit = (row, field, value) => {
     const cur = draftRef.current;
@@ -821,7 +818,7 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
   // Mismos resúmenes que usan el área Inversores y la vista del inversor.
   const expenseSummary = useMemo(() => projectExpenseSummary(draft, res), [draft, res]);
   const nowISO = useMemo(() => new Date().toISOString(), []);
-  const salesSummary = useMemo(() => projectSalesSummary(draft, res, nowISO), [draft, res, nowISO]);
+
   // Base prevista frente a valor actual (base + valores propios de cada unidad) por tipología.
   const unitTypes = useMemo(() => projectUnitTypes(draft, res), [draft, res]);
   // Activos para mostrar y ordenar; los borrados siguen en los datos (marca) para sincronizar.
@@ -851,29 +848,18 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
     const deleted = (draftRef.current.expenses ?? []).filter((x) => x.deletedAt);
     commit({ expenses: [...next, ...deleted] });
   };
-  const saveSale = (item: RESale) => {
-    const list = Array.isArray(draftRef.current.sales) ? draftRef.current.sales : [];
-    commit({ sales: list.some((x) => x.id === item.id) ? list.map((x) => (x.id === item.id ? item : x)) : [...list, item] });
-    setSaleDialog(null);
-  };
-  const deleteSale = (id: string) => {
-    const item = (draft.sales ?? []).find((x) => x.id === id);
-    if (!item || !window.confirm(`¿Eliminar la ficha de venta "${item.title || "sin nombre"}"?`)) return;
+  // Quita la ficha de una unidad (con marca de borrado): una unidad del Proyecto vuelve a su base.
+  const removeUnitRecord = (id: string) => {
+    const item = (draftRef.current.sales ?? []).find((x) => x.id === id);
+    if (!item || !window.confirm(`¿Quitar los datos propios de "${item.title || "la unidad"}"?`)) return;
     commit({ sales: (draftRef.current.sales ?? []).map((x) => (x.id === id ? markRealFinanceDeleted(x) : x)) });
-    setSaleDialog(null);
   };
-  const salesActions = {
-    onEditUnit: (id: string) => {
-      const item = (draft.sales ?? []).find((x) => x.id === id);
-      if (item) setSaleDialog({ item, isNew: false });
-    },
-    onAddUnit: (group: SaleGroupKey) => setSaleDialog({ item: makeSaleUnit(group), isNew: true }),
-    onCreateMissing: (group: SaleGroupKey) => {
-      if (group === "OTROS") return;
-      const now = new Date().toISOString();
-      const created = missingSaleRecords(draftRef.current, calcResults(draftRef.current), group, () => newTrackingId("sale"), now);
-      if (created.length) commit({ sales: [...(draftRef.current.sales ?? []), ...created] });
-    },
+  // Unidad extra fuera de las tipologías del Proyecto (grupo Otros), como en la APP.
+  const addExtraUnit = () => {
+    const now = new Date().toISOString();
+    const list = Array.isArray(draftRef.current.sales) ? draftRef.current.sales : [];
+    const extra = list.filter((x) => !x.deletedAt && !x.unitType).length;
+    commit({ sales: [...list, { id: newTrackingId("sale"), title: `Unidad ${extra + 1}`, status: "DISPONIBLE", createdAt: now, updatedAt: now }] });
   };
   const realFinancesOn = isRealFinancesEnabled(draft);
   const navSections = area === "proyecto" ? PROJECT_NAV : TRACKING_NAV;
@@ -1014,22 +1000,27 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
   const ventasBlock = (
     <SectionBlock
       id="section-ventas"
-      title="Ventas"
-      badge={salesSummary.units ? `${salesSummary.sold}/${salesSummary.units} vendidas` : undefined}
+      title="Unidades y ventas"
+      badge={realSales.count ? `${realSales.soldCount}/${realSales.count} vendidas` : undefined}
       open={open.ventas}
       onToggle={() => toggleSection("ventas")}
     >
-      <ProjectSales summary={salesSummary} actions={salesActions} />
-      <div className="border-t border-line pt-2">
-        <button type="button" onClick={() => setSalesTable((v) => !v)} aria-expanded={salesTable} className="text-xs font-semibold text-ink-subtle hover:text-ink">
-          {salesTable ? "Ocultar tabla de unidades" : "Editar unidades en tabla"}
-        </button>
-        {salesTable ? (
-          <div className="mt-2">
-            <UnitsTable op={draft} results={res} onEdit={editUnitField} onBulkEdit={editUnitsSelected} overlayRoot={overlayRoot} />
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        {[
+          ["Unidades", String(realSales.count)],
+          ["Vendidas", `${realSales.soldCount}/${realSales.count}`],
+          ["Alquiladas", String(realSales.rentedCount)],
+          ["Cobrado", fmtEUR(realSales.collected)],
+          ["Pendiente de cobro", fmtEUR(realSales.pendingIncome)],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-xl border border-line bg-[var(--surface-alt)] px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-ink-subtle">{label}</p>
+            <p className="text-sm font-extrabold tabular-nums text-ink">{value}</p>
           </div>
-        ) : null}
+        ))}
       </div>
+      <UnitsTable op={draft} results={res} onEdit={editUnitField} onBulkEdit={editUnitsSelected} onRemove={removeUnitRecord} overlayRoot={overlayRoot} />
+      <button type="button" onClick={addExtraUnit} className="text-xs font-semibold text-brand hover:underline">+ Añadir otra unidad</button>
     </SectionBlock>
   );
 
@@ -1385,13 +1376,9 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
               </button>
             </div>
             <UnitTypesSummary types={unitTypes} split={res.rentSplit} />
-            <div className="space-y-1.5 pt-2">
-              <div>
-                <p className="text-xs font-bold text-ink">Unidades · previsión y realidad</p>
-                <p className="text-[11px] text-ink-subtle">Haz clic en cualquier dato para cambiarlo. Precio y renta en gris: base del Proyecto; al escribir uno propio, lo sustituye en todos los cálculos.</p>
-              </div>
-              <UnitsTable op={draft} results={res} onEdit={editUnitField} onBulkEdit={editUnitsSelected} overlayRoot={overlayRoot} />
-            </div>
+            <button type="button" onClick={() => openTracking("ventas")} className="text-xs font-semibold text-brand hover:underline">
+              Gestionar cada unidad en Seguimiento ›
+            </button>
           </SectionBlock>
 
           {/* ── SECCIÓN 4: M² SUPERFICIES ── */}
@@ -1855,19 +1842,6 @@ export function RealEstateModal({ op, onSave, onDelete, onDuplicate, onClose }: 
         {overlayRoot && costDialog
           ? createPortal(
               <PlannedCostDialog key={costDialog.item.id} initial={costDialog.item} isNew={costDialog.isNew} onSave={saveCost} onClose={() => setCostDialog(null)} />,
-              overlayRoot,
-            )
-          : null}
-        {overlayRoot && saleDialog
-          ? createPortal(
-              <SaleUnitDialog
-                key={saleDialog.item.id}
-                initial={saleDialog.item}
-                isNew={saleDialog.isNew}
-                onSave={saveSale}
-                onDelete={saleDialog.isNew ? undefined : () => deleteSale(saleDialog.item.id)}
-                onClose={() => setSaleDialog(null)}
-              />,
               overlayRoot,
             )
           : null}

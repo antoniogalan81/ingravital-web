@@ -251,21 +251,32 @@ const SALE_GROUP_ORDER: SaleGroupKey[] = [...UNIT_TYPES, "OTROS"];
 export function byUnitType<T>(fn: (t: UnitType) => T): Record<UnitType, T> {
   return Object.fromEntries(UNIT_TYPES.map((t) => [t, fn(t)])) as Record<UnitType, T>;
 }
-const RESERVED: RESaleStatus[] = ["RESERVADO", "SENALADO", "APALABRADO"];
+const RESERVED: RESaleStatus[] = ["EN_NEGOCIACION", "SENALADO", "RESERVADO", "APALABRADO"];
+
+/** Estado con el que se muestra y se edita una unidad: los antiguos Reservado/Apalabrado son «En negociación». */
+export function displaySaleStatus(status: RESaleStatus | null | undefined): RESaleStatus {
+  if (status === "RESERVADO" || status === "APALABRADO") return "EN_NEGOCIACION";
+  return status && RE_SALE_STATUS_LABEL[status] ? status : "DISPONIBLE";
+}
 
 /** Cobros activos de una venta (los que tienen fecha e importe). */
 export function salePayments(s: Pick<RESale, "payments"> | null | undefined): RESalePayment[] {
   return (Array.isArray(s?.payments) ? s.payments : []).filter((p) => p && isNum(p.amount));
 }
 
+/** Señal cobrada: su importe SOLO si tiene fecha (la fecha es la prueba de que se cobró). */
+export function depositCollected(s: Pick<RESale, "deposit" | "depositDate"> | null | undefined): number {
+  return s?.depositDate ? n0(s.deposit) : 0;
+}
+
 /**
- * Cobrado de una venta: la señal (`deposit`) más sus cobros. Sin cobros detallados, un
- * `collected` antiguo se respeta tal cual (ya era el total); si no, cuenta la señal.
+ * Cobrado de una venta: la señal con fecha más sus cobros. Sin cobros detallados, un
+ * `collected` antiguo se respeta tal cual (ya era el total); si no, cuenta la señal con fecha.
  */
-export function saleCollected(s: Pick<RESale, "payments" | "collected" | "deposit"> | null | undefined): number {
+export function saleCollected(s: Pick<RESale, "payments" | "collected" | "deposit" | "depositDate"> | null | undefined): number {
   const payments = salePayments(s);
-  if (payments.length) return round2(n0(s?.deposit) + payments.reduce((sum, p) => sum + p.amount, 0));
-  return isNum(s?.collected) ? s.collected : n0(s?.deposit);
+  if (payments.length) return round2(depositCollected(s) + payments.reduce((sum, p) => sum + p.amount, 0));
+  return isNum(s?.collected) ? s.collected : depositCollected(s);
 }
 
 /** Venta lista para guardar: `collected` refleja sus cobros (lo leen clientes antiguos). */
@@ -314,12 +325,12 @@ export function effectiveRent(s: Pick<RESale, "rentMonthly">, baseRent: number |
 export type UnitTotals = { count: number; amount: number };
 
 /**
- * Destino económico de una ficha: alquiler si está marcada «Destinada al alquiler» y no está
- * vendida (una venta hecha manda sobre una marca antigua). Ausente = venta.
+ * Destino económico de una ficha: alquiler si está ALQUILADA. Una marca antigua `forRent` (ya no
+ * se edita) se sigue leyendo salvo que la unidad esté vendida. Lo demás = venta.
  */
-export const isRentDestined = (s: Pick<RESale, "forRent" | "status">): boolean => s.forRent === true && s.status !== "VENDIDO";
+export const isRentDestined = (s: Pick<RESale, "forRent" | "status">): boolean => s.status === "ALQUILADO" || (s.forRent === true && s.status !== "VENDIDO");
 
-/** ¿Reparto real por unidad? Solo si al menos una unidad está destinada al alquiler. */
+/** ¿Reparto real por unidad? Solo si al menos una unidad está alquilada (o marcada antes como tal). */
 export const hasRentSplit = (op: Pick<REOperation, "sales">): boolean => activeItems(op?.sales).some(isRentDestined);
 
 export type EffectiveUnits = {
@@ -508,6 +519,7 @@ export type SaleGroupView = {
   finished: number;
   sold: number;
   reserved: number;
+  rented: number;
   available: number;
   planned: number | null;
   soldAmount: number | null;
@@ -522,6 +534,7 @@ export type SalesSummaryView = {
   finished: number;
   sold: number;
   reserved: number;
+  rented: number;
   available: number;
   planned: number | null;
   soldAmount: number | null;
@@ -575,7 +588,7 @@ export function projectSalesSummary(op: REOperation, res: REResults, todayISO: s
         collection: { ...(s.collectionDateEstimated ? { estimated: s.collectionDateEstimated } : {}), amountEstimated, payments },
       };
       if (!view.completion.real && view.completion.estimated && view.completion.estimated >= today) upcoming.push({ kind: "terminacion", date: view.completion.estimated, title: view.title, amount: null });
-      if (!sold && view.sale.estimated && view.sale.estimated >= today) upcoming.push({ kind: "venta", date: view.sale.estimated, title: view.title, amount: plannedPrice });
+      if (!sold && s.status !== "ALQUILADO" && view.sale.estimated && view.sale.estimated >= today) upcoming.push({ kind: "venta", date: view.sale.estimated, title: view.title, amount: plannedPrice });
       const fullyCollected = amountEstimated != null && collected >= amountEstimated;
       if (!fullyCollected && view.collection.estimated && view.collection.estimated >= today)
         upcoming.push({ kind: "cobro", date: view.collection.estimated, title: view.title, amount: amountEstimated != null ? round2(Math.max(0, amountEstimated - collected)) : null });
@@ -586,6 +599,7 @@ export function projectSalesSummary(op: REOperation, res: REResults, todayISO: s
     const planned = key === "OTROS" ? round2(rows.reduce((sum, r, i) => sum + (res.rentSplit && isRentDestined(rowsRaw[i]) ? 0 : n0(r.plannedPrice)), 0)) : n0(res.salesByUnitType?.[key]?.amount);
     const sold = rows.filter((r) => statusIsSold(r.status)).length;
     const reserved = rows.filter((r) => RESERVED.includes(r.status)).length;
+    const rented = rows.filter((r) => r.status === "ALQUILADO").length;
     const soldAmount = round2(rows.reduce((s, r) => s + n0(r.soldAmount), 0));
     const collected = round2(rows.reduce((s, r) => s + n0(r.collected), 0));
     return {
@@ -596,7 +610,8 @@ export function projectSalesSummary(op: REOperation, res: REResults, todayISO: s
       finished: rows.filter((r) => r.build === "terminada").length,
       sold,
       reserved,
-      available: Math.max(0, units - sold - reserved),
+      rented,
+      available: Math.max(0, units - sold - rented - reserved),
       planned,
       soldAmount,
       collected,
@@ -605,7 +620,7 @@ export function projectSalesSummary(op: REOperation, res: REResults, todayISO: s
     };
   }).filter((g) => g.units > 0);
 
-  const sum = (k: "units" | "finished" | "sold" | "reserved" | "available") => groups.reduce((s, g) => s + g[k], 0);
+  const sum = (k: "units" | "finished" | "sold" | "reserved" | "rented" | "available") => groups.reduce((s, g) => s + g[k], 0);
   const sumMoney = (k: "planned" | "soldAmount" | "collected") => round2(groups.reduce((s, g) => s + n0(g[k]), 0));
   const soldAmount = sumMoney("soldAmount");
   const collected = sumMoney("collected");
@@ -615,6 +630,7 @@ export function projectSalesSummary(op: REOperation, res: REResults, todayISO: s
     finished: sum("finished"),
     sold: sum("sold"),
     reserved: sum("reserved"),
+    rented: sum("rented"),
     available: sum("available"),
     planned: sumMoney("planned"),
     soldAmount,

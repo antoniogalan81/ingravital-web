@@ -10,11 +10,13 @@ import type { REOperation, REResults } from "./realEstate";
 import {
   RE_SALE_CLOSED_STATUSES,
   RE_SALE_COMMITTED_STATUSES,
+  RE_SALE_STATUS_LABEL,
   type REExpenseCategory,
   type RESaleStatus,
 } from "./realEstateTracking";
 import { calcResults } from "./realEstateCalc";
 import { projectExpenseSummary, saleCollected } from "./projectEconomics";
+import { projectUnitRows } from "./unitEditing";
 import { activeItems } from "./realFinances";
 
 const n0 = (v: number | undefined | null): number =>
@@ -90,14 +92,16 @@ export function expenseTotals(op: REOperation): ExpenseTotals {
 
 export type SalesStats = {
   hasData: boolean;
+  /** Todas las unidades: las del Proyecto (con o sin ficha) y las fichas sueltas. */
   count: number;
   byStatus: Record<RESaleStatus, number>;
   soldCount: number; // VENDIDO
-  committedCount: number; // reservado..vendido
+  rentedCount: number; // ALQUILADO
+  committedCount: number; // señalado, vendido o alquilado
   totalEstimated: number;
-  totalReal: number; // precio real de las cerradas (o estimado si falta)
-  collected: number; // ingreso cobrado
-  pendingIncome: number; // (real cerradas) - cobrado, mínimo 0
+  totalReal: number; // precio de las vendidas
+  collected: number; // ingreso cobrado (la señal solo con fecha)
+  pendingIncome: number; // (vendidas) - cobrado, mínimo 0
   soldPct: number | null; // soldCount / count
 };
 
@@ -106,38 +110,29 @@ const saleClosedValue = (effectivePrice: number | null | undefined): number => n
 
 export function salesStats(op: REOperation): SalesStats {
   const sales = activeItems(op?.sales);
-  // Precio efectivo (propio o base de su unidad del Proyecto): la misma regla que calcResults.
-  const effective = sales.length ? calcResults(op).effectiveSales : {};
-  const byStatus: Record<RESaleStatus, number> = {
-    DISPONIBLE: 0,
-    RESERVADO: 0,
-    SENALADO: 0,
-    APALABRADO: 0,
-    VENDIDO: 0,
-  };
-  for (const s of sales) {
-    if (s.status in byStatus) byStatus[s.status] += 1;
-  }
-  const soldCount = sales.filter((s) => RE_SALE_CLOSED_STATUSES.includes(s.status)).length;
-  const committedCount = sales.filter((s) =>
-    RE_SALE_COMMITTED_STATUSES.includes(s.status),
-  ).length;
-  const totalEstimated = sales.reduce((s, r) => s + n0(effective[r.id]?.price), 0);
-  const closed = sales.filter((s) => RE_SALE_CLOSED_STATUSES.includes(s.status));
-  const totalReal = closed.reduce((s, r) => s + saleClosedValue(effective[r.id]?.price), 0);
+  // Cada unidad del Proyecto cuenta aunque aún no tenga ficha (sin crear registros para contar).
+  const rows = projectUnitRows(op, calcResults(op));
+  const byStatus = Object.fromEntries(Object.keys(RE_SALE_STATUS_LABEL).map((k) => [k, 0])) as Record<RESaleStatus, number>;
+  for (const r of rows) byStatus[r.status] += 1;
+  const soldCount = rows.filter((r) => RE_SALE_CLOSED_STATUSES.includes(r.status)).length;
+  const rentedCount = rows.filter((r) => r.status === "ALQUILADO").length;
+  const committedCount = rows.filter((r) => RE_SALE_COMMITTED_STATUSES.includes(r.status)).length;
+  const totalEstimated = rows.reduce((s, r) => s + n0(r.price), 0);
+  const totalReal = rows.filter((r) => RE_SALE_CLOSED_STATUSES.includes(r.status)).reduce((s, r) => s + saleClosedValue(r.price), 0);
   const collected = sales.reduce((s, r) => s + saleCollected(r), 0);
   const pendingIncome = Math.max(0, totalReal - collected);
   return {
-    hasData: sales.length > 0,
-    count: sales.length,
+    hasData: rows.length > 0,
+    count: rows.length,
     byStatus,
     soldCount,
+    rentedCount,
     committedCount,
     totalEstimated,
     totalReal,
     collected,
     pendingIncome,
-    soldPct: sales.length > 0 ? clamp01(soldCount / sales.length) : null,
+    soldPct: rows.length > 0 ? clamp01(soldCount / rows.length) : null,
   };
 }
 

@@ -1,18 +1,19 @@
 "use client";
 
-// UNIDADES con edición directa (Proyecto › Unidades y Seguimiento › Ventas), igual que la APP.
-// Una fila por unidad (ficha de venta o unidad del Proyecto aún sin ficha). Clic en un valor para
-// cambiarlo: PREVISIÓN (terminación, venta), SEÑAL REAL (importe, fecha), VENTA REAL (precio,
-// fecha, comprador) y ALQUILER (destino y renta). Con «Seleccionar» se marcan varias unidades
-// (una, un grupo o todas) y «Editar seleccionadas» cambia solo los campos tocados.
-// Al poner un importe de señal o de venta sin su fecha se abre el calendario para elegirla.
+// UNIDADES (Seguimiento operativo › Unidades y ventas), igual que la APP. Una fila por unidad
+// (ficha de venta o unidad del Proyecto aún sin ficha) con SOLO los datos de su ficha:
+// Estado · Previsión (terminación, venta) · Valores (venta, alquiler) · Señal (importe, fecha) ·
+// Cierre (precio o renta y fecha). Clic en un dato para cambiarlo; ✎ abre la ficha completa;
+// «Seleccionar» marca varias unidades (una, un grupo o todas) y «Editar seleccionadas» abre la
+// MISMA ficha. Elegir Vendido o Alquilado pide precio o renta y fecha antes de aplicarlo.
 
 import { useMemo, useState } from "react";
 import type { REOperation, REResults } from "@/src/lib/realEstate";
 import { RE_SALE_STATUS_LABEL, RE_SALE_STATUSES, type RESaleStatus } from "@/src/lib/realEstateTracking";
-import { projectUnitRows, type UnitField, type UnitPatch, type UnitRow } from "@/src/lib/unitEditing";
-import { CalendarOverlay, InlineAmount, InlineDate, InlineSelect, InlineText, InlineToggle } from "@/src/components/ui/InlineEdit";
-import { UnitsBulkDialog } from "./UnitsBulkDialog";
+import { formatEsDate, projectUnitRows, type UnitField, type UnitPatch, type UnitRow } from "@/src/lib/unitEditing";
+import { fmtEUR } from "@/src/lib/realEstateCalc";
+import { CalendarOverlay, InlineAmount, InlineDate, InlineSelect } from "@/src/components/ui/InlineEdit";
+import { UnitEditorDialog } from "./UnitEditorDialog";
 
 const STATUS_OPTIONS = RE_SALE_STATUSES.map((s) => ({ value: s, label: RE_SALE_STATUS_LABEL[s] }));
 
@@ -22,18 +23,19 @@ export type UnitBulkEdit = (rows: UnitRow[], patch: UnitPatch) => void;
 const TH = "px-1.5 py-1 text-left text-[10px] font-bold uppercase tracking-wide text-ink-subtle whitespace-nowrap";
 const TD = "px-0.5 py-0.5 align-middle";
 
-/** Clave estable de una unidad (no cambia cuando una unidad sin ficha pasa a tenerla). */
-const selKey = (r: Pick<UnitRow, "group" | "title">) => `${r.group}|${r.title}`;
+/** Clave estable de una unidad: su ficha o, si aún no tiene, su grupo y nombre. */
+const selKey = (r: Pick<UnitRow, "group" | "saleId" | "title">) => r.saleId ?? `${r.group}|${r.title}`;
 
-export function UnitsTable({ op, results, onEdit, onBulkEdit, overlayRoot, readOnly = false }: { op: REOperation; results: REResults; onEdit: UnitEdit; onBulkEdit?: UnitBulkEdit; overlayRoot?: HTMLElement | null; readOnly?: boolean }) {
+type Editor = { rows: UnitRow[]; presetStatus?: RESaleStatus; closing?: boolean };
+
+export function UnitsTable({ op, results, onEdit, onBulkEdit, onRemove, overlayRoot, readOnly = false }: { op: REOperation; results: REResults; onEdit: UnitEdit; onBulkEdit: UnitBulkEdit; onRemove?: (saleId: string) => void; overlayRoot?: HTMLElement | null; readOnly?: boolean }) {
   const rows = useMemo(() => projectUnitRows(op, results), [op, results]);
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
-  const [bulkOpen, setBulkOpen] = useState(false);
-  const [autoDate, setAutoDate] = useState<{ key: string; field: "depositDate" | "saleDate" } | null>(null);
-  if (!rows.length) return <p className="text-xs text-ink-subtle">Todavía no hay unidades. Añádelas arriba con su tipología.</p>;
+  const [editor, setEditor] = useState<Editor | null>(null);
+  const [askDeposit, setAskDeposit] = useState<string | null>(null);
+  if (!rows.length) return <p className="text-xs text-ink-subtle">Todavía no hay unidades. Añádelas en Proyecto › Unidades con su tipología.</p>;
   const ro = readOnly;
-  const canSelect = !ro && !!onBulkEdit;
   const selectedRows = rows.filter((r) => selected.has(selKey(r)));
   const allSelected = selectedRows.length === rows.length;
   const setKeys = (keys: string[], on: boolean) =>
@@ -45,30 +47,43 @@ export function UnitsTable({ op, results, onEdit, onBulkEdit, overlayRoot, readO
   const stop = () => {
     setSelecting(false);
     setSelected(new Set());
-    setBulkOpen(false);
   };
 
   const cells = (r: UnitRow) => {
     const e = (field: UnitField) => (v: string | number | boolean | null) => {
       onEdit(r, field, v);
-      if (field === "deposit" && v != null && !r.depositDate) setAutoDate({ key: selKey(r), field: "depositDate" });
-      if (field === "price" && v != null && !r.saleDate) setAutoDate({ key: selKey(r), field: "saleDate" });
+      // Importe de señal sin fecha: se pide la fecha (sin fecha no cuenta como cobrado).
+      if (field === "deposit" && v != null && !r.depositDate) setAskDeposit(r.saleId ?? `${r.group}|${r.title}`);
     };
     const date = (field: UnitField, label: string, value?: string) => <InlineDate label={`${label} · ${r.title}`} value={value} onChange={e(field)} readOnly={ro} overlayRoot={overlayRoot} />;
+    const closed = r.status === "VENDIDO" ? { amount: r.price, date: r.saleDate, unit: "" } : r.status === "ALQUILADO" ? { amount: r.rent, date: r.rentDate, unit: "/mes" } : null;
     return (
       <>
         <td className={TD}>
-          <InlineSelect<RESaleStatus> label={`Estado · ${r.title}`} value={r.status} options={STATUS_OPTIONS} onChange={e("status")} readOnly={ro} />
+          <InlineSelect<RESaleStatus>
+            label={`Estado · ${r.title}`}
+            value={r.status}
+            options={STATUS_OPTIONS}
+            readOnly={ro}
+            onChange={(v) => (v === "VENDIDO" || v === "ALQUILADO" ? setEditor({ rows: [r], presetStatus: v, closing: true }) : onEdit(r, "status", v))}
+          />
         </td>
         <td className={`${TD} border-l border-line`}>{date("completionDateEstimated", "Terminación prevista", r.completionDateEstimated)}</td>
         <td className={TD}>{date("saleDateEstimated", "Venta prevista", r.saleDateEstimated)}</td>
+        <td className={`${TD} border-l border-line`}><InlineAmount label={`Precio de venta · ${r.title}`} value={r.price} own={r.priceOwn} onChange={e("price")} readOnly={ro} /></td>
+        <td className={TD}><InlineAmount label={`Renta mensual · ${r.title}`} value={r.rent} own={r.rentOwn} onChange={e("rent")} readOnly={ro} /></td>
         <td className={`${TD} border-l border-line`}><InlineAmount label={`Importe de la señal · ${r.title}`} value={r.deposit} onChange={e("deposit")} readOnly={ro} /></td>
         <td className={TD}>{date("depositDate", "Fecha de la señal", r.depositDate)}</td>
-        <td className={`${TD} border-l border-line`}><InlineAmount label={`Precio de venta · ${r.title}`} value={r.price} own={r.priceOwn} onChange={e("price")} readOnly={ro} /></td>
-        <td className={TD}>{date("saleDate", "Fecha de venta", r.saleDate)}</td>
-        <td className={TD}><InlineText label={`Comprador · ${r.title}`} value={r.buyer} onChange={e("buyer")} readOnly={ro} placeholder="Nombre" /></td>
-        <td className={`${TD} border-l border-line text-center`}><InlineToggle label={`Destinada al alquiler · ${r.title}`} value={r.forRent} onChange={e("forRent")} readOnly={ro} /></td>
-        <td className={TD}><InlineAmount label={`Renta mensual · ${r.title}`} value={r.rent} own={r.rentOwn} onChange={e("rent")} readOnly={ro} /></td>
+        <td className={`${TD} border-l border-line`}>
+          {closed ? (
+            <button type="button" disabled={ro} onClick={() => setEditor({ rows: [r], presetStatus: r.status, closing: true })} aria-label={`Cierre · ${r.title}`} className="block w-full min-h-8 rounded-md px-1.5 py-1 text-left text-xs tabular-nums hover:bg-[var(--brand-soft)] disabled:hover:bg-transparent">
+              <span className="whitespace-nowrap font-semibold text-ink">{closed.amount != null ? `${fmtEUR(closed.amount)}${closed.unit}` : "Falta importe"}</span>
+              <span className={`ml-1 whitespace-nowrap ${closed.date ? "text-ink-subtle" : "font-semibold text-[var(--negative)]"}`}>{closed.date ? formatEsDate(closed.date) : "falta fecha"}</span>
+            </button>
+          ) : (
+            <span className="block px-1.5 text-ink-subtle">—</span>
+          )}
+        </td>
       </>
     );
   };
@@ -79,66 +94,59 @@ export function UnitsTable({ op, results, onEdit, onBulkEdit, overlayRoot, readO
     </span>
   );
 
-  // Filas con la cabecera de grupo intercalada.
   const lines = rows.flatMap((r, i): ({ group: string; key: string; keys: string[]; row: UnitRow } | { row: UnitRow })[] =>
     i === 0 || rows[i - 1].group !== r.group ? [{ group: r.groupLabel, key: `g-${r.group}`, keys: rows.filter((x) => x.group === r.group).map(selKey), row: r }, { row: r }] : [{ row: r }],
   );
-  const autoTarget = autoDate ? rows.find((r) => selKey(r) === autoDate.key) : undefined;
+  // Tras guardar el importe, la unidad sin ficha ya la tiene: se busca por su ficha o por grupo y nombre.
+  const depositRow = askDeposit ? rows.find((r) => selKey(r) === askDeposit || `${r.group}|${r.title}` === askDeposit) : undefined;
   return (
     <div className="space-y-2">
-      {canSelect ? (
-        selecting ? (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <span className="text-xs font-extrabold text-ink">{selectedRows.length === 1 ? "1 seleccionada" : `${selectedRows.length} seleccionadas`}</span>
-            <button type="button" onClick={() => (allSelected ? setSelected(new Set()) : setKeys(rows.map(selKey), true))} className="text-xs font-bold text-brand hover:underline">
-              {allSelected ? "Deseleccionar todas" : "Seleccionar todas"}
-            </button>
-            <button type="button" onClick={stop} className="text-xs font-bold text-ink-subtle hover:underline">Cancelar</button>
-            <button type="button" disabled={!selectedRows.length} onClick={() => setBulkOpen(true)} className="ml-auto rounded-lg bg-[var(--brand)] px-3 py-1.5 text-xs font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300">
-              {selectedRows.length ? `Editar seleccionadas (${selectedRows.length})` : "Marca las unidades a editar"}
-            </button>
-          </div>
-        ) : (
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-[11px] text-ink-subtle">Clic en un dato para editarlo.</p>
-            <button type="button" onClick={() => setSelecting(true)} className="rounded-full border border-[var(--brand)] px-3 py-1 text-xs font-bold text-brand hover:bg-[var(--brand-soft)]">Seleccionar</button>
-          </div>
-        )
-      ) : null}
+      {ro ? null : selecting ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="text-xs font-extrabold text-ink">{selectedRows.length === 1 ? "1 seleccionada" : `${selectedRows.length} seleccionadas`}</span>
+          <button type="button" onClick={() => (allSelected ? setSelected(new Set()) : setKeys(rows.map(selKey), true))} className="text-xs font-bold text-brand hover:underline">
+            {allSelected ? "Deseleccionar todas" : "Seleccionar todas"}
+          </button>
+          <button type="button" onClick={stop} className="text-xs font-bold text-ink-subtle hover:underline">Cancelar</button>
+          <button type="button" disabled={!selectedRows.length} onClick={() => setEditor({ rows: selectedRows })} className="ml-auto rounded-lg bg-[var(--brand)] px-3 py-1.5 text-xs font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-300">
+            {selectedRows.length ? `Editar seleccionadas (${selectedRows.length})` : "Marca las unidades a editar"}
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] text-ink-subtle">Clic en un dato para editarlo · ✎ ficha completa. La señal cuenta como cobrada cuando tiene fecha.</p>
+          <button type="button" onClick={() => setSelecting(true)} className="shrink-0 rounded-full border border-[var(--brand)] px-3 py-1 text-xs font-bold text-brand hover:bg-[var(--brand-soft)]">Seleccionar</button>
+        </div>
+      )}
       <div className="max-h-[70vh] overflow-auto rounded-xl border border-line bg-white">
-        <table className="w-full min-w-[1010px] border-collapse text-xs">
+        <table className="w-full min-w-[930px] border-collapse text-xs">
           <colgroup>
-            <col className="w-[116px]" />
-            <col className="w-[92px]" />
+            <col className="w-[132px]" />
+            <col className="w-[108px]" />
+            <col className="w-[98px]" />
             <col className="w-[98px]" />
             <col className="w-[98px]" />
             <col className="w-[88px]" />
+            <col className="w-[88px]" />
             <col className="w-[98px]" />
-            <col className="w-[102px]" />
-            <col className="w-[98px]" />
-            <col className="w-[104px]" />
-            <col className="w-[58px]" />
-            <col className="w-[84px]" />
+            <col className="w-[128px]" />
           </colgroup>
           <thead className="sticky top-0 z-20 bg-[var(--surface-alt)]">
             <tr>
               <th className={`${TH} sticky left-0 z-10 bg-[var(--surface-alt)]`} rowSpan={2}>Unidad</th>
               <th className={TH} rowSpan={2}>Estado</th>
               <th className={`${TH} border-l border-line text-brand`} colSpan={2}>Previsión</th>
-              <th className={`${TH} border-l border-line`} style={{ color: "var(--positive)" }} colSpan={2}>Señal real</th>
-              <th className={`${TH} border-l border-line`} style={{ color: "var(--positive)" }} colSpan={3}>Venta real</th>
-              <th className={`${TH} border-l border-line`} colSpan={2}>Alquiler</th>
+              <th className={`${TH} border-l border-line`} colSpan={2}>Valores</th>
+              <th className={`${TH} border-l border-line`} style={{ color: "var(--positive)" }} colSpan={2}>Señal</th>
+              <th className={`${TH} border-l border-line`} style={{ color: "var(--positive)" }} rowSpan={2}>Cierre</th>
             </tr>
             <tr>
               <th className={`${TH} border-l border-line`}>Terminación</th>
               <th className={TH}>Venta</th>
+              <th className={`${TH} border-l border-line text-right`}>Venta €</th>
+              <th className={`${TH} text-right`}>Alquiler €/mes</th>
               <th className={`${TH} border-l border-line text-right`}>Importe €</th>
               <th className={TH}>Fecha</th>
-              <th className={`${TH} border-l border-line text-right`}>Precio €</th>
-              <th className={TH}>Fecha</th>
-              <th className={TH}>Comprador</th>
-              <th className={`${TH} border-l border-line text-center`}>Destino</th>
-              <th className={`${TH} text-right`}>Renta/mes</th>
             </tr>
           </thead>
           <tbody>
@@ -147,7 +155,7 @@ export function UnitsTable({ op, results, onEdit, onBulkEdit, overlayRoot, readO
                 const on = l.keys.filter((k) => selected.has(k)).length;
                 return (
                   <tr key={l.key} className="border-t border-line bg-white">
-                    <td colSpan={11} className="px-1.5 pb-0.5 pt-2">
+                    <td colSpan={9} className="px-1.5 pb-0.5 pt-2">
                       {selecting ? (
                         <button type="button" role="checkbox" aria-checked={on === l.keys.length ? true : on ? "mixed" : false} aria-label={`Seleccionar todas: ${l.group}`} onClick={() => setKeys(l.keys, on < l.keys.length)} className="sticky left-1.5 inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-ink-subtle">
                           {box(on === l.keys.length ? "on" : on ? "mixed" : "off")}
@@ -170,8 +178,13 @@ export function UnitsTable({ op, results, onEdit, onBulkEdit, overlayRoot, readO
                         <span className="truncate">{l.row.title}</span>
                       </button>
                     ) : (
-                      <span className="block truncate" title={l.row.virtual ? "Unidad del Proyecto sin ficha: se crea al editar un dato" : l.row.title}>
-                        {l.row.title}
+                      <span className="flex items-center gap-1">
+                        {ro ? null : (
+                          <button type="button" onClick={() => setEditor({ rows: [l.row] })} aria-label={`Editar todo: ${l.row.title}`} title="Ficha de la unidad" className="flex h-7 w-6 shrink-0 items-center justify-center rounded text-brand hover:bg-[var(--brand-soft)]">
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536M9 13l6.232-6.232a2.5 2.5 0 113.536 3.536L12.536 16.536 9 17l.464-3.536z" /></svg>
+                          </button>
+                        )}
+                        <span className="truncate" title={l.row.virtual ? "Unidad del Proyecto sin ficha: se crea al editar un dato" : l.row.title}>{l.row.title}</span>
                       </span>
                     )}
                   </th>
@@ -182,23 +195,27 @@ export function UnitsTable({ op, results, onEdit, onBulkEdit, overlayRoot, readO
           </tbody>
         </table>
       </div>
-      {bulkOpen && selectedRows.length && onBulkEdit ? (
-        <UnitsBulkDialog
-          rows={selectedRows}
-          onClose={() => setBulkOpen(false)}
+      {editor ? (
+        <UnitEditorDialog
+          rows={editor.rows}
+          presetStatus={editor.presetStatus}
+          closing={editor.closing}
+          onClose={() => setEditor(null)}
+          onRemove={onRemove && editor.rows[0]?.saleId ? () => { onRemove(editor.rows[0].saleId as string); setEditor(null); } : undefined}
           onApply={(patch) => {
-            onBulkEdit(selectedRows, patch);
-            stop();
+            onBulkEdit(editor.rows, patch);
+            setEditor(null);
+            if (editor.rows.length > 1) stop();
           }}
         />
       ) : null}
-      {autoDate && autoTarget ? (
+      {askDeposit && depositRow ? (
         <CalendarOverlay
           target={overlayRoot ?? (typeof document !== "undefined" ? document.body : null)}
-          onClose={() => setAutoDate(null)}
+          onClose={() => setAskDeposit(null)}
           onPick={(iso) => {
-            if (iso) onEdit(autoTarget, autoDate.field, iso);
-            setAutoDate(null);
+            if (iso) onEdit(depositRow, "depositDate", iso);
+            setAskDeposit(null);
           }}
         />
       ) : null}

@@ -16,8 +16,10 @@ const EVENT_LABEL: Record<UpcomingEvent["kind"], string> = { terminacion: "Termi
 
 const STATUS_TONE: Record<string, string> = {
   VENDIDO: "pill-positive",
-  RESERVADO: "pill-info",
+  ALQUILADO: "pill-positive",
+  EN_NEGOCIACION: "pill-warning",
   SENALADO: "pill-info",
+  RESERVADO: "pill-warning",
   APALABRADO: "pill-warning",
   DISPONIBLE: "pill-neutral",
 };
@@ -44,7 +46,7 @@ function UnitsBar({ g }: { g: SaleGroupView }) {
   if (g.units <= 0) return null;
   const w = (n: number) => `${(n / g.units) * 100}%`;
   return (
-    <div className="flex h-2 w-full overflow-hidden rounded-full bg-[var(--surface-alt)]" role="img" aria-label={`${g.sold} vendidas, ${g.reserved} reservadas, ${g.available} disponibles`}>
+    <div className="flex h-2 w-full overflow-hidden rounded-full bg-[var(--surface-alt)]" role="img" aria-label={`${g.sold} vendidas, ${g.rented} alquiladas, ${g.reserved} en negociación o señaladas, ${g.available} disponibles`}>
       <div style={{ width: w(g.sold), background: "var(--positive)" }} />
       <div style={{ width: w(g.reserved), background: "var(--brand)" }} />
     </div>
@@ -169,7 +171,7 @@ export function ProjectSales({ summary, actions }: { summary: SalesSummaryView; 
                   {g.planned != null ? <span className="text-sm font-extrabold tabular-nums text-ink">{fmtEUR(g.planned)}</span> : null}
                 </div>
                 <p className="text-xs text-ink-muted" style={{ paddingLeft: "1.375rem" }}>
-                  {g.units} uds · {g.sold} vendida{g.sold === 1 ? "" : "s"} · {g.reserved} reservada{g.reserved === 1 ? "" : "s"} · {g.available} disponible{g.available === 1 ? "" : "s"}
+                  {g.units} uds · {g.sold} vendida{g.sold === 1 ? "" : "s"}{g.rented ? ` · ${g.rented} alquilada${g.rented === 1 ? "" : "s"}` : ""} · {g.reserved} en negociación o señalada{g.reserved === 1 ? "" : "s"} · {g.available} disponible{g.available === 1 ? "" : "s"}
                   {g.finished ? ` · ${g.finished} terminada${g.finished === 1 ? "" : "s"}` : ""}
                 </p>
                 <div style={{ paddingLeft: "1.375rem" }} className="space-y-1.5">

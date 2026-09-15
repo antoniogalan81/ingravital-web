@@ -1,4 +1,4 @@
-// src/lib/unitEditing.ts — Edición directa de UNIDADES (Proyecto › Unidades y Seguimiento › Ventas).
+// src/lib/unitEditing.ts — Edición de UNIDADES (tabla, ficha individual y edición de varias).
 // IDÉNTICO a APP/src/utils/unitEditing.ts desde "Cuerpo compartido" (lo comprueba un test).
 //
 // Cada unidad es UNA ficha de `sales` (o, si aún no tiene ficha, una fila virtual de su línea
@@ -8,7 +8,7 @@
 
 import type { REOperation, REResults, UnitType } from "./realEstate";
 import type { RESale, RESaleStatus } from "./realEstateTracking";
-import { activeSalesByGroup, SALE_GROUP_LABEL, UNIT_SINGULAR, UNIT_TYPES, type SaleGroupKey } from "./projectEconomics";
+import { activeSalesByGroup, displaySaleStatus, SALE_GROUP_LABEL, UNIT_SINGULAR, UNIT_TYPES, type SaleGroupKey } from "./projectEconomics";
 
 // ── Cuerpo compartido ──────────────────────────────────────────────────────────
 
@@ -91,6 +91,11 @@ export function parseEsAmount(text: string): { ok: true; value: number | null } 
 
 // ── Filas de unidades ────────────────────────────────────────────────────────
 
+/**
+ * Una unidad con SOLO los datos de su ficha: nombre, estado, previsión (terminación y venta),
+ * valores (precio de venta y renta mensual, propios o base), señal (importe y fecha) y cierre
+ * (fecha de venta o de alquiler). Otros datos antiguos de la ficha se conservan sin mostrarse.
+ */
 export type UnitRow = {
   key: string;
   /** Ficha de venta; null en una unidad del Proyecto que aún no tiene ficha (fila virtual). */
@@ -99,8 +104,9 @@ export type UnitRow = {
   group: SaleGroupKey;
   groupLabel: string;
   title: string;
+  /** Estado tal como se muestra y edita (Reservado/Apalabrado antiguos = En negociación). */
   status: RESaleStatus;
-  /** Precio efectivo (propio o base de su línea) y si es propio. */
+  /** Precio y renta efectivos (propios o base de su línea) y si son propios. */
   price: number | null;
   priceOwn: boolean;
   basePrice: number | null;
@@ -110,12 +116,12 @@ export type UnitRow = {
   // Previsión
   completionDateEstimated?: string;
   saleDateEstimated?: string;
-  // Realidad
-  depositDate?: string;
+  // Señal real (cuenta como cobrada solo con fecha)
   deposit: number | null;
+  depositDate?: string;
+  // Cierre real
   saleDate?: string;
-  buyer?: string;
-  forRent: boolean;
+  rentDate?: string;
 };
 
 const byTitle = (a: { title: string }, b: { title: string }) => a.title.localeCompare(b.title, "es", { numeric: true });
@@ -134,7 +140,7 @@ export function projectUnitRows(op: Pick<REOperation, "sales" | "units">, res: R
         group,
         groupLabel: SALE_GROUP_LABEL[group],
         title: s.title?.trim() || "Unidad sin nombre",
-        status: s.status,
+        status: displaySaleStatus(s.status),
         price: eff?.price ?? null,
         priceOwn: isNum(s.realPrice) || isNum(s.estimatedPrice),
         basePrice: eff?.basePrice ?? null,
@@ -143,11 +149,10 @@ export function projectUnitRows(op: Pick<REOperation, "sales" | "units">, res: R
         baseRent: eff?.baseRent ?? null,
         completionDateEstimated: s.completionDateEstimated,
         saleDateEstimated: s.saleDateEstimated,
-        depositDate: s.depositDate,
         deposit: isNum(s.deposit) ? s.deposit : null,
+        depositDate: s.depositDate,
         saleDate: s.date,
-        buyer: s.buyer,
-        forRent: s.forRent === true,
+        rentDate: s.rentStartDate,
       };
     });
     if (group !== "OTROS") {
@@ -173,7 +178,6 @@ export function projectUnitRows(op: Pick<REOperation, "sales" | "units">, res: R
           rentOwn: false,
           baseRent: base.rent,
           deposit: null,
-          forRent: false,
         });
       });
     }
@@ -184,21 +188,13 @@ export function projectUnitRows(op: Pick<REOperation, "sales" | "units">, res: R
 
 // ── Edición de un campo ──────────────────────────────────────────────────────
 
-export type UnitField =
-  | "status"
-  | "price"
-  | "rent"
-  | "completionDateEstimated"
-  | "saleDateEstimated"
-  | "deposit"
-  | "depositDate"
-  | "saleDate"
-  | "buyer"
-  | "forRent";
+/** Los ÚNICOS campos editables de una unidad (ficha individual, tabla y edición de varias). */
+export type UnitField = "title" | "status" | "completionDateEstimated" | "saleDateEstimated" | "price" | "rent" | "deposit" | "depositDate" | "saleDate" | "rentDate";
 
 export type UnitValue = string | number | boolean | null | undefined;
 
 const empty = (v: UnitValue) => v == null || v === "" || (typeof v === "number" && !Number.isFinite(v));
+const CLOSED: RESaleStatus[] = ["VENDIDO", "ALQUILADO"];
 
 /** Ficha con un campo cambiado. Un valor vacío BORRA el campo (nunca "" ni 0 inventados). */
 export function withUnitField(s: RESale, field: UnitField, value: UnitValue, nowISO: string): RESale {
@@ -208,8 +204,16 @@ export function withUnitField(s: RESale, field: UnitField, value: UnitValue, now
     else next[key] = typeof v === "string" ? v.trim() : v;
   };
   switch (field) {
+    case "title":
+      // El nombre nunca se queda vacío.
+      if (!empty(value) && String(value).trim()) next.title = String(value).trim();
+      break;
     case "status":
-      if (!empty(value)) next.status = value;
+      if (!empty(value)) {
+        next.status = value;
+        // El destino lo expresa el estado (ALQUILADO): la marca antigua deja de aplicarse.
+        delete next.forRent;
+      }
       break;
     case "price":
       // Un solo precio por unidad: el propio sustituye al "precio real" antiguo.
@@ -221,15 +225,16 @@ export function withUnitField(s: RESale, field: UnitField, value: UnitValue, now
       break;
     case "saleDate":
       set("date", value);
-      if (!empty(value)) next.status = "VENDIDO";
       break;
-    case "deposit":
+    case "rentDate":
+      set("rentStartDate", value);
+      break;
     case "depositDate":
-      set(field, value);
-      if (!empty(value) && next.status === "DISPONIBLE") next.status = "SENALADO";
-      break;
-    case "forRent":
-      set("forRent", value === true);
+      set("depositDate", value);
+      // La fecha es la prueba de la señal: pasa a Señalado salvo que ya esté vendida o alquilada.
+      if (!empty(value) && !CLOSED.includes(next.status as RESaleStatus)) next.status = "SENALADO";
+      // Sin fecha ya no hay prueba de la señal: una unidad Señalada vuelve a Disponible (el importe se queda).
+      if (empty(value) && next.status === "SENALADO") next.status = "DISPONIBLE";
       break;
     default:
       set(field, value);
@@ -241,9 +246,29 @@ export function withUnitField(s: RESale, field: UnitField, value: UnitValue, now
  * Aplica la edición de UN campo de una unidad y devuelve la lista completa de fichas (con
  * sus marcas de borrado). Una fila virtual se convierte en ficha solo en este momento.
  */
-export function editUnit(op: Pick<REOperation, "sales">, _res: REResults, row: UnitRow, field: UnitField, value: UnitValue, makeId: () => string, nowISO: string): RESale[] {
+export function editUnit(op: Pick<REOperation, "sales">, res: REResults, row: UnitRow, field: UnitField, value: UnitValue, makeId: () => string, nowISO: string): RESale[] {
+  return editUnitFields(op, res, row, { [field]: value }, makeId, nowISO);
+}
+
+export type UnitPatch = Partial<Record<UnitField, UnitValue>>;
+
+/**
+ * Varios campos de una misma unidad de una vez (una sola ficha nueva si era virtual). El estado
+ * elegido se aplica al final para que mande sobre los automáticos. Al cerrar como Vendido o
+ * Alquilado, el precio o la renta que heredaba de la base queda fijado como propio.
+ */
+export function editUnitFields(op: Pick<REOperation, "sales">, _res: REResults, row: UnitRow, patch: UnitPatch, makeId: () => string, nowISO: string): RESale[] {
   const all: RESale[] = Array.isArray(op.sales) ? op.sales : [];
-  if (row.saleId) return all.map((s) => (s.id === row.saleId ? withUnitField(s, field, value, nowISO) : s));
+  const fields = (Object.keys(patch) as UnitField[]).sort((a, b) => Number(a === "status") - Number(b === "status"));
+  if (!fields.length) return all;
+  const apply = (s: RESale): RESale => {
+    let next = s;
+    for (const field of fields) next = withUnitField(next, field, patch[field], nowISO);
+    if (patch.status === "VENDIDO" && !isNum(next.estimatedPrice) && !isNum(next.realPrice) && row.price != null) next = withUnitField(next, "price", row.price, nowISO);
+    if (patch.status === "ALQUILADO" && !isNum(next.rentMonthly) && row.rent != null) next = withUnitField(next, "rent", row.rent, nowISO);
+    return next;
+  };
+  if (row.saleId) return all.map((s) => (s.id === row.saleId ? apply(s) : s));
   const created: RESale = {
     id: makeId(),
     title: row.title,
@@ -252,29 +277,14 @@ export function editUnit(op: Pick<REOperation, "sales">, _res: REResults, row: U
     createdAt: nowISO,
     updatedAt: nowISO,
   };
-  return [...all, withUnitField(created, field, value, nowISO)];
+  return [...all, apply(created)];
 }
 
-/**
- * Editor completo: varios campos de una misma unidad de una vez (una sola ficha nueva si era
- * virtual). El estado elegido a mano se aplica al final para que mande sobre los automáticos.
- */
-export function editUnitFields(op: Pick<REOperation, "sales">, res: REResults, row: UnitRow, patch: Partial<Record<UnitField, UnitValue>>, makeId: () => string, nowISO: string): RESale[] {
-  const fields = (Object.keys(patch) as UnitField[]).sort((a, b) => Number(a === "status") - Number(b === "status"));
-  if (!fields.length) return Array.isArray(op.sales) ? op.sales : [];
-  let sales = editUnit(op, res, row, fields[0], patch[fields[0]], makeId, nowISO);
-  const id = row.saleId ?? sales[sales.length - 1].id;
-  for (const field of fields.slice(1)) sales = sales.map((s) => (s.id === id ? withUnitField(s, field, patch[field], nowISO) : s));
-  return sales;
-}
-
-// ── Edición de varias unidades a la vez ───────────────────────────────────────
-
-export type UnitPatch = Partial<Record<UnitField, UnitValue>>;
+// ── Ficha de una o varias unidades ────────────────────────────────────────────
 
 /** Valor de un campo tal como se ve en la fila (precio y renta: los efectivos). Sin dato = null. */
 export function unitRowValue(row: UnitRow, field: UnitField): string | number | boolean | null {
-  const v = field === "saleDate" ? row.saleDate : row[field];
+  const v = row[field];
   return v === undefined || v === "" ? null : v;
 }
 
@@ -289,13 +299,69 @@ export function commonUnitValue(rows: UnitRow[], field: UnitField): { mixed: boo
 }
 
 /**
- * Edición masiva: aplica SOLO los campos del parche a cada unidad seleccionada y devuelve UNA
- * lista de fichas (una sola actualización de la operación). El resto de campos no se toca; las
- * unidades sin ficha la crean. El precio y la renta son valores propios, no la base del Proyecto.
+ * Lo que el usuario ha tocado en la ficha (individual o de varias): texto del nombre y de los
+ * importes tal como se escribió, fechas en ISO (null = borrar) y estado. Lo no tocado no está.
+ */
+export type UnitDraft = Partial<Record<UnitField, string | null>>;
+
+export type UnitFormResult = { ok: true; patch: UnitPatch } | { ok: false; errors: Partial<Record<UnitField, string>> };
+
+const AMOUNT_FIELDS: UnitField[] = ["price", "rent", "deposit"];
+
+/**
+ * Convierte lo tocado en la ficha en un parche validado, igual para una unidad o para varias:
+ * importes en formato español, el nombre solo en una unidad (nunca el mismo nombre a varias) y,
+ * al cerrar, Vendido exige precio y fecha de venta y Alquilado renta y fecha de alquiler en cada
+ * unidad afectada (lo que ya tuvieran cuenta).
+ */
+export function buildUnitPatch(rows: UnitRow[], draft: UnitDraft): UnitFormResult {
+  const patch: UnitPatch = {};
+  const errors: Partial<Record<UnitField, string>> = {};
+  for (const field of Object.keys(draft) as UnitField[]) {
+    const raw = draft[field];
+    if (raw === undefined) continue;
+    if (field === "title") {
+      if (rows.length !== 1) continue;
+      const title = (raw ?? "").trim();
+      if (!title) errors.title = "Escribe un nombre.";
+      else if (title !== rows[0].title) patch.title = title;
+    } else if (AMOUNT_FIELDS.includes(field)) {
+      const parsed = parseEsAmount(raw ?? "");
+      if (parsed.ok) patch[field] = parsed.value;
+      else errors[field] = "Importe no válido.";
+    } else if (field === "status") {
+      if (raw) patch.status = raw;
+    } else {
+      patch[field] = raw;
+    }
+  }
+  const closing = (status: RESaleStatus, amount: "price" | "rent", date: "saleDate" | "rentDate", amountMsg: string, dateMsg: string) => {
+    const touched = patch.status === status || amount in patch || date in patch;
+    const affected = rows.filter((r) => (patch.status ?? r.status) === status);
+    if (!touched || !affected.length) return;
+    const lacking = (field: "price" | "rent" | "saleDate" | "rentDate") => affected.filter((r) => empty(field in patch ? patch[field] : r[field])).map((r) => r.title);
+    const note = (titles: string[], msg: string) => (rows.length === 1 ? msg : `${msg} Falta en: ${titles.join(", ")}.`);
+    const noAmount = lacking(amount);
+    const noDate = lacking(date);
+    if (noAmount.length && !errors[amount]) errors[amount] = note(noAmount, amountMsg);
+    if (noDate.length) errors[date] = note(noDate, dateMsg);
+  };
+  closing("VENDIDO", "price", "saleDate", "Indica el precio de venta.", "Indica la fecha de venta.");
+  closing("ALQUILADO", "rent", "rentDate", "Indica la renta mensual.", "Indica la fecha de alquiler.");
+  return Object.keys(errors).length ? { ok: false, errors } : { ok: true, patch };
+}
+
+/**
+ * Edición de varias unidades: aplica SOLO los campos del parche a cada unidad seleccionada y
+ * devuelve UNA lista de fichas (una sola actualización de la operación). El resto de campos no se
+ * toca; las unidades sin ficha la crean. El nombre no se aplica a varias. El precio y la renta
+ * son valores propios, no la base del Proyecto.
  */
 export function editUnitsBulk(op: Pick<REOperation, "sales">, res: REResults, rows: UnitRow[], patch: UnitPatch, makeId: () => string, nowISO: string): RESale[] {
+  const { title: _title, ...shared } = patch;
+  const effective = rows.length === 1 ? patch : shared;
   let sales: RESale[] = Array.isArray(op.sales) ? op.sales : [];
-  if (!Object.keys(patch).length) return sales;
-  for (const row of rows) sales = editUnitFields({ sales }, res, row, patch, makeId, nowISO);
+  if (!Object.keys(effective).length) return sales;
+  for (const row of rows) sales = editUnitFields({ sales }, res, row, effective, makeId, nowISO);
   return sales;
 }

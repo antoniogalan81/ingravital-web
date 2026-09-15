@@ -195,26 +195,26 @@ export type RERealLoan = {
 
 export type RESaleStatus =
   | "DISPONIBLE"
-  | "RESERVADO"
+  | "EN_NEGOCIACION"
   | "SENALADO" // señalado
-  | "APALABRADO"
-  | "VENDIDO";
+  | "VENDIDO"
+  | "ALQUILADO"
+  // Antiguos: se leen y se muestran como «En negociación»; no se ofrecen al editar.
+  | "RESERVADO"
+  | "APALABRADO";
 
 export const RE_SALE_STATUS_LABEL: Record<RESaleStatus, string> = {
   DISPONIBLE: "Disponible",
-  RESERVADO: "Reservado",
+  EN_NEGOCIACION: "En negociación",
   SENALADO: "Señalado",
-  APALABRADO: "Apalabrado",
   VENDIDO: "Vendido",
+  ALQUILADO: "Alquilado",
+  RESERVADO: "En negociación",
+  APALABRADO: "En negociación",
 };
 
-export const RE_SALE_STATUSES: RESaleStatus[] = [
-  "DISPONIBLE",
-  "RESERVADO",
-  "SENALADO",
-  "APALABRADO",
-  "VENDIDO",
-];
+/** Estados que se ofrecen al editar una unidad. */
+export const RE_SALE_STATUSES: RESaleStatus[] = ["DISPONIBLE", "EN_NEGOCIACION", "SENALADO", "VENDIDO", "ALQUILADO"];
 
 // Estados que consideramos "cerrada" (ingreso comprometido/realizado).
 export const RE_SALE_CLOSED_STATUSES: RESaleStatus[] = ["VENDIDO"];
@@ -223,6 +223,7 @@ export const RE_SALE_COMMITTED_STATUSES: RESaleStatus[] = [
   "SENALADO",
   "APALABRADO",
   "VENDIDO",
+  "ALQUILADO",
 ];
 
 /** Cobro real de una venta. Una venta puede tener varios (señal, entregas, escritura…). */
@@ -252,12 +253,14 @@ export type RESale = {
   deletedAt?: string;
   estimatedPrice?: number; // precio previsto propio de la unidad; ausente = precio base del Proyecto
   rentMonthly?: number; // renta mensual actual de la unidad; ausente = renta base del Proyecto
+  rentStartDate?: string; // ISO — fecha REAL de inicio del alquiler (estado ALQUILADO)
   realPrice?: number; // precio real de venta
   status: RESaleStatus;
   date?: string; // ISO — fecha REAL de venta (escritura / firma)
   buyer?: string; // cliente / comprador
-  deposit?: number; // importe de la señal; cuenta como cobrado (una sola vez)
-  forRent?: boolean; // destinada al alquiler; ausente = no
+  deposit?: number; // importe de la señal; cuenta como cobrado solo cuando tiene fecha (`depositDate`)
+  /** @deprecated Destino antiguo: el alquiler se expresa con el estado ALQUILADO. Se lee por compatibilidad. */
+  forRent?: boolean;
   collected?: number; // ingreso ya cobrado
   notes?: string;
   createdAt: string;
