@@ -119,10 +119,10 @@ export function UnitsTable({ op, results, onEdit, onBulkEdit, onRemove, overlayR
         </div>
       )}
       <div className="max-h-[70vh] overflow-auto rounded-xl border border-line bg-white">
-        <table className="w-full min-w-[930px] border-collapse text-xs">
+        <table className="w-full min-w-[950px] border-collapse text-xs">
           <colgroup>
             <col className="w-[132px]" />
-            <col className="w-[108px]" />
+            <col className="w-[128px]" />
             <col className="w-[98px]" />
             <col className="w-[98px]" />
             <col className="w-[98px]" />
